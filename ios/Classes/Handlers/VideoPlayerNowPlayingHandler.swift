@@ -10,21 +10,30 @@ class RemoteCommandManager {
     /// Track which view currently owns the remote commands
     private var currentOwnerViewId: Int64?
 
+    /// Lock to prevent race conditions during ownership transfer
+    private let lock = NSLock()
+
     private init() {}
 
     /// Check if a specific view is the current owner
     func isOwner(_ viewId: Int64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
         return currentOwnerViewId == viewId
     }
 
     /// Set a new owner for remote commands
     func setOwner(_ viewId: Int64) {
+        lock.lock()
+        defer { lock.unlock() }
         currentOwnerViewId = viewId
         print("🎛️ Remote command ownership transferred to view \(viewId)")
     }
 
     /// Clear ownership (e.g., when owner is disposed)
     func clearOwner(_ viewId: Int64) {
+        lock.lock()
+        defer { lock.unlock() }
         if currentOwnerViewId == viewId {
             currentOwnerViewId = nil
             print("🎛️ Remote command ownership cleared from view \(viewId)")
@@ -33,6 +42,8 @@ class RemoteCommandManager {
 
     /// Get the current owner view ID
     func getCurrentOwner() -> Int64? {
+        lock.lock()
+        defer { lock.unlock() }
         return currentOwnerViewId
     }
 
@@ -44,6 +55,20 @@ class RemoteCommandManager {
         commandCenter.skipForwardCommand.removeTarget(nil)
         commandCenter.skipBackwardCommand.removeTarget(nil)
         print("🎛️ Removed all remote command targets")
+    }
+
+    /// Atomically set owner and remove all targets
+    /// This prevents race conditions when multiple views try to register concurrently
+    func atomicallySetOwnerAndRemoveTargets(_ viewId: Int64) {
+        lock.lock()
+        defer { lock.unlock() }
+        currentOwnerViewId = viewId
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.removeTarget(nil)
+        commandCenter.pauseCommand.removeTarget(nil)
+        commandCenter.skipForwardCommand.removeTarget(nil)
+        commandCenter.skipBackwardCommand.removeTarget(nil)
+        print("🎛️ Atomically transferred ownership to view \(viewId) and cleared targets")
     }
 }
 
@@ -127,13 +152,11 @@ extension VideoPlayerView {
     /// Sets up remote command center for Control Center controls
     /// Only registers if this view should be the owner
     private func setupRemoteCommandCenter() {
-        // Take ownership of remote commands for this view
-        RemoteCommandManager.shared.setOwner(viewId)
-
         let commandCenter = MPRemoteCommandCenter.shared()
 
-        // Remove all existing targets first
-        RemoteCommandManager.shared.removeAllTargets()
+        // Atomically take ownership and clear all existing targets
+        // This prevents race conditions when multiple views try to register concurrently
+        RemoteCommandManager.shared.atomicallySetOwnerAndRemoveTargets(viewId)
 
         // --- Play ---
         commandCenter.playCommand.addTarget { [weak self] _ in

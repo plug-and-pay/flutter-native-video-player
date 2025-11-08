@@ -285,6 +285,41 @@ import QuartzCore
         eventSink?(event)
     }
 
+    /// Cleans up remote command ownership, attempting to transfer to another view if possible
+    /// This is called from both deinit and handleDispose to avoid duplication
+    private func cleanupRemoteCommandOwnership() {
+        // Only proceed if this view owns the remote commands
+        guard RemoteCommandManager.shared.isOwner(viewId) else {
+            return
+        }
+
+        print("🎛️ View \(viewId) owned remote commands - attempting transfer")
+
+        // Try to transfer ownership to another view with the same controller
+        var ownershipTransferred = false
+        if let controllerIdValue = controllerId,
+           let alternativeView = SharedPlayerManager.shared.findAnotherViewForController(controllerIdValue, excluding: viewId) {
+            print("🎛️ Transferring ownership to view \(alternativeView.viewId)")
+
+            // Transfer ownership by setting up Now Playing info on the alternative view
+            if let mediaInfo = alternativeView.currentMediaInfo {
+                alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
+                ownershipTransferred = true
+                print("✅ Ownership transferred to view \(alternativeView.viewId)")
+            } else {
+                print("⚠️ Alternative view has no media info - cannot transfer")
+            }
+        }
+
+        // If no transfer was possible, clear everything
+        if !ownershipTransferred {
+            print("🗑️ No transfer possible - clearing ownership and Now Playing info")
+            RemoteCommandManager.shared.clearOwner(viewId)
+            RemoteCommandManager.shared.removeAllTargets()
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        }
+    }
+
     /// Emits all current player states to ensure UI is in sync
     /// This is useful after events like exiting PiP where the UI needs to refresh
     public func emitCurrentState() {
@@ -402,34 +437,8 @@ import QuartzCore
     deinit {
         print("VideoPlayerView deinit for channel: \(channelName), viewId: \(viewId)")
 
-        // Transfer remote command ownership if this view owns it
-        if RemoteCommandManager.shared.isOwner(viewId) {
-            print("🎛️ View \(viewId) owned remote commands - attempting transfer")
-
-            // Try to transfer ownership to another view with the same controller
-            var ownershipTransferred = false
-            if let controllerIdValue = controllerId,
-               let alternativeView = SharedPlayerManager.shared.findAnotherViewForController(controllerIdValue, excluding: viewId) {
-                print("🎛️ Transferring ownership to view \(alternativeView.viewId)")
-
-                // Transfer ownership by setting up Now Playing info on the alternative view
-                if let mediaInfo = alternativeView.currentMediaInfo {
-                    alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
-                    ownershipTransferred = true
-                    print("✅ Ownership transferred to view \(alternativeView.viewId)")
-                } else {
-                    print("⚠️ Alternative view has no media info - cannot transfer")
-                }
-            }
-
-            // If no transfer was possible, clear everything
-            if !ownershipTransferred {
-                print("🗑️ No transfer possible - clearing ownership and Now Playing info")
-                RemoteCommandManager.shared.clearOwner(viewId)
-                RemoteCommandManager.shared.removeAllTargets()
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            }
-        }
+        // Clean up remote command ownership (transfer to another view if possible)
+        cleanupRemoteCommandOwnership()
 
         // Handle automatic PiP transfer for shared players
         // If this was the primary view (the one with automatic PiP enabled), we need to
