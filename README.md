@@ -9,7 +9,9 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 - ✅ Native video players: **AVPlayerViewController** on iOS and **ExoPlayer (Media3)** on Android
 - ✅ **Multiple video formats**: HLS streams (.m3u8), MP4, and other common formats
 - ✅ **Local file support**: Play videos from device storage using file:// URIs
+- ✅ **Asset video support**: Play videos bundled in Flutter assets
 - ✅ **HLS streaming** support with adaptive quality selection
+- ✅ **Video looping**: Smooth native video looping without stuttering
 - ✅ **Picture-in-Picture (PiP)** mode on both platforms with automatic state management
 - ✅ **AirPlay** support on iOS with availability detection and connection events
 - ✅ Native **fullscreen** playback with Dart-side fullscreen option
@@ -92,7 +94,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  better_native_video_player: ^0.2.20
+  better_native_video_player: ^0.3.0
 ```
 
 Then run:
@@ -312,6 +314,28 @@ await _controller.enterFullScreen();
 await _controller.exitFullScreen();
 await _controller.toggleFullScreen();
 ```
+
+#### Video Looping
+
+The plugin supports smooth native video looping on both iOS and Android:
+
+```dart
+// Enable looping at controller creation
+_controller = NativeVideoPlayerController(
+  id: 1,
+  enableLooping: true,
+);
+
+// Or enable/disable looping dynamically during playback
+await _controller.setLooping(true);  // Enable looping
+await _controller.setLooping(false); // Disable looping
+```
+
+**Features:**
+- Seamless looping without visible pause or stuttering
+- Native implementation for optimal performance (ExoPlayer's REPEAT_MODE_ONE on Android, automatic replay on iOS)
+- Can be configured at controller creation or changed dynamically during playback
+- Works with all supported video formats (HLS, MP4, local files, etc.)
 
 #### Lifecycle Management
 
@@ -893,6 +917,7 @@ class _MultiPlayerScreenState extends State<MultiPlayerScreen> {
 |-----------|------|---------|-------------|
 | `id` | `int` | required | Unique identifier for the player instance |
 | `autoPlay` | `bool` | `false` | Start playing automatically after loading |
+| `enableLooping` | `bool` | `false` | Enable automatic video looping with smooth native playback |
 | `mediaInfo` | `NativeVideoPlayerMediaInfo?` | `null` | Media metadata for Now Playing |
 | `allowsPictureInPicture` | `bool` | `true` | Enable Picture-in-Picture |
 | `canStartPictureInPictureAutomatically` | `bool` | `true` | Auto-start PiP on app background (iOS 14.2+) |
@@ -941,6 +966,7 @@ NativeVideoPlayer(
 - `Future<void> seekTo(Duration position)` - Seek to position
 - `Future<void> setVolume(double volume)` - Set volume (0.0-1.0)
 - `Future<void> setSpeed(double speed)` - Set playback speed
+- `Future<void> setLooping(bool looping)` - Enable or disable video looping
 - `Future<void> setQuality(NativeVideoPlayerQuality quality)` - Set video quality
 
 **Display Modes:**

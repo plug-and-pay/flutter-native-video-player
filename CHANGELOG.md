@@ -5,6 +5,78 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-11-08
+
+### Added
+- **Video Looping Support**: Comprehensive video looping functionality with smooth native playback
+  - Added `enableLooping` parameter to `NativeVideoPlayerController` constructor (default: false)
+  - Added `setLooping(bool)` method for dynamic looping control during playback
+  - Android uses ExoPlayer's `REPEAT_MODE_ONE` for seamless native looping
+  - iOS implements looping via seek to beginning and automatic replay without gaps
+  - Smooth looping without visible pause or stuttering across both platforms
+
+- **Multiple Video Format Support**: Extended support beyond HLS streams
+  - Added support for MP4 video URLs (remote)
+  - Added support for local video files (file:// URIs)
+  - Android uses `ProgressiveMediaSource` for non-HLS content
+  - iOS AVPlayer natively supports multiple formats (MP4, MOV, M4V)
+  - Android supports additional formats (WebM, MKV)
+  - Added `isHlsUrl()` helper function for improved format detection on both platforms
+  - Quality selection remains available for HLS streams
+
+- **Convenience Loading Methods**: New explicit methods for improved API clarity
+  - Added `loadUrl({required String url, Map<String, String>? headers})` for remote videos
+  - Added `loadFile({required String path})` for local files (automatically constructs file:// URIs)
+  - Existing `load()` method remains for backward compatibility
+  - Better IDE autocomplete and discoverability
+
+- **Asset Video Support**: Local video file playback from Flutter assets
+  - Implemented new MethodChannel for resolving asset paths on both platforms
+  - Assets are automatically extracted to cache directory for playback
+  - Seamless integration with existing loading methods
+  - Added example with local asset (ElephantsDream.mp4)
+
+### Improved
+- **iOS Media Controls**: Fixed critical issues with native media controls across multiple scenarios
+  - Fixed MPRemoteCommandCenter conflicts when using multiple videos with shared controllers
+  - Added `RemoteCommandManager` singleton to centralize ownership of remote commands
+  - Remote command ownership now tracked by viewId instead of media title for reliability
+  - Fixed media controls becoming unresponsive when entering/exiting PiP
+  - Fixed lock screen controls showing incorrect media info or becoming unresponsive
+  - Proper cleanup of remote command targets in deinit to prevent dangling references
+  - Remote command handlers now verify ownership before processing events
+  - Fixed periodic observer conflicts causing incorrect Now Playing info updates
+
+- **Remote Command Ownership Transfer**: Automatic management between multiple views
+  - Only the "owner" view can register remote command handlers and update Now Playing info
+  - Ownership automatically transfers when entering/exiting PiP
+  - Prevents conflicts when multiple VideoPlayerView instances exist simultaneously
+  - Ensures consistent media control behavior across app lifecycle
+
+### Fixed
+- **iOS Now Playing Info Persistence**: Fixed Now Playing info disappearing or showing wrong data
+  - Now Playing ownership no longer fails with duplicate titles or disposed views
+  - Media controls remain functional when switching between videos
+  - Lock screen and Control Center always show correct media information
+
+- **Race Conditions**: Consolidated cleanup logic to prevent race conditions
+  - Better synchronization between view lifecycle and remote command management
+  - Improved timing of ownership transfers during PiP transitions
+
+- **HLS Detection**: Improved quality switching and HLS stream detection
+  - More reliable detection of HLS vs progressive video formats
+  - Quality fetching only attempted for actual HLS streams
+  - Better logging for source type detection and debugging
+
+### Documentation
+- Updated README with "Supported Video Formats" section
+- Added examples for HLS, MP4, and local file usage
+- Updated feature list to highlight multi-format support
+- Added test URLs for both HLS and MP4 formats
+- Updated API Reference with new convenience methods
+- Added path_provider example for local file handling
+- Updated example app with mixed HLS and MP4 examples
+
 ## [0.2.20] - 2025-11-06
 
 ### Improved
