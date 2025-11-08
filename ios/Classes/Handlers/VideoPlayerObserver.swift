@@ -189,10 +189,22 @@ extension VideoPlayerView {
     }
 
     @objc func videoDidEnd() {
-        // Reset video to the beginning and pause
-        player?.seek(to: .zero)
-        player?.pause()
-        sendEvent("completed")
+        if enableLooping {
+            // For smooth looping, seek to beginning and continue playing
+            player?.seek(to: .zero) { [weak self] finished in
+                if finished {
+                    // Continue playing for seamless loop
+                    self?.player?.play()
+                }
+            }
+            // Still send completed event for tracking purposes
+            sendEvent("completed")
+        } else {
+            // Reset video to the beginning and pause
+            player?.seek(to: .zero)
+            player?.pause()
+            sendEvent("completed")
+        }
     }
 
     // MARK: - AirPlay Route Detection

@@ -17,7 +17,8 @@ class VideoPlayerObserver(
     private val getMediaInfo: (() -> Map<String, Any>?)? = null,
     private val controllerId: Int? = null,
     private val viewId: Long? = null,
-    private val canStartPictureInPictureAutomatically: Boolean = false
+    private val canStartPictureInPictureAutomatically: Boolean = false,
+    private val enableLooping: Boolean = false
 ) : Player.Listener {
 
     companion object {
@@ -95,9 +96,13 @@ class VideoPlayerObserver(
                 }
             }
             Player.STATE_ENDED -> {
-                // Reset video to the beginning and pause
-                player.seekTo(0)
-                player.pause()
+                // When looping is enabled with REPEAT_MODE_ONE, this state shouldn't be reached
+                // as ExoPlayer handles looping internally. However, handle it for safety.
+                if (!enableLooping) {
+                    // Reset video to the beginning and pause
+                    player.seekTo(0)
+                    player.pause()
+                }
                 eventHandler.sendEvent("completed")
             }
         }

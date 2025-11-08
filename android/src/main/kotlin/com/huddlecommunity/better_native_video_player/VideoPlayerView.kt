@@ -112,6 +112,10 @@ class VideoPlayerView(
         enableHDR = args?.get("enableHDR") as? Boolean ?: false
         Log.d(TAG, "HDR setting: $enableHDR")
 
+        // Extract looping setting from args
+        val enableLooping = args?.get("enableLooping") as? Boolean ?: false
+        Log.d(TAG, "Looping setting: $enableLooping")
+
         // For shared players, try to get PiP settings from SharedPlayerManager
         // This ensures PiP settings persist across all views using the same controller
         if (controllerId != null) {
@@ -167,6 +171,14 @@ class VideoPlayerView(
             isSharedPlayer = false
             ExoPlayer.Builder(context).build()
         }
+
+        // Set repeat mode for looping
+        player.repeatMode = if (enableLooping) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
+        Log.d(TAG, "Repeat mode set to: ${if (enableLooping) "REPEAT_MODE_ONE (looping enabled)" else "REPEAT_MODE_OFF (looping disabled)"}")
 
         // Create PlayerView and attach player
         val showNativeControls = args?.get("showNativeControls") as? Boolean ?: true
@@ -299,7 +311,8 @@ class VideoPlayerView(
             getMediaInfo = { currentMediaInfo },
             controllerId = controllerId,
             viewId = viewId,
-            canStartPictureInPictureAutomatically = canStartPictureInPictureAutomatically
+            canStartPictureInPictureAutomatically = canStartPictureInPictureAutomatically,
+            enableLooping = enableLooping
         )
         player.addListener(observer)
 

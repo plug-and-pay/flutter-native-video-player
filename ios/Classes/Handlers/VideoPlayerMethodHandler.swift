@@ -314,6 +314,20 @@ extension VideoPlayerView {
         }
     }
 
+    func handleSetLooping(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        if let args = call.arguments as? [String: Any],
+           let looping = args["looping"] as? Bool {
+            print("Setting looping to: \(looping)")
+
+            // Update the enableLooping property
+            enableLooping = looping
+
+            result(nil)
+        } else {
+            result(FlutterError(code: "INVALID_LOOPING", message: "Invalid looping value", details: nil))
+        }
+    }
+
     // Auto-quality handling
     
     func handleSetQuality(call: FlutterMethodCall, result: @escaping FlutterResult) {
