@@ -534,6 +534,14 @@ extension VideoPlayerView {
         player?.pause()
         print("⏸️ [VideoPlayerMethodHandler] Player paused")
 
+        // Clean up remote command ownership if this view owns it
+        if RemoteCommandManager.shared.isOwner(viewId) {
+            print("🎛️ Disposing view \(viewId) that owns remote commands - clearing")
+            RemoteCommandManager.shared.clearOwner(viewId)
+            RemoteCommandManager.shared.removeAllTargets()
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        }
+
         // Remove from shared manager if this is a shared player
         if let controllerId = controllerId {
             print("🔄 [VideoPlayerMethodHandler] Calling SharedPlayerManager.removePlayer for controllerId: \(controllerId)")

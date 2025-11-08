@@ -402,6 +402,17 @@ import QuartzCore
     deinit {
         print("VideoPlayerView deinit for channel: \(channelName), viewId: \(viewId)")
 
+        // Clean up remote command ownership if this view owns it
+        if RemoteCommandManager.shared.isOwner(viewId) {
+            print("🎛️ View \(viewId) owned remote commands - clearing ownership and targets")
+            RemoteCommandManager.shared.clearOwner(viewId)
+            RemoteCommandManager.shared.removeAllTargets()
+
+            // Clear Now Playing info when the owning view is disposed
+            print("🗑️ Clearing Now Playing info (owner view disposed)")
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        }
+
         // Handle automatic PiP transfer for shared players
         // If this was the primary view (the one with automatic PiP enabled), we need to
         // transfer automatic PiP to another view using the same controller
@@ -460,15 +471,6 @@ import QuartzCore
 
         NotificationCenter.default.removeObserver(self)
         methodChannel.setMethodCallHandler(nil)
-
-        // Clear Now Playing info if this player owns it
-        // Only clear if we're a non-shared player to avoid clearing another player's info
-        if controllerId == nil {
-            print("🗑️ Clearing Now Playing info for non-shared player")
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        } else {
-            print("📱 Keeping Now Playing info for shared player (controller ID: \(String(describing: controllerId)))")
-        }
 
         // Clear current media info
         currentMediaInfo = nil

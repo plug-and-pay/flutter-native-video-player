@@ -1,6 +1,52 @@
 import MediaPlayer
 import AVFoundation
 
+// MARK: - Remote Command Manager
+/// Singleton to manage MPRemoteCommandCenter ownership
+/// Ensures only one VideoPlayerView owns the remote commands at a time
+class RemoteCommandManager {
+    static let shared = RemoteCommandManager()
+
+    /// Track which view currently owns the remote commands
+    private var currentOwnerViewId: Int64?
+
+    private init() {}
+
+    /// Check if a specific view is the current owner
+    func isOwner(_ viewId: Int64) -> Bool {
+        return currentOwnerViewId == viewId
+    }
+
+    /// Set a new owner for remote commands
+    func setOwner(_ viewId: Int64) {
+        currentOwnerViewId = viewId
+        print("🎛️ Remote command ownership transferred to view \(viewId)")
+    }
+
+    /// Clear ownership (e.g., when owner is disposed)
+    func clearOwner(_ viewId: Int64) {
+        if currentOwnerViewId == viewId {
+            currentOwnerViewId = nil
+            print("🎛️ Remote command ownership cleared from view \(viewId)")
+        }
+    }
+
+    /// Get the current owner view ID
+    func getCurrentOwner() -> Int64? {
+        return currentOwnerViewId
+    }
+
+    /// Remove all remote command targets
+    func removeAllTargets() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.removeTarget(nil)
+        commandCenter.pauseCommand.removeTarget(nil)
+        commandCenter.skipForwardCommand.removeTarget(nil)
+        commandCenter.skipBackwardCommand.removeTarget(nil)
+        print("🎛️ Removed all remote command targets")
+    }
+}
+
 extension VideoPlayerView {
     /// Sets up the Now Playing info for the Control Center and Lock Screen
     func setupNowPlayingInfo(mediaInfo: [String: Any]) {
@@ -79,28 +125,45 @@ extension VideoPlayerView {
     }
 
     /// Sets up remote command center for Control Center controls
+    /// Only registers if this view should be the owner
     private func setupRemoteCommandCenter() {
+        // Take ownership of remote commands for this view
+        RemoteCommandManager.shared.setOwner(viewId)
+
         let commandCenter = MPRemoteCommandCenter.shared()
 
-        // Avoid multiple bindings (prevents duplicate callbacks)
-        commandCenter.playCommand.removeTarget(nil)
-        commandCenter.pauseCommand.removeTarget(nil)
-        commandCenter.skipForwardCommand.removeTarget(nil)
-        commandCenter.skipBackwardCommand.removeTarget(nil)
+        // Remove all existing targets first
+        RemoteCommandManager.shared.removeAllTargets()
 
         // --- Play ---
         commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.player?.play()
-            self?.sendEvent("play")
-            self?.updateNowPlayingPlaybackTime()
+            guard let self = self else { return .commandFailed }
+
+            // Only handle if we still own the remote commands
+            guard RemoteCommandManager.shared.isOwner(self.viewId) else {
+                print("⚠️ View \(self.viewId) received play command but is not owner")
+                return .commandFailed
+            }
+
+            self.player?.play()
+            self.sendEvent("play")
+            self.updateNowPlayingPlaybackTime()
             return .success
         }
 
         // --- Pause ---
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.player?.pause()
-            self?.sendEvent("pause")
-            self?.updateNowPlayingPlaybackTime()
+            guard let self = self else { return .commandFailed }
+
+            // Only handle if we still own the remote commands
+            guard RemoteCommandManager.shared.isOwner(self.viewId) else {
+                print("⚠️ View \(self.viewId) received pause command but is not owner")
+                return .commandFailed
+            }
+
+            self.player?.pause()
+            self.sendEvent("pause")
+            self.updateNowPlayingPlaybackTime()
             return .success
         }
 
@@ -113,6 +176,12 @@ extension VideoPlayerView {
                   let skipEvent = event as? MPSkipIntervalCommandEvent,
                   let player = self.player
             else {
+                return .commandFailed
+            }
+
+            // Only handle if we still own the remote commands
+            guard RemoteCommandManager.shared.isOwner(self.viewId) else {
+                print("⚠️ View \(self.viewId) received skip forward command but is not owner")
                 return .commandFailed
             }
 
@@ -131,12 +200,20 @@ extension VideoPlayerView {
                 return .commandFailed
             }
 
+            // Only handle if we still own the remote commands
+            guard RemoteCommandManager.shared.isOwner(self.viewId) else {
+                print("⚠️ View \(self.viewId) received skip backward command but is not owner")
+                return .commandFailed
+            }
+
             let currentTime = player.currentTime()
             let newTime = CMTimeSubtract(currentTime, CMTime(seconds: skipEvent.interval, preferredTimescale: 600))
             player.seek(to: max(newTime, .zero))
             self.updateNowPlayingPlaybackTime()
             return .success
         }
+
+        print("🎛️ View \(viewId) registered remote command handlers")
     }
 
     /// Updates playback time and rate dynamically (e.g., every second or on state change)
@@ -146,32 +223,17 @@ extension VideoPlayerView {
         }
 
         let isPlaying = player.rate > 0
-        let currentNowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
-        
-        // Check if this player owns the current Now Playing info by comparing titles
-        let ownsNowPlayingInfo: Bool = {
-            guard let currentInfo = currentNowPlayingInfo,
-                  let currentTitle = currentInfo[MPMediaItemPropertyTitle] as? String,
-                  let ourTitle = currentMediaInfo?["title"] as? String else {
-                // If there's no existing info, we can take ownership if we're playing
-                return isPlaying
-            }
-            return currentTitle == ourTitle
-        }()
 
-        // Only allow updates if:
-        // 1. This player is playing (active players always have priority), OR
-        // 2. This player owns the current Now Playing info (can update our own info even when paused)
-        if !isPlaying && !ownsNowPlayingInfo {
-            // This is a paused player that doesn't own the Now Playing info - don't interfere
-            if let ourTitle = currentMediaInfo?["title"] as? String,
-               let currentTitle = currentNowPlayingInfo?[MPMediaItemPropertyTitle] as? String {
-                print("⏸️ [\(ourTitle)] Skipping update - Now Playing is: \(currentTitle)")
+        // Only allow updates if this view owns the remote commands
+        // This prevents multiple views from fighting over Now Playing info
+        guard RemoteCommandManager.shared.isOwner(viewId) else {
+            if isPlaying {
+                print("⚠️ View \(viewId) is playing but doesn't own remote commands")
             }
             return
         }
 
-        var nowPlayingInfo = currentNowPlayingInfo ?? [:]
+        var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
 
         let currentTime = player.currentTime()
         let elapsedSeconds = CMTimeGetSeconds(currentTime)
