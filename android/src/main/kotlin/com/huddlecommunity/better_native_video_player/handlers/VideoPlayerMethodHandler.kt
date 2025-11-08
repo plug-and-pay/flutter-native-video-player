@@ -63,6 +63,7 @@ class VideoPlayerMethodHandler(
             "seekTo" -> handleSeekTo(call, result)
             "setVolume" -> handleSetVolume(call, result)
             "setSpeed" -> handleSetSpeed(call, result)
+            "setLooping" -> handleSetLooping(call, result)
             "setQuality" -> handleSetQuality(call, result)
             "getAvailableQualities" -> handleGetAvailableQualities(result)
             "enterFullScreen" -> handleEnterFullScreen(result)
@@ -255,6 +256,23 @@ class VideoPlayerMethodHandler(
         if (speed != null) {
             player.setPlaybackSpeed(speed.toFloat())
             eventHandler.sendEvent("speedChange", mapOf("speed" to speed))
+        }
+        result.success(null)
+    }
+
+    /**
+     * Sets whether the video should loop
+     */
+    private fun handleSetLooping(call: MethodCall, result: MethodChannel.Result) {
+        val args = call.arguments as? Map<*, *>
+        val looping = args?.get("looping") as? Boolean
+        if (looping != null) {
+            player.repeatMode = if (looping) {
+                androidx.media3.common.Player.REPEAT_MODE_ONE
+            } else {
+                androidx.media3.common.Player.REPEAT_MODE_OFF
+            }
+            Log.d(TAG, "Looping set to: $looping")
         }
         result.success(null)
     }

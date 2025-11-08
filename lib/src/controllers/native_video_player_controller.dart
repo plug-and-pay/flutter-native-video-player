@@ -45,6 +45,7 @@ class NativeVideoPlayerController {
     this.canStartPictureInPictureAutomatically = true,
     this.lockToLandscape = true,
     this.enableHDR = false,
+    this.enableLooping = false,
     List<DeviceOrientation>? preferredOrientations,
   }) {
     // Set preferred orientations if provided
@@ -118,6 +119,10 @@ class NativeVideoPlayerController {
   /// Whether to enable HDR playback (default: false)
   /// When set to false, HDR is disabled to prevent washed-out/too-white video appearance
   final bool enableHDR;
+
+  /// Whether to enable video looping (default: false)
+  /// When set to true, the video will automatically restart from the beginning when it reaches the end
+  final bool enableLooping;
 
   /// BuildContext getter for showing Dart fullscreen dialog
   /// Returns a mounted context from any registered platform view
@@ -684,6 +689,7 @@ class NativeVideoPlayerController {
         !_hasCustomOverlay, // Hide native controls if we have custom overlay
     'isFullScreen': _state.isFullScreen,
     'enableHDR': enableHDR,
+    'enableLooping': enableLooping,
     if (mediaInfo != null) 'mediaInfo': mediaInfo!.toMap(),
   };
 
@@ -1234,6 +1240,11 @@ class NativeVideoPlayerController {
   /// Sets the playback speed
   Future<void> setSpeed(double speed) async {
     await _methodChannel?.setSpeed(speed);
+  }
+
+  /// Sets whether the video should loop
+  Future<void> setLooping(bool looping) async {
+    await _methodChannel?.setLooping(looping);
   }
 
   /// Sets the video quality
