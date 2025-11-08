@@ -1144,18 +1144,20 @@ class NativeVideoPlayerController {
     }
   }
 
-  /// Loads a video URL into the already initialized player
+  /// Loads a video URL or local file into the already initialized player
   ///
   /// Must be called after the platform view is created and channels are set up.
   /// This method loads the video URL on the native side and fetches available qualities.
   /// If multiple platform views are using this controller, they will all sync to the same video.
   ///
   /// **Parameters:**
-  /// - url: Video URL to play (supports HLS and direct video URLs)
+  /// - url: Video URL to play (supports HLS, MP4, and local file:// URIs)
   /// - headers: Optional HTTP headers to include with the video request (e.g., {"Referer": "domain"})
   ///
   /// **Returns:**
   /// A Future that completes when the video is loaded
+  ///
+  /// **Note:** For better clarity, consider using [loadUrl] for remote videos or [loadFile] for local files.
   Future<void> load({required String url, Map<String, String>? headers}) async {
     if (_state.activityState.isLoaded) {
       return;
@@ -1208,6 +1210,65 @@ class NativeVideoPlayerController {
     } catch (e) {
       rethrow;
     }
+  }
+
+  /// Loads a remote video URL into the player
+  ///
+  /// This is a convenience method that explicitly loads a remote video URL.
+  /// Supports HLS streams (.m3u8), MP4, and other formats supported by the native player.
+  ///
+  /// **Parameters:**
+  /// - url: Remote video URL (e.g., "https://example.com/video.mp4")
+  /// - headers: Optional HTTP headers to include with the video request
+  ///
+  /// **Example:**
+  /// ```dart
+  /// // Load HLS stream
+  /// await controller.loadUrl(
+  ///   url: 'https://example.com/video.m3u8',
+  /// );
+  ///
+  /// // Load MP4 with custom headers
+  /// await controller.loadUrl(
+  ///   url: 'https://example.com/video.mp4',
+  ///   headers: {'Referer': 'https://example.com'},
+  /// );
+  /// ```
+  Future<void> loadUrl({
+    required String url,
+    Map<String, String>? headers,
+  }) async {
+    return load(url: url, headers: headers);
+  }
+
+  /// Loads a local video file into the player
+  ///
+  /// This is a convenience method for loading videos from device storage.
+  /// Automatically handles the file:// URI scheme construction.
+  ///
+  /// **Parameters:**
+  /// - path: Absolute path to the local video file
+  ///
+  /// **Example:**
+  /// ```dart
+  /// // Android
+  /// await controller.loadFile(
+  ///   path: '/storage/emulated/0/DCIM/video.mp4',
+  /// );
+  ///
+  /// // iOS
+  /// await controller.loadFile(
+  ///   path: '/var/mobile/Media/DCIM/100APPLE/video.MOV',
+  /// );
+  /// ```
+  ///
+  /// **Note:** The path should be an absolute path to the file.
+  /// For accessing app documents or bundle resources, use the appropriate
+  /// path_provider methods to get the correct paths.
+  Future<void> loadFile({required String path}) async {
+    // Construct file:// URI if not already provided
+    final fileUrl = path.startsWith('file://') ? path : 'file://$path';
+    return load(url: fileUrl);
   }
 
   /// Starts or resumes video playback

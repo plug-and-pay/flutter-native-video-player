@@ -46,18 +46,42 @@ The plugin supports various video formats through native platform players:
 - **App Bundle**: Videos bundled with your app (iOS: via `NSBundle`, Android: via assets or external storage)
 
 ### Examples
+
+#### Remote Videos
 ```dart
-// HLS stream
+// HLS stream with quality selection
+await controller.loadUrl(url: 'https://example.com/video.m3u8');
+
+// MP4 video
+await controller.loadUrl(url: 'https://example.com/video.mp4');
+
+// With custom headers
+await controller.loadUrl(
+  url: 'https://example.com/video.mp4',
+  headers: {'Referer': 'https://example.com'},
+);
+```
+
+#### Local Files
+```dart
+// Android - Load from external storage
+await controller.loadFile(path: '/storage/emulated/0/DCIM/video.mp4');
+
+// iOS - Load from app documents
+await controller.loadFile(path: '/var/mobile/Media/DCIM/100APPLE/video.MOV');
+
+// Using path_provider
+import 'package:path_provider/path_provider.dart';
+
+final directory = await getApplicationDocumentsDirectory();
+await controller.loadFile(path: '${directory.path}/my_video.mp4');
+```
+
+#### Generic Method (Backward Compatible)
+```dart
+// The generic load() method also works with both URLs and file:// URIs
 await controller.load(url: 'https://example.com/video.m3u8');
-
-// MP4 URL
-await controller.load(url: 'https://example.com/video.mp4');
-
-// Local file (absolute path)
-await controller.load(url: 'file:///storage/emulated/0/DCIM/video.mp4');
-
-// iOS bundle file
-await controller.load(url: 'file:///var/mobile/Containers/Bundle/Application/.../video.mp4');
+await controller.load(url: 'file:///path/to/video.mp4');
 ```
 
 **Note**: Quality selection and adaptive streaming are only available for HLS streams. Other formats play at their native quality.
@@ -198,20 +222,26 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // Initialize
     await _controller.initialize();
 
-    // Load video - Supports multiple formats:
-    // HLS stream
-    await _controller.load(
+    // Load video - Multiple options:
+
+    // Option 1: Load remote URL (HLS stream)
+    await _controller.loadUrl(
       url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
     );
 
-    // Or MP4 URL
-    // await _controller.load(
+    // Option 2: Load remote URL (MP4 video)
+    // await _controller.loadUrl(
     //   url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
     // );
 
-    // Or local file
+    // Option 3: Load local file from device storage
+    // await _controller.loadFile(
+    //   path: '/storage/emulated/0/DCIM/video.mp4',
+    // );
+
+    // Option 4: Generic load method (also supported)
     // await _controller.load(
-    //   url: 'file:///path/to/local/video.mp4',
+    //   url: 'https://example.com/video.m3u8',
     // );
   }
 
@@ -897,14 +927,23 @@ NativeVideoPlayer(
 
 #### Methods
 
+**Initialization:**
 - `Future<void> initialize()` - Initialize the controller
-- `Future<void> load({required String url, Map<String, String>? headers})` - Load video URL with optional HTTP headers
+
+**Loading Videos:**
+- `Future<void> load({required String url, Map<String, String>? headers})` - Load video URL or file (generic method, backward compatible)
+- `Future<void> loadUrl({required String url, Map<String, String>? headers})` - Load remote video URL with optional HTTP headers
+- `Future<void> loadFile({required String path})` - Load local video file from device storage
+
+**Playback Control:**
 - `Future<void> play()` - Start playback
 - `Future<void> pause()` - Pause playback
 - `Future<void> seekTo(Duration position)` - Seek to position
 - `Future<void> setVolume(double volume)` - Set volume (0.0-1.0)
 - `Future<void> setSpeed(double speed)` - Set playback speed
 - `Future<void> setQuality(NativeVideoPlayerQuality quality)` - Set video quality
+
+**Display Modes:**
 - `Future<bool> isPictureInPictureAvailable()` - Check if PiP is available on device
 - `Future<bool> enterPictureInPicture()` - Enter Picture-in-Picture mode
 - `Future<bool> exitPictureInPicture()` - Exit Picture-in-Picture mode
