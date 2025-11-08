@@ -295,7 +295,7 @@ import QuartzCore
 
     /// Cleans up remote command ownership, attempting to transfer to another view if possible
     /// This is called from both deinit and handleDispose to avoid duplication
-    private func cleanupRemoteCommandOwnership() {
+    func cleanupRemoteCommandOwnership() {
         // Only proceed if this view owns the remote commands
         guard RemoteCommandManager.shared.isOwner(viewId) else {
             return
