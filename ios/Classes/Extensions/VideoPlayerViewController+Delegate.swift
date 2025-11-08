@@ -4,11 +4,14 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
     public func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
         print("🎬 PiP will start (AVPlayerViewController delegate - automatic or system triggered)")
 
-        // ALWAYS set Now Playing info when PiP starts to ensure correct media controls
+        // Ensure this view owns the remote commands when entering PiP
+        // This is critical because the PiP window needs working media controls
         if let mediaInfo = currentMediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
-            print("📱 Setting Now Playing info for PiP start: \(title)")
+            print("📱 Setting Now Playing info and remote commands for PiP start: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
+        } else {
+            print("⚠️ No media info available for PiP - media controls may not work")
         }
 
         sendEvent("pipStart", data: ["isPictureInPicture": true])
@@ -21,11 +24,14 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
     public func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
         print("🎬 PiP did stop (AVPlayerViewController delegate)")
 
-        // ALWAYS set Now Playing info when PiP stops to ensure correct media controls
+        // Re-establish ownership and Now Playing info when PiP stops
+        // This ensures media controls continue working after exiting PiP
         if let mediaInfo = currentMediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
-            print("📱 Setting Now Playing info for PiP stop: \(title)")
+            print("📱 Re-establishing Now Playing info and remote commands for PiP stop: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
+        } else {
+            print("⚠️ No media info available after PiP stop")
         }
 
         sendEvent("pipStop", data: ["isPictureInPicture": false])
@@ -80,11 +86,14 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
         playerViewController.view.isHidden = false
         playerViewController.view.alpha = 1.0
 
-        // ALWAYS set Now Playing info when PiP starts to ensure correct media controls
+        // Ensure this view owns the remote commands when entering PiP
+        // This is critical because the PiP window needs working media controls
         if let mediaInfo = currentMediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
-            print("📱 Setting Now Playing info for custom PiP start: \(title)")
+            print("📱 Setting Now Playing info and remote commands for custom PiP start: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
+        } else {
+            print("⚠️ No media info available for custom PiP - media controls may not work")
         }
 
         sendEvent("pipStart", data: ["isPictureInPicture": true])
@@ -114,11 +123,14 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
         playerViewController.view.isHidden = false
         playerViewController.view.alpha = 1.0
 
-        // ALWAYS set Now Playing info when PiP stops to ensure correct media controls
+        // Re-establish ownership and Now Playing info when PiP stops
+        // This ensures media controls continue working after exiting PiP
         if let mediaInfo = currentMediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
-            print("📱 Setting Now Playing info for custom PiP stop: \(title)")
+            print("📱 Re-establishing Now Playing info and remote commands for custom PiP stop: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
+        } else {
+            print("⚠️ No media info available after custom PiP stop")
         }
 
         sendEvent("pipStop", data: ["isPictureInPicture": false])

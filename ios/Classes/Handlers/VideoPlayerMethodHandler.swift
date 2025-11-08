@@ -3,6 +3,7 @@ import AVFoundation
 import AVKit
 import MediaPlayer
 
+// Add reference to VideoPlayerView in the extension scope
 extension VideoPlayerView {
 
     func handleLoad(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -555,6 +556,9 @@ extension VideoPlayerView {
         // Pause the player first
         player?.pause()
         print("⏸️ [VideoPlayerMethodHandler] Player paused")
+
+        // Clean up remote command ownership (transfer to another view if possible)
+        cleanupRemoteCommandOwnership()
 
         // Remove from shared manager if this is a shared player
         if let controllerId = controllerId {
