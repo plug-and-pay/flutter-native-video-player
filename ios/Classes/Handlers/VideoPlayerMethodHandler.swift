@@ -32,8 +32,13 @@ extension VideoPlayerView {
 
         sendEvent("loading")
 
-        // Fetch qualities (async)
-        VideoPlayerQualityHandler.fetchHLSQualities(from: url) { [weak self] qualities in
+        // Determine if this is likely an HLS stream
+        let isHls = isHlsUrl(url)
+        print("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
+
+        // Fetch qualities (async) only for HLS streams
+        if isHls {
+            VideoPlayerQualityHandler.fetchHLSQualities(from: url) { [weak self] qualities in
             guard let self = self else { return }
 
             self.qualityLevels = qualities
@@ -71,6 +76,9 @@ extension VideoPlayerView {
                     qualityLevels: qualities
                 )
             }
+            }
+        } else {
+            print("🎬 Skipping quality fetch for non-HLS content")
         }
 
         // --- Build player item ---
@@ -312,6 +320,20 @@ extension VideoPlayerView {
             result(nil)
         } else {
             result(FlutterError(code: "INVALID_SPEED", message: "Invalid speed value", details: nil))
+        }
+    }
+
+    func handleSetLooping(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        if let args = call.arguments as? [String: Any],
+           let looping = args["looping"] as? Bool {
+            print("Setting looping to: \(looping)")
+
+            // Update the enableLooping property
+            enableLooping = looping
+
+            result(nil)
+        } else {
+            result(FlutterError(code: "INVALID_LOOPING", message: "Invalid looping value", details: nil))
         }
     }
 
@@ -793,5 +815,28 @@ extension VideoPlayerView {
                 ])
             }
         }
+    }
+
+    /// Determines if a URL is an HLS stream
+    /// Checks for .m3u8 extension or common HLS patterns
+    private func isHlsUrl(_ url: URL) -> Bool {
+        let urlString = url.absoluteString.lowercased()
+
+        // Check for .m3u8 extension (most reliable indicator)
+        if urlString.contains(".m3u8") {
+            return true
+        }
+
+        // Check for /hls/ as a path segment (not substring to avoid false positives like "english")
+        if urlString.range(of: "/hls/", options: .regularExpression) != nil {
+            return true
+        }
+
+        // Check for manifest in path
+        if urlString.contains("manifest.m3u8") {
+            return true
+        }
+
+        return false
     }
 }

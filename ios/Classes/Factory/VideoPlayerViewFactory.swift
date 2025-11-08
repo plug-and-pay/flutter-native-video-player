@@ -9,7 +9,7 @@ import UIKit
         let factory = VideoPlayerViewFactory(messenger: registrar.messenger())
         registrar.register(factory, withId: "native_video_player")
         print("NativeVideoPlayerPlugin registered with id: native_video_player")
-        
+
         // Register a method handler at the plugin level to forward calls to the appropriate view
         let channel = FlutterMethodChannel(name: "native_video_player", binaryMessenger: registrar.messenger())
         channel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
@@ -20,6 +20,28 @@ import UIKit
                 view.handleMethodCall(call: call, result: result)
             } else {
                 result(FlutterError(code: "NO_VIEW", message: "No view found for method call", details: nil))
+            }
+        }
+
+        // Register asset resolution channel
+        let assetChannel = FlutterMethodChannel(name: "native_video_player/assets", binaryMessenger: registrar.messenger())
+        assetChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
+            if call.method == "resolveAssetPath" {
+                if let args = call.arguments as? [String: Any],
+                   let assetKey = args["assetKey"] as? String {
+                    // Flutter assets are bundled in the app's main bundle
+                    let key = registrar.lookupKey(forAsset: assetKey)
+                    if let path = Bundle.main.path(forResource: key, ofType: nil) {
+                        print("Resolved asset '\(assetKey)' to '\(path)'")
+                        result(path)
+                    } else {
+                        result(FlutterError(code: "ASSET_NOT_FOUND", message: "Asset not found: \(assetKey)", details: nil))
+                    }
+                } else {
+                    result(FlutterError(code: "INVALID_ARGUMENT", message: "Asset key is required", details: nil))
+                }
+            } else {
+                result(FlutterMethodNotImplemented)
             }
         }
     }

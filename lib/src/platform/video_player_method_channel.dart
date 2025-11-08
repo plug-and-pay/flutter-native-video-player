@@ -93,6 +93,18 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Sets whether the video should loop
+  Future<void> setLooping(bool looping) async {
+    try {
+      await _methodChannel.invokeMethod<void>('setLooping', <String, Object>{
+        'viewId': primaryPlatformViewId,
+        'looping': looping,
+      });
+    } catch (e) {
+      debugPrint('Error calling setLooping: $e');
+    }
+  }
+
   /// Sets the video quality
   Future<void> setQuality(NativeVideoPlayerQuality quality) async {
     try {

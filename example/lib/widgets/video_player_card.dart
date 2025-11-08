@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:better_native_video_player/better_native_video_player.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/video_item.dart';
 import 'custom_video_overlay.dart';
@@ -38,6 +39,7 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
         id: widget.video.id,
         autoPlay: false,
         lockToLandscape: false,
+        enableLooping: widget.video.shouldLoop,
         mediaInfo: NativeVideoPlayerMediaInfo(
           title: widget.video.title,
           subtitle: widget.video.description,
@@ -68,9 +70,23 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
 
     try {
       await _controller!.initialize();
-      await _controller!.load(url: widget.video.url);
 
-      debugPrint('VideoPlayerCard ${widget.video.id}: Video loaded!');
+      // Check if this is a Flutter asset (starts with 'assets/')
+      if (widget.video.url.startsWith('assets/')) {
+        // Flutter assets are extracted to the app's asset directory
+        // We need to get the actual file path using the asset lookup
+        final String assetPath = await _resolveAssetPath(widget.video.url);
+
+        // Load the asset file directly using loadFile
+        await _controller!.loadFile(path: assetPath);
+        debugPrint(
+          'VideoPlayerCard ${widget.video.id}: Asset loaded from $assetPath',
+        );
+      } else {
+        // Load remote URL or file path directly
+        await _controller!.load(url: widget.video.url);
+        debugPrint('VideoPlayerCard ${widget.video.id}: URL loaded!');
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -80,6 +96,28 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
       }
       debugPrint('VideoPlayerCard ${widget.video.id} init error: $e');
     }
+  }
+
+  /// Resolves a Flutter asset path to an absolute file path
+  Future<String> _resolveAssetPath(String assetKey) async {
+    // Use a platform-specific channel to resolve the asset path
+    const MethodChannel channel = MethodChannel('native_video_player/assets');
+
+    try {
+      final String? resolvedPath = await channel.invokeMethod<String>(
+        'resolveAssetPath',
+        {'assetKey': assetKey},
+      );
+
+      if (resolvedPath != null && resolvedPath.isNotEmpty) {
+        return resolvedPath;
+      }
+    } catch (e) {
+      debugPrint('Asset path resolution failed: $e');
+    }
+
+    // Fallback: just return the asset key and let the native side handle it
+    return assetKey;
   }
 
   @override

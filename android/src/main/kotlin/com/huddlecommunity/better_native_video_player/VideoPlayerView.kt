@@ -16,6 +16,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -112,6 +113,10 @@ class VideoPlayerView(
         enableHDR = args?.get("enableHDR") as? Boolean ?: false
         Log.d(TAG, "HDR setting: $enableHDR")
 
+        // Extract looping setting from args
+        val enableLooping = args?.get("enableLooping") as? Boolean ?: false
+        Log.d(TAG, "Looping setting: $enableLooping")
+
         // For shared players, try to get PiP settings from SharedPlayerManager
         // This ensures PiP settings persist across all views using the same controller
         if (controllerId != null) {
@@ -167,6 +172,14 @@ class VideoPlayerView(
             isSharedPlayer = false
             ExoPlayer.Builder(context).build()
         }
+
+        // Set repeat mode for looping
+        player.repeatMode = if (enableLooping) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
+        Log.d(TAG, "Repeat mode set to: ${if (enableLooping) "REPEAT_MODE_ONE (looping enabled)" else "REPEAT_MODE_OFF (looping disabled)"}")
 
         // Create PlayerView and attach player
         val showNativeControls = args?.get("showNativeControls") as? Boolean ?: true

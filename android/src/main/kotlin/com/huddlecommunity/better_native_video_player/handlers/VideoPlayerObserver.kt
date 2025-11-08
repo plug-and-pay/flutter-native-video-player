@@ -95,10 +95,17 @@ class VideoPlayerObserver(
                 }
             }
             Player.STATE_ENDED -> {
-                // Reset video to the beginning and pause
-                player.seekTo(0)
-                player.pause()
-                eventHandler.sendEvent("completed")
+                // When looping is enabled with REPEAT_MODE_ONE, this state shouldn't be reached
+                // as ExoPlayer handles looping internally. However, handle it for safety.
+                // Check actual repeat mode instead of stale enableLooping parameter
+                if (player.repeatMode != Player.REPEAT_MODE_ONE) {
+                    // Reset video to the beginning and pause
+                    player.seekTo(0)
+                    player.pause()
+                    eventHandler.sendEvent("completed")
+                }
+                // Don't send completed event when looping (repeat mode is ON)
+                // This ensures consistent behavior even if setLooping() was called after observer init
             }
         }
     }

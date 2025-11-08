@@ -46,6 +46,9 @@ import QuartzCore
     // Store HDR setting
     var enableHDR: Bool = false
 
+    // Store looping setting
+    var enableLooping: Bool = false
+
     public init(
         frame: CGRect,
         viewIdentifier viewId: Int64,
@@ -106,6 +109,9 @@ import QuartzCore
 
             // HDR configuration from args
             enableHDR = args["enableHDR"] as? Bool ?? false
+
+            // Looping configuration from args
+            enableLooping = args["enableLooping"] as? Bool ?? false
 
             // For shared players, try to get PiP settings from SharedPlayerManager
             // This ensures PiP settings persist across all views using the same controller
@@ -234,6 +240,8 @@ import QuartzCore
             handleSetVolume(call: call, result: result)
         case "setSpeed":
             handleSetSpeed(call: call, result: result)
+        case "setLooping":
+            handleSetLooping(call: call, result: result)
         case "setQuality":
             handleSetQuality(call: call, result: result)
         case "getAvailableQualities":
