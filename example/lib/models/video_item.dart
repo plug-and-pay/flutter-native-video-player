@@ -4,6 +4,7 @@ class VideoItem {
   final String description;
   final String url;
   final String artworkUrl;
+  final bool shouldLoop;
 
   VideoItem({
     required this.id,
@@ -11,6 +12,7 @@ class VideoItem {
     required this.description,
     required this.url,
     required this.artworkUrl,
+    this.shouldLoop = false,
   });
 
   static List<VideoItem> getSampleVideos() {
@@ -22,6 +24,7 @@ class VideoItem {
             'A large and lovable rabbit deals with three tiny bullies, led by a flying squirrel, who are determined to squelch his happiness.',
         url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
         artworkUrl: 'https://picsum.photos/id/1/200/300',
+        shouldLoop: true,
       ),
       VideoItem(
         id: 2,

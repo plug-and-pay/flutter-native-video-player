@@ -38,6 +38,7 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
         id: widget.video.id,
         autoPlay: false,
         lockToLandscape: false,
+        enableLooping: widget.video.shouldLoop,
         mediaInfo: NativeVideoPlayerMediaInfo(
           title: widget.video.title,
           subtitle: widget.video.description,
