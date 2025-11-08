@@ -20,8 +20,17 @@ class VideoItem {
         title: 'Big Buck Bunny (MP4)',
         description:
             'A large and lovable rabbit deals with three tiny bullies. This is a direct MP4 URL example.',
-        url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+        url:
+            'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
         artworkUrl: 'https://picsum.photos/id/1/200/300',
+      ),
+      VideoItem(
+        id: 14,
+        title: 'Elephant Dream (Local File)',
+        description:
+            'Local file test - The first open movie from the Blender Foundation loaded from app assets.',
+        url: 'assets/ElephantsDream.mp4',
+        artworkUrl: 'https://picsum.photos/id/14/200/300',
       ),
       VideoItem(
         id: 2,
