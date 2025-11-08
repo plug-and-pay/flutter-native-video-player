@@ -534,12 +534,33 @@ extension VideoPlayerView {
         player?.pause()
         print("⏸️ [VideoPlayerMethodHandler] Player paused")
 
-        // Clean up remote command ownership if this view owns it
+        // Transfer remote command ownership if this view owns it
         if RemoteCommandManager.shared.isOwner(viewId) {
-            print("🎛️ Disposing view \(viewId) that owns remote commands - clearing")
-            RemoteCommandManager.shared.clearOwner(viewId)
-            RemoteCommandManager.shared.removeAllTargets()
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            print("🎛️ Disposing view \(viewId) that owns remote commands - attempting transfer")
+
+            // Try to transfer ownership to another view with the same controller
+            var ownershipTransferred = false
+            if let controllerIdValue = controllerId,
+               let alternativeView = SharedPlayerManager.shared.findAnotherViewForController(controllerIdValue, excluding: viewId) {
+                print("🎛️ Transferring ownership to view \(alternativeView.viewId)")
+
+                // Transfer ownership by setting up Now Playing info on the alternative view
+                if let mediaInfo = alternativeView.currentMediaInfo {
+                    alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
+                    ownershipTransferred = true
+                    print("✅ Ownership transferred to view \(alternativeView.viewId)")
+                } else {
+                    print("⚠️ Alternative view has no media info - cannot transfer")
+                }
+            }
+
+            // If no transfer was possible, clear everything
+            if !ownershipTransferred {
+                print("🗑️ No transfer possible - clearing ownership and Now Playing info")
+                RemoteCommandManager.shared.clearOwner(viewId)
+                RemoteCommandManager.shared.removeAllTargets()
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            }
         }
 
         // Remove from shared manager if this is a shared player

@@ -402,15 +402,33 @@ import QuartzCore
     deinit {
         print("VideoPlayerView deinit for channel: \(channelName), viewId: \(viewId)")
 
-        // Clean up remote command ownership if this view owns it
+        // Transfer remote command ownership if this view owns it
         if RemoteCommandManager.shared.isOwner(viewId) {
-            print("🎛️ View \(viewId) owned remote commands - clearing ownership and targets")
-            RemoteCommandManager.shared.clearOwner(viewId)
-            RemoteCommandManager.shared.removeAllTargets()
+            print("🎛️ View \(viewId) owned remote commands - attempting transfer")
 
-            // Clear Now Playing info when the owning view is disposed
-            print("🗑️ Clearing Now Playing info (owner view disposed)")
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            // Try to transfer ownership to another view with the same controller
+            var ownershipTransferred = false
+            if let controllerIdValue = controllerId,
+               let alternativeView = SharedPlayerManager.shared.findAnotherViewForController(controllerIdValue, excluding: viewId) {
+                print("🎛️ Transferring ownership to view \(alternativeView.viewId)")
+
+                // Transfer ownership by setting up Now Playing info on the alternative view
+                if let mediaInfo = alternativeView.currentMediaInfo {
+                    alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
+                    ownershipTransferred = true
+                    print("✅ Ownership transferred to view \(alternativeView.viewId)")
+                } else {
+                    print("⚠️ Alternative view has no media info - cannot transfer")
+                }
+            }
+
+            // If no transfer was possible, clear everything
+            if !ownershipTransferred {
+                print("🗑️ No transfer possible - clearing ownership and Now Playing info")
+                RemoteCommandManager.shared.clearOwner(viewId)
+                RemoteCommandManager.shared.removeAllTargets()
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            }
         }
 
         // Handle automatic PiP transfer for shared players

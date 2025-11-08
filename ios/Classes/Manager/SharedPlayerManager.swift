@@ -183,7 +183,27 @@ class SharedPlayerManager {
         videoPlayerViews.removeValue(forKey: key)
         print("   → Unregistered view with ID \(viewId), remaining views: \(videoPlayerViews.count)")
     }
-    
+
+    /// Find another active view for a given controller (excluding a specific viewId)
+    /// Returns the view instance if found, nil otherwise
+    func findAnotherViewForController(_ controllerId: Int, excluding excludedViewId: Int64) -> VideoPlayerView? {
+        // Clean up nil/deallocated views first
+        videoPlayerViews = videoPlayerViews.filter { $0.value.view != nil }
+
+        // Find another view with the same controller
+        for (viewKey, wrapper) in videoPlayerViews {
+            if let view = wrapper.view,
+               view.controllerId == controllerId,
+               view.viewId != excludedViewId {
+                print("   🔍 Found alternative view \(view.viewId) for controller \(controllerId)")
+                return view
+            }
+        }
+
+        print("   ⚠️ No alternative view found for controller \(controllerId)")
+        return nil
+    }
+
     /// Check if a controller is currently the active one for automatic PiP
     func isControllerActiveForAutoPiP(_ controllerId: Int) -> Bool {
         return controllerWithAutomaticPiP == controllerId
