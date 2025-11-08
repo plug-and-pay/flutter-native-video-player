@@ -9,6 +9,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -42,6 +43,7 @@ class VideoPlayerMethodHandler(
     private var isAutoQuality = false
     private var lastBitrateCheck = 0L
     private val bitrateCheckInterval = 5000L // 5 seconds
+    private var currentVideoIsHls = false // Track if current video is HLS for quality switching
 
     // Callback to handle fullscreen requests from Flutter
     var onFullscreenRequest: ((Boolean) -> Unit)? = null
@@ -105,9 +107,22 @@ class VideoPlayerMethodHandler(
 
         eventHandler.sendEvent("loading")
 
-        // Build data source factory with custom headers if provided
-        val dataSourceFactory = DefaultHttpDataSource.Factory().apply {
-            headers?.let { setDefaultRequestProperties(it) }
+        // Determine if this is a local file or remote URL
+        val isLocalFile = url.startsWith("file://") || url.startsWith("/")
+        val isHls = isHlsUrl(url)
+        currentVideoIsHls = isHls // Track for quality switching
+
+        Log.d(TAG, "Video source type - Local: $isLocalFile, HLS: $isHls")
+
+        // Build data source factory
+        // For remote URLs with custom headers, use HTTP-specific data source
+        // For local files, use DefaultDataSource which supports file:// URIs
+        val finalDataSourceFactory = if (!isLocalFile && headers != null) {
+            DefaultHttpDataSource.Factory().apply {
+                setDefaultRequestProperties(headers)
+            }
+        } else {
+            DefaultDataSource.Factory(context)
         }
 
         // Build MediaItem with metadata
@@ -126,13 +141,15 @@ class VideoPlayerMethodHandler(
         val mediaItem = mediaItemBuilder.build()
 
         // Create appropriate MediaSource based on URL type
-        val mediaSource: MediaSource = if (url.contains(".m3u8")) {
+        val mediaSource: MediaSource = if (isHls) {
             // HLS stream
-            HlsMediaSource.Factory(dataSourceFactory)
+            Log.d(TAG, "Creating HLS media source")
+            HlsMediaSource.Factory(finalDataSourceFactory)
                 .createMediaSource(mediaItem)
         } else {
-            // Progressive download (MP4, etc.)
-            ProgressiveMediaSource.Factory(dataSourceFactory)
+            // Progressive download/playback (MP4, local files, etc.)
+            Log.d(TAG, "Creating progressive media source")
+            ProgressiveMediaSource.Factory(finalDataSourceFactory)
                 .createMediaSource(mediaItem)
         }
 
@@ -281,9 +298,15 @@ class VideoPlayerMethodHandler(
      * Changes video quality (for HLS streams)
      */
     private fun handleSetQuality(call: MethodCall, result: MethodChannel.Result) {
+        // Check if current video is HLS before attempting quality switch
+        if (!currentVideoIsHls) {
+            result.error("NOT_HLS", "Quality switching is only available for HLS streams", null)
+            return
+        }
+
         val args = call.arguments as? Map<*, *>
         val qualityInfo = args?.get("quality") as? Map<*, *>
-        
+
         if (qualityInfo == null) {
             result.error("INVALID_QUALITY", "Invalid quality data", null)
             return
@@ -321,7 +344,8 @@ class VideoPlayerMethodHandler(
             val currentPosition = player.currentPosition
 
             // Build new media source
-            val dataSourceFactory = DefaultHttpDataSource.Factory()
+            // Use DefaultDataSource for consistency with load method
+            val dataSourceFactory = DefaultDataSource.Factory(context)
             val mediaItem = MediaItem.fromUri(url)
             val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(mediaItem)
@@ -363,7 +387,8 @@ class VideoPlayerMethodHandler(
         val currentPosition = player.currentPosition
 
         // Build new media source
-        val dataSourceFactory = DefaultHttpDataSource.Factory()
+        // Use DefaultDataSource for consistency with load method
+        val dataSourceFactory = DefaultDataSource.Factory(context)
         val mediaItem = MediaItem.fromUri(url)
         val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
             .createMediaSource(mediaItem)
@@ -564,5 +589,26 @@ class VideoPlayerMethodHandler(
     private fun checkAndSendAirPlayAvailability() {
         Log.d(TAG, "📡 AirPlay availability check: false (Android)")
         eventHandler.sendEvent("airPlayAvailabilityChanged", mapOf("isAvailable" to false))
+    }
+
+    /**
+     * Determines if a URL is an HLS stream
+     * Checks for .m3u8 extension or common HLS patterns
+     */
+    private fun isHlsUrl(url: String): Boolean {
+        val lowerUrl = url.lowercase()
+        // Check for .m3u8 extension (most reliable indicator)
+        if (lowerUrl.contains(".m3u8")) {
+            return true
+        }
+        // Check for /hls/ as a path segment (not substring to avoid false positives like "english")
+        if (Regex("/hls/").containsMatchIn(lowerUrl)) {
+            return true
+        }
+        // Check for manifest in path
+        if (lowerUrl.contains("manifest.m3u8")) {
+            return true
+        }
+        return false
     }
 }

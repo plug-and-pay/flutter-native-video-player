@@ -7,6 +7,8 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 ## Features
 
 - ✅ Native video players: **AVPlayerViewController** on iOS and **ExoPlayer (Media3)** on Android
+- ✅ **Multiple video formats**: HLS streams (.m3u8), MP4, and other common formats
+- ✅ **Local file support**: Play videos from device storage using file:// URIs
 - ✅ **HLS streaming** support with adaptive quality selection
 - ✅ **Picture-in-Picture (PiP)** mode on both platforms with automatic state management
 - ✅ **AirPlay** support on iOS with availability detection and connection events
@@ -29,6 +31,60 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 |----------|----------------|
 | iOS      | 12.0+          |
 | Android  | API 24+ (Android 7.0) |
+
+## Supported Video Formats
+
+The plugin supports various video formats through native platform players:
+
+### Remote URLs
+- **HLS Streams (.m3u8)**: Adaptive streaming with quality selection
+- **MP4 Videos**: Direct MP4 video URLs
+- **Other formats**: Any format supported by the native player (MP4, MOV, M4V on iOS; MP4, WebM, MKV on Android)
+
+### Local Files
+- **Device Storage**: Videos stored on device using `file://` URIs
+- **App Bundle**: Videos bundled with your app (iOS: via `NSBundle`, Android: via assets or external storage)
+
+### Examples
+
+#### Remote Videos
+```dart
+// HLS stream with quality selection
+await controller.loadUrl(url: 'https://example.com/video.m3u8');
+
+// MP4 video
+await controller.loadUrl(url: 'https://example.com/video.mp4');
+
+// With custom headers
+await controller.loadUrl(
+  url: 'https://example.com/video.mp4',
+  headers: {'Referer': 'https://example.com'},
+);
+```
+
+#### Local Files
+```dart
+// Android - Load from external storage
+await controller.loadFile(path: '/storage/emulated/0/DCIM/video.mp4');
+
+// iOS - Load from app documents
+await controller.loadFile(path: '/var/mobile/Media/DCIM/100APPLE/video.MOV');
+
+// Using path_provider
+import 'package:path_provider/path_provider.dart';
+
+final directory = await getApplicationDocumentsDirectory();
+await controller.loadFile(path: '${directory.path}/my_video.mp4');
+```
+
+#### Generic Method (Backward Compatible)
+```dart
+// The generic load() method also works with both URLs and file:// URIs
+await controller.load(url: 'https://example.com/video.m3u8');
+await controller.load(url: 'file:///path/to/video.mp4');
+```
+
+**Note**: Quality selection and adaptive streaming are only available for HLS streams. Other formats play at their native quality.
 
 ## Installation
 
@@ -166,10 +222,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // Initialize
     await _controller.initialize();
 
-    // Load video
-    await _controller.load(
+    // Load video - Multiple options:
+
+    // Option 1: Load remote URL (HLS stream)
+    await _controller.loadUrl(
       url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
     );
+
+    // Option 2: Load remote URL (MP4 video)
+    // await _controller.loadUrl(
+    //   url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    // );
+
+    // Option 3: Load local file from device storage
+    // await _controller.loadFile(
+    //   path: '/storage/emulated/0/DCIM/video.mp4',
+    // );
+
+    // Option 4: Generic load method (also supported)
+    // await _controller.load(
+    //   url: 'https://example.com/video.m3u8',
+    // );
   }
 
   void _handlePlayerEvent(NativeVideoPlayerEvent event) {
@@ -854,14 +927,23 @@ NativeVideoPlayer(
 
 #### Methods
 
+**Initialization:**
 - `Future<void> initialize()` - Initialize the controller
-- `Future<void> load({required String url, Map<String, String>? headers})` - Load video URL with optional HTTP headers
+
+**Loading Videos:**
+- `Future<void> load({required String url, Map<String, String>? headers})` - Load video URL or file (generic method, backward compatible)
+- `Future<void> loadUrl({required String url, Map<String, String>? headers})` - Load remote video URL with optional HTTP headers
+- `Future<void> loadFile({required String path})` - Load local video file from device storage
+
+**Playback Control:**
 - `Future<void> play()` - Start playback
 - `Future<void> pause()` - Pause playback
 - `Future<void> seekTo(Duration position)` - Seek to position
 - `Future<void> setVolume(double volume)` - Set volume (0.0-1.0)
 - `Future<void> setSpeed(double speed)` - Set playback speed
 - `Future<void> setQuality(NativeVideoPlayerQuality quality)` - Set video quality
+
+**Display Modes:**
 - `Future<bool> isPictureInPictureAvailable()` - Check if PiP is available on device
 - `Future<bool> enterPictureInPicture()` - Enter Picture-in-Picture mode
 - `Future<bool> exitPictureInPicture()` - Exit Picture-in-Picture mode
@@ -1130,11 +1212,14 @@ print('Duration: ${_controller.duration}');
 
 **Test with known working URLs:**
 ```dart
-// Apple's test HLS stream
-const testUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+// HLS stream (with quality selection)
+const hlsUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 
-// Big Buck Bunny
-const testUrl = 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+// MP4 video (direct playback)
+const mp4Url = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+
+// Another MP4 example
+const mp4Url2 = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4';
 ```
 
 **Platform-specific issues:**
