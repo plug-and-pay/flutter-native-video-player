@@ -312,8 +312,7 @@ class VideoPlayerView(
             getMediaInfo = { currentMediaInfo },
             controllerId = controllerId,
             viewId = viewId,
-            canStartPictureInPictureAutomatically = canStartPictureInPictureAutomatically,
-            enableLooping = enableLooping
+            canStartPictureInPictureAutomatically = canStartPictureInPictureAutomatically
         )
         player.addListener(observer)
 

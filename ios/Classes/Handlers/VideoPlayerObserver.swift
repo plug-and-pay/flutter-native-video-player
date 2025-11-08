@@ -197,8 +197,8 @@ extension VideoPlayerView {
                     self?.player?.play()
                 }
             }
-            // Still send completed event for tracking purposes
-            sendEvent("completed")
+            // Don't send completed event when looping to match Android behavior
+            // (Android with REPEAT_MODE_ONE doesn't reach STATE_ENDED)
         } else {
             // Reset video to the beginning and pause
             player?.seek(to: .zero)
