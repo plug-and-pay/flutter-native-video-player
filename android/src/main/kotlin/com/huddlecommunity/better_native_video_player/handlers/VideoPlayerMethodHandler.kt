@@ -43,6 +43,7 @@ class VideoPlayerMethodHandler(
     private var isAutoQuality = false
     private var lastBitrateCheck = 0L
     private val bitrateCheckInterval = 5000L // 5 seconds
+    private var currentVideoIsHls = false // Track if current video is HLS for quality switching
 
     // Callback to handle fullscreen requests from Flutter
     var onFullscreenRequest: ((Boolean) -> Unit)? = null
@@ -108,30 +109,19 @@ class VideoPlayerMethodHandler(
         // Determine if this is a local file or remote URL
         val isLocalFile = url.startsWith("file://") || url.startsWith("/")
         val isHls = isHlsUrl(url)
+        currentVideoIsHls = isHls // Track for quality switching
 
         Log.d(TAG, "Video source type - Local: $isLocalFile, HLS: $isHls")
 
         // Build data source factory
-        // Use DefaultDataSource which supports both local files and HTTP/HTTPS
-        val dataSourceFactory = DefaultDataSource.Factory(context).apply {
-            // For remote URLs with custom headers, configure HTTP data source
-            if (!isLocalFile && headers != null) {
-                val httpDataSourceFactory = DefaultHttpDataSource.Factory().apply {
-                    setDefaultRequestProperties(headers)
-                }
-                // Note: DefaultDataSource.Factory doesn't expose a way to set custom HTTP factory
-                // with headers directly. For local files, headers aren't needed anyway.
-                // For remote files with headers, we'll use a workaround below.
-            }
-        }
-
         // For remote URLs with custom headers, use HTTP-specific data source
+        // For local files, use DefaultDataSource which supports file:// URIs
         val finalDataSourceFactory = if (!isLocalFile && headers != null) {
             DefaultHttpDataSource.Factory().apply {
                 setDefaultRequestProperties(headers)
             }
         } else {
-            dataSourceFactory
+            DefaultDataSource.Factory(context)
         }
 
         // Build MediaItem with metadata
@@ -290,9 +280,15 @@ class VideoPlayerMethodHandler(
      * Changes video quality (for HLS streams)
      */
     private fun handleSetQuality(call: MethodCall, result: MethodChannel.Result) {
+        // Check if current video is HLS before attempting quality switch
+        if (!currentVideoIsHls) {
+            result.error("NOT_HLS", "Quality switching is only available for HLS streams", null)
+            return
+        }
+
         val args = call.arguments as? Map<*, *>
         val qualityInfo = args?.get("quality") as? Map<*, *>
-        
+
         if (qualityInfo == null) {
             result.error("INVALID_QUALITY", "Invalid quality data", null)
             return
@@ -583,8 +579,18 @@ class VideoPlayerMethodHandler(
      */
     private fun isHlsUrl(url: String): Boolean {
         val lowerUrl = url.lowercase()
-        return lowerUrl.contains(".m3u8") ||
-               lowerUrl.contains("/hls/") ||
-               lowerUrl.contains("manifest.m3u8")
+        // Check for .m3u8 extension (most reliable indicator)
+        if (lowerUrl.contains(".m3u8")) {
+            return true
+        }
+        // Check for /hls/ as a path segment (not substring to avoid false positives like "english")
+        if (Regex("/hls/").containsMatchIn(lowerUrl)) {
+            return true
+        }
+        // Check for manifest in path
+        if (lowerUrl.contains("manifest.m3u8")) {
+            return true
+        }
+        return false
     }
 }

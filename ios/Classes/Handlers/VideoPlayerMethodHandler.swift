@@ -803,8 +803,22 @@ extension VideoPlayerView {
     /// Checks for .m3u8 extension or common HLS patterns
     private func isHlsUrl(_ url: URL) -> Bool {
         let urlString = url.absoluteString.lowercased()
-        return urlString.contains(".m3u8") ||
-               urlString.contains("/hls/") ||
-               urlString.contains("manifest.m3u8")
+
+        // Check for .m3u8 extension (most reliable indicator)
+        if urlString.contains(".m3u8") {
+            return true
+        }
+
+        // Check for /hls/ as a path segment (not substring to avoid false positives like "english")
+        if urlString.range(of: "/hls/", options: .regularExpression) != nil {
+            return true
+        }
+
+        // Check for manifest in path
+        if urlString.contains("manifest.m3u8") {
+            return true
+        }
+
+        return false
     }
 }
