@@ -31,8 +31,13 @@ extension VideoPlayerView {
 
         sendEvent("loading")
 
-        // Fetch qualities (async)
-        VideoPlayerQualityHandler.fetchHLSQualities(from: url) { [weak self] qualities in
+        // Determine if this is likely an HLS stream
+        let isHls = isHlsUrl(url)
+        print("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
+
+        // Fetch qualities (async) only for HLS streams
+        if isHls {
+            VideoPlayerQualityHandler.fetchHLSQualities(from: url) { [weak self] qualities in
             guard let self = self else { return }
 
             self.qualityLevels = qualities
@@ -70,6 +75,9 @@ extension VideoPlayerView {
                     qualityLevels: qualities
                 )
             }
+            }
+        } else {
+            print("🎬 Skipping quality fetch for non-HLS content")
         }
 
         // --- Build player item ---
@@ -789,5 +797,14 @@ extension VideoPlayerView {
                 ])
             }
         }
+    }
+
+    /// Determines if a URL is an HLS stream
+    /// Checks for .m3u8 extension or common HLS patterns
+    private func isHlsUrl(_ url: URL) -> Bool {
+        let urlString = url.absoluteString.lowercased()
+        return urlString.contains(".m3u8") ||
+               urlString.contains("/hls/") ||
+               urlString.contains("manifest.m3u8")
     }
 }

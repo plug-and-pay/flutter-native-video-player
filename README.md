@@ -7,6 +7,8 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 ## Features
 
 - ✅ Native video players: **AVPlayerViewController** on iOS and **ExoPlayer (Media3)** on Android
+- ✅ **Multiple video formats**: HLS streams (.m3u8), MP4, and other common formats
+- ✅ **Local file support**: Play videos from device storage using file:// URIs
 - ✅ **HLS streaming** support with adaptive quality selection
 - ✅ **Picture-in-Picture (PiP)** mode on both platforms with automatic state management
 - ✅ **AirPlay** support on iOS with availability detection and connection events
@@ -29,6 +31,36 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 |----------|----------------|
 | iOS      | 12.0+          |
 | Android  | API 24+ (Android 7.0) |
+
+## Supported Video Formats
+
+The plugin supports various video formats through native platform players:
+
+### Remote URLs
+- **HLS Streams (.m3u8)**: Adaptive streaming with quality selection
+- **MP4 Videos**: Direct MP4 video URLs
+- **Other formats**: Any format supported by the native player (MP4, MOV, M4V on iOS; MP4, WebM, MKV on Android)
+
+### Local Files
+- **Device Storage**: Videos stored on device using `file://` URIs
+- **App Bundle**: Videos bundled with your app (iOS: via `NSBundle`, Android: via assets or external storage)
+
+### Examples
+```dart
+// HLS stream
+await controller.load(url: 'https://example.com/video.m3u8');
+
+// MP4 URL
+await controller.load(url: 'https://example.com/video.mp4');
+
+// Local file (absolute path)
+await controller.load(url: 'file:///storage/emulated/0/DCIM/video.mp4');
+
+// iOS bundle file
+await controller.load(url: 'file:///var/mobile/Containers/Bundle/Application/.../video.mp4');
+```
+
+**Note**: Quality selection and adaptive streaming are only available for HLS streams. Other formats play at their native quality.
 
 ## Installation
 
@@ -166,10 +198,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // Initialize
     await _controller.initialize();
 
-    // Load video
+    // Load video - Supports multiple formats:
+    // HLS stream
     await _controller.load(
       url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
     );
+
+    // Or MP4 URL
+    // await _controller.load(
+    //   url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    // );
+
+    // Or local file
+    // await _controller.load(
+    //   url: 'file:///path/to/local/video.mp4',
+    // );
   }
 
   void _handlePlayerEvent(NativeVideoPlayerEvent event) {
@@ -1130,11 +1173,14 @@ print('Duration: ${_controller.duration}');
 
 **Test with known working URLs:**
 ```dart
-// Apple's test HLS stream
-const testUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+// HLS stream (with quality selection)
+const hlsUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 
-// Big Buck Bunny
-const testUrl = 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+// MP4 video (direct playback)
+const mp4Url = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+
+// Another MP4 example
+const mp4Url2 = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4';
 ```
 
 **Platform-specific issues:**
