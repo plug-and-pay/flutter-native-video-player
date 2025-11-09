@@ -445,6 +445,40 @@ import QuartzCore
     deinit {
         print("VideoPlayerView deinit for channel: \(channelName), viewId: \(viewId)")
 
+        // Check if PiP is currently active - if so, we need to handle the transition
+        var isPipActiveNow = false
+        if #available(iOS 14.0, *) {
+            if let pipCtrl = pipController {
+                isPipActiveNow = pipCtrl.isPictureInPictureActive
+            }
+        }
+
+        if isPipActiveNow {
+            print("⚠️ View being disposed while PiP is active - sending pipStop event")
+
+            // Always send pipStop event - either from this view or an alternative
+            if eventSink != nil {
+                // This view still has a listener, send from here
+                sendEvent("pipStop", data: ["isPictureInPicture": false])
+                print("✅ Sent pipStop event from disposing view \(viewId)")
+            } else if let controllerIdValue = controllerId,
+                      let alternativeView = SharedPlayerManager.shared.findAnotherViewForController(controllerIdValue, excluding: viewId),
+                      alternativeView.eventSink != nil {
+                // Send from alternative view if it exists and has a listener
+                alternativeView.sendEvent("pipStop", data: ["isPictureInPicture": false])
+                print("✅ Sent pipStop event from alternative view \(alternativeView.viewId)")
+            } else {
+                print("⚠️ No active view with listener found - pipStop event cannot be sent")
+            }
+
+            // Try to stop PiP gracefully
+            if #available(iOS 14.0, *) {
+                if let pipCtrl = pipController, pipCtrl.isPictureInPictureActive {
+                    pipCtrl.stopPictureInPicture()
+                }
+            }
+        }
+
         // Clean up remote command ownership (transfer to another view if possible)
         cleanupRemoteCommandOwnership()
 

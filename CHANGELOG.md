@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-11-09
+
+### Fixed
+- **iOS Picture-in-Picture Event Delivery**: Fixed issue where PiP stop events could fail when exiting PiP with disposed views
+  - Added `findAllViewsForController()` method to SharedPlayerManager to locate active views for a controller
+  - Enhanced PiP stop event handling to fallback to alternative active views when primary view is disposed
+  - Fixed `pictureInPictureController:restoreUserInterfaceForPictureInPictureStopWithCompletionHandler:` to handle disposed views
+  - Now attempts to find and restore UI on alternative active views with the same controller
+  - Completes with false when no active view exists, allowing iOS to exit PiP gracefully
+  - Added PiP state detection in `deinit` to send pipStop events before view disposal
+  - Ensures pipStop events are always delivered when exiting PiP, even with disposed or inactive views
+  - Prevents app crashes or inconsistent state when exiting PiP after navigating away from video view
+
 ## [0.3.0] - 2025-11-08
 
 ### Added

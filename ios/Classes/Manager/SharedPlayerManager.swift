@@ -204,6 +204,23 @@ class SharedPlayerManager {
         return nil
     }
 
+    /// Find all active views for a given controller
+    /// Returns an array of view instances
+    func findAllViewsForController(_ controllerId: Int) -> [VideoPlayerView] {
+        // Clean up nil/deallocated views first
+        videoPlayerViews = videoPlayerViews.filter { $0.value.view != nil }
+
+        var views: [VideoPlayerView] = []
+        for (_, wrapper) in videoPlayerViews {
+            if let view = wrapper.view, view.controllerId == controllerId {
+                views.append(view)
+            }
+        }
+
+        print("   🔍 Found \(views.count) view(s) for controller \(controllerId)")
+        return views
+    }
+
     /// Check if a controller is currently the active one for automatic PiP
     func isControllerActiveForAutoPiP(_ controllerId: Int) -> Bool {
         return controllerWithAutomaticPiP == controllerId
