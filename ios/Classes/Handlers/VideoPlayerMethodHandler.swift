@@ -757,11 +757,9 @@ extension VideoPlayerView {
             }
 
             // Start PiP using the controller
-            // Wait a brief moment for the controller to be ready if just created
-            let shouldWait = pipController?.isPictureInPicturePossible == false
-            let delay: TimeInterval = shouldWait ? 0.1 : 0.0
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            // Always wait a brief moment for the controller to be ready
+            // This ensures isPictureInPicturePossible is updated before we check it
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 guard let self = self else {
                     result(FlutterError(code: "DISPOSED", message: "View was disposed", details: nil))
                     return

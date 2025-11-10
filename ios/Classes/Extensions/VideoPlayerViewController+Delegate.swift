@@ -404,6 +404,27 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             alternativeView.playerViewController.view.isHidden = false
             alternativeView.playerViewController.view.alpha = 1.0
 
+            // CRITICAL: Re-establish Now Playing info and remote command ownership
+            // This ensures media controls work after restoring from PiP
+            var mediaInfo = alternativeView.currentMediaInfo
+
+            // Fallback: Try to retrieve from SharedPlayerManager if not available
+            if mediaInfo == nil {
+                mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+                if mediaInfo != nil {
+                    print("📱 Retrieved media info from SharedPlayerManager for PiP restore")
+                    alternativeView.currentMediaInfo = mediaInfo // Update local copy
+                }
+            }
+
+            if let mediaInfo = mediaInfo {
+                let title = mediaInfo["title"] ?? "Unknown"
+                print("📱 Re-establishing Now Playing info for PiP restore: \(title)")
+                alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
+            } else {
+                print("⚠️ No media info available for PiP restore")
+            }
+
             // The alternative view should send pipStop event via its delegate
             // We complete with success since we found an alternative
             completionHandler(true)
