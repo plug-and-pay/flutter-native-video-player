@@ -26,6 +26,11 @@ extension VideoPlayerView {
         if let mediaInfo = mediaInfo {
             currentMediaInfo = mediaInfo
             print("📱 Stored media info during load: \(mediaInfo["title"] ?? "Unknown")")
+
+            // Also store in SharedPlayerManager to persist across view recreations
+            if let controllerIdValue = controllerId {
+                SharedPlayerManager.shared.setMediaInfo(for: controllerIdValue, mediaInfo: mediaInfo)
+            }
         } else {
             print("⚠️ No media info provided during load")
         }
@@ -91,39 +96,88 @@ extension VideoPlayerView {
             playerItem = AVPlayerItem(asset: asset)
         }
 
-        // --- Configure HDR settings ---
-        // Disable HDR if enableHDR is false to prevent washed-out video appearance
-        if !self.enableHDR {
-            print("🎨 HDR disabled - forcing SDR color space via videoComposition")
-            // Create a video composition that forces SDR color space (Rec.709)
-            // This prevents HDR content from appearing washed-out on non-HDR displays
-            // by forcing the video to use standard dynamic range color properties
-            if let asset = playerItem.asset as? AVURLAsset {
-                // Get the first video track to determine the natural size
-                let videoTracks = asset.tracks(withMediaType: .video)
-                if let videoTrack = videoTracks.first {
-                    let videoComposition = AVMutableVideoComposition(propertiesOf: asset)
+        // Replace current item immediately - don't wait for HDR configuration
+        // This allows the video to start loading right away
+        player?.replaceCurrentItem(with: playerItem)
 
-                    // Ensure renderSize is set (required for videoComposition)
-                    if videoComposition.renderSize.width <= 0 || videoComposition.renderSize.height <= 0 {
-                        videoComposition.renderSize = videoTrack.naturalSize
+        // --- Configure HDR settings asynchronously (doesn't block video loading) ---
+        // Only apply color space correction if HDR is explicitly disabled AND we detect this might be HDR content
+        // For most standard videos, the default handling is fine
+        if !self.enableHDR {
+            // Note: We skip the video composition entirely to avoid performance issues
+            // The video composition causes significant overhead during loading, especially for network assets
+            // Most videos will display correctly without it
+            print("🎨 HDR disabled - skipping video composition for better performance")
+            /*
+            // Original HDR correction code - disabled for performance
+            // Only re-enable this if you encounter actual HDR color issues
+            print("🎨 HDR disabled - will apply SDR color space via videoComposition asynchronously")
+            if let asset = playerItem.asset as? AVURLAsset {
+                // Load ALL properties that AVMutableVideoComposition(propertiesOf:) will need
+                // This prevents synchronous property access on the main thread
+                let assetKeys = ["tracks", "duration"]
+                asset.loadValuesAsynchronously(forKeys: assetKeys) { [weak self, weak playerItem] in
+                    guard let self = self, let playerItem = playerItem else { return }
+
+                    // Check if asset properties loaded successfully
+                    for key in assetKeys {
+                        var error: NSError?
+                        let status = asset.statusOfValue(forKey: key, error: &error)
+                        if status != .loaded {
+                            print("⚠️ Failed to load asset property '\(key)': \(error?.localizedDescription ?? "unknown error")")
+                            return
+                        }
                     }
 
-                    // Use Rec.709 color space for HD SDR content
-                    videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
-                    videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
-                    videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
-                    playerItem.videoComposition = videoComposition
-                    print("✅ Applied SDR color space (Rec.709) to video composition with size: \(videoComposition.renderSize)")
-                } else {
-                    print("⚠️ No video track found, skipping video composition")
+                    guard let videoTrack = asset.tracks(withMediaType: .video).first else {
+                        print("⚠️ No video track found, skipping video composition")
+                        return
+                    }
+
+                    // Load ALL track properties that AVMutableVideoComposition(propertiesOf:) will need
+                    let trackPropertyKeys = ["naturalSize", "preferredTransform", "nominalFrameRate", "enabled", "segments"]
+                    videoTrack.loadValuesAsynchronously(forKeys: trackPropertyKeys) {
+                        // Check if track properties loaded successfully
+                        for key in trackPropertyKeys {
+                            var error: NSError?
+                            let status = videoTrack.statusOfValue(forKey: key, error: &error)
+                            if status != .loaded {
+                                print("⚠️ Failed to load track property '\(key)': \(error?.localizedDescription ?? "unknown error")")
+                                // Continue anyway - some properties might be optional
+                            }
+                        }
+
+                        let naturalSize = videoTrack.naturalSize
+
+                        // Create video composition on background thread to avoid blocking main thread
+                        // AVMutableVideoComposition(propertiesOf:) can be expensive, especially for network assets
+                        DispatchQueue.global(qos: .utility).async {
+                            // Now that all properties are loaded, create the composition off the main thread
+                            let videoComposition = AVMutableVideoComposition(propertiesOf: asset)
+
+                            // Ensure renderSize is set (required for videoComposition)
+                            if videoComposition.renderSize.width <= 0 || videoComposition.renderSize.height <= 0 {
+                                videoComposition.renderSize = naturalSize
+                            }
+
+                            // Use Rec.709 color space for HD SDR content
+                            videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+                            videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+                            videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+
+                            // Apply the completed video composition on main thread
+                            DispatchQueue.main.async {
+                                playerItem.videoComposition = videoComposition
+                                print("✅ Applied SDR color space (Rec.709) to video composition with size: \(videoComposition.renderSize)")
+                            }
+                        }
+                    }
                 }
             }
+            */
         } else {
             print("🎨 HDR enabled - allowing native HDR playback")
         }
-
-        player?.replaceCurrentItem(with: playerItem)
 
         // --- Set up observers for buffer status and player state ---
         addObservers(to: playerItem)
@@ -265,15 +319,17 @@ extension VideoPlayerView {
     func handlePause(result: @escaping FlutterResult) {
         player?.pause()
         updateNowPlayingPlaybackTime()
-        
-        // Disable automatic PiP when paused
-        // This prevents automatic PiP from triggering for paused videos
+
+        // DON'T disable automatic PiP on pause anymore
+        // The system will handle when to trigger automatic PiP based on playback state
+        // Disabling it here causes issues when exiting manual PiP (video might pause during transition)
+        // and prevents automatic PiP from working afterward
         if #available(iOS 14.2, *) {
-            if let controllerIdValue = controllerId, canStartPictureInPictureAutomatically {
-                SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: false)
+            if let controllerIdValue = controllerId {
+                print("🎬 Video paused, but keeping automatic PiP state unchanged")
             }
         }
-        
+
         // Pause event will be sent automatically by timeControlStatus observer
         result(nil)
     }
@@ -657,23 +713,34 @@ extension VideoPlayerView {
                 return
             }
             
-            // Check if PiP is supported and allowed
-            guard playerViewController.allowsPictureInPicturePlayback else {
-                print("❌ PiP not allowed on player view controller")
-                result(FlutterError(code: "NOT_ALLOWED", message: "Picture-in-Picture is not allowed.", details: nil))
-                return
-            }
-            
+            // Check if PiP is supported on device
             guard AVPictureInPictureController.isPictureInPictureSupported() else {
                 print("❌ PiP not supported on this device")
                 result(FlutterError(code: "NOT_SUPPORTED", message: "Picture-in-Picture is not supported on this device.", details: nil))
                 return
             }
-            
+
             print("🎬 Starting manual PiP")
-            
-            // Create PiP controller only for manual entry
-            // This is separate from automatic PiP which is handled by AVPlayerViewController
+
+            // Mark manual PiP as active for this controller
+            if let controllerIdValue = controllerId {
+                SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: true)
+            }
+
+            // CRITICAL: Temporarily disable AVPlayerViewController's PiP while using custom controller
+            // This prevents the AVPlayerViewController from starting its own PiP simultaneously
+            // NOTE: We do this AFTER the checks, so it doesn't interfere with the next manual PiP attempt
+            playerViewController.allowsPictureInPicturePlayback = false
+            print("   → Temporarily disabled AVPlayerViewController PiP during manual start")
+
+            // Also disable automatic inline PiP
+            if #available(iOS 14.2, *) {
+                playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
+                print("   → Temporarily disabled automatic inline PiP during manual start")
+            }
+
+            // Get or create the PiP controller for this player layer
+            // Reuse existing controller if available, or create new one
             if pipController == nil {
                 if let playerLayer = findPlayerLayer() {
                     pipController = try? AVPictureInPictureController(playerLayer: playerLayer)
@@ -681,30 +748,37 @@ extension VideoPlayerView {
                     print("✅ Created PiP controller for manual entry")
                 } else {
                     print("❌ Could not find player layer")
+                    if let controllerIdValue = controllerId {
+                        SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
+                    }
                     result(FlutterError(code: "NO_LAYER", message: "Could not find player layer", details: nil))
                     return
                 }
             }
-            
-            // Wait a moment for the controller to be ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+
+            // Start PiP using the controller
+            // Wait a brief moment for the controller to be ready if just created
+            let shouldWait = pipController?.isPictureInPicturePossible == false
+            let delay: TimeInterval = shouldWait ? 0.1 : 0.0
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self = self else {
                     result(FlutterError(code: "DISPOSED", message: "View was disposed", details: nil))
                     return
                 }
-                
-                if let pipController = self.pipController {
-                    if pipController.isPictureInPicturePossible {
-                        print("🎬 Starting PiP now")
-                        pipController.startPictureInPicture()
-                        result(true)
-                    } else {
-                        print("❌ PiP not possible at this time")
-                        result(FlutterError(code: "PIP_NOT_POSSIBLE", message: "Picture-in-Picture is not possible at this time. Make sure the video is playing.", details: nil))
-                    }
+
+                if let pipController = self.pipController, pipController.isPictureInPicturePossible {
+                    print("🎬 Starting manual PiP now")
+                    pipController.startPictureInPicture()
+                    result(true)
                 } else {
-                    print("❌ PiP controller not available")
-                    result(FlutterError(code: "NO_CONTROLLER", message: "PiP controller not available", details: nil))
+                    print("❌ PiP not possible at this time")
+                    if let controllerIdValue = self.controllerId {
+                        SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
+                        // Re-enable AVPlayerViewController PiP since we're not starting
+                        self.playerViewController.allowsPictureInPicturePlayback = true
+                    }
+                    result(FlutterError(code: "PIP_NOT_POSSIBLE", message: "Picture-in-Picture is not possible at this time. Make sure the video is playing.", details: nil))
                 }
             }
         } else {

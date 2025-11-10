@@ -44,7 +44,7 @@ class NativeVideoPlayerController {
     this.allowsPictureInPicture = true,
     this.canStartPictureInPictureAutomatically = true,
     this.lockToLandscape = true,
-    this.enableHDR = false,
+    this.enableHDR = true,
     this.enableLooping = false,
     List<DeviceOrientation>? preferredOrientations,
   }) {
@@ -282,10 +282,6 @@ class NativeVideoPlayerController {
       // This ensures listeners added before duration was available receive the state
       if (oldState.duration == Duration.zero &&
           newState.duration != Duration.zero) {
-        debugPrint(
-          '🎯 Duration became available! Notifying all ${_controlEventHandlers.length} control listeners',
-        );
-
         // Notify all control listeners with time update event
         if (_controlEventHandlers.isNotEmpty) {
           final currentControlEvent = PlayerControlEvent(
@@ -503,29 +499,17 @@ class NativeVideoPlayerController {
   void addActivityListener(void Function(PlayerActivityEvent) listener) {
     if (!_activityEventHandlers.contains(listener)) {
       _activityEventHandlers.add(listener);
-      debugPrint(
-        '👂 Added activity listener. Total listeners: ${_activityEventHandlers.length}',
-      );
 
       // Immediately notify the new listener of the current state
       // This ensures listeners added after initialization receive the current state
       // We check if we have valid state rather than just _isInitialized
       if (!_isDisposed && _state.duration != Duration.zero) {
-        debugPrint(
-          '🔔 Emitting current activity state to new listener: ${_state.activityState}',
-        );
         final currentActivityEvent = PlayerActivityEvent(
           state: _state.activityState,
           data: null,
         );
         listener(currentActivityEvent);
-      } else {
-        debugPrint(
-          '🔕 NOT emitting activity to new listener: _isDisposed=$_isDisposed, duration=${_state.duration}',
-        );
       }
-    } else {
-      debugPrint('⚠️ Activity listener already exists, not adding duplicate');
     }
   }
 
@@ -537,18 +521,12 @@ class NativeVideoPlayerController {
   void addControlListener(void Function(PlayerControlEvent) listener) {
     if (!_controlEventHandlers.contains(listener)) {
       _controlEventHandlers.add(listener);
-      debugPrint(
-        '👂 Added control listener. Total listeners: ${_controlEventHandlers.length}',
-      );
 
       // Immediately notify the new listener with a time update event containing current state
       // This ensures listeners added after initialization receive the current state
       // We check if we have valid state data (duration > 0) rather than just _isInitialized
       // because _isInitialized may be false temporarily during reconnection
       if (!_isDisposed && _state.duration != Duration.zero) {
-        debugPrint(
-          '🔔 Emitting current state to new control listener: position=${_state.currentPosition}, duration=${_state.duration}',
-        );
         final currentControlEvent = PlayerControlEvent(
           state: PlayerControlState.timeUpdated,
           data: {
@@ -572,13 +550,7 @@ class NativeVideoPlayerController {
           );
           listener(qualityEvent);
         }
-      } else {
-        debugPrint(
-          '🔕 NOT emitting to new control listener: _isDisposed=$_isDisposed, duration=${_state.duration}, _isInitialized=$_isInitialized',
-        );
       }
-    } else {
-      debugPrint('⚠️ Control listener already exists, not adding duplicate');
     }
   }
 

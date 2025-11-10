@@ -4,9 +4,41 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
     public func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
         print("🎬 PiP will start (AVPlayerViewController delegate - automatic or system triggered)")
 
+        // Check if manual PiP was just triggered
+        // We use this flag to distinguish between manual and automatic PiP starts
+        let isManualStart = controllerId.flatMap { SharedPlayerManager.shared.isManualPiPActive($0) } ?? false
+        if isManualStart {
+            print("🎬 This is a MANUAL PiP start (user-triggered)")
+        } else {
+            print("🎬 This is an AUTOMATIC PiP start (system-triggered)")
+        }
+
+        // Mark PiP as active
+        isPipCurrentlyActive = true
+
+        // Disable automatic inline PiP while PiP is active
+        // This prevents the system from trying to trigger automatic PiP again
+        if #available(iOS 14.2, *) {
+            if let controllerIdValue = controllerId {
+                print("🎬 Disabling automatic inline PiP (PiP is starting)")
+                SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: false)
+            }
+        }
+
         // Ensure this view owns the remote commands when entering PiP
         // This is critical because the PiP window needs working media controls
-        if let mediaInfo = currentMediaInfo {
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("📱 Retrieved media info from SharedPlayerManager for PiP start")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Setting Now Playing info and remote commands for PiP start: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
@@ -21,12 +53,67 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
         print("🎬 PiP did start (AVPlayerViewController delegate)")
     }
 
+    public func playerViewControllerWillStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        print("🎬 PiP will stop (AVPlayerViewController delegate) on view \(viewId)")
+
+        // Determine if this was a manual or automatic PiP stop
+        let wasManualPiP = controllerId.flatMap { SharedPlayerManager.shared.isManualPiPActive($0) } ?? false
+        if wasManualPiP {
+            print("🎬 This is a MANUAL PiP stop")
+        } else {
+            print("🎬 This is an AUTOMATIC PiP stop")
+        }
+
+        // Send pipStop event BEFORE PiP actually stops
+        // This gives Flutter time to react before the native PiP window closes
+        if eventSink != nil {
+            print("✅ View \(viewId) is active - sending pipStop event (before stop)")
+            sendEvent("pipStop", data: ["isPictureInPicture": false])
+        } else if let controllerIdValue = controllerId {
+            // Try any view for this controller
+            let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+            var eventSent = false
+            for view in allViews where view.eventSink != nil {
+                print("✅ Sending pipStop event to view \(view.viewId) (before stop)")
+                view.sendEvent("pipStop", data: ["isPictureInPicture": false])
+                eventSent = true
+                break
+            }
+            if !eventSent {
+                print("⚠️ No active view with listener found - pipStop event cannot be sent")
+            }
+        }
+    }
+
     public func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
         print("🎬 PiP did stop (AVPlayerViewController delegate) on view \(viewId)")
 
+        // Determine if this was a manual PiP stop
+        let wasManualPiP = controllerId.flatMap { SharedPlayerManager.shared.isManualPiPActive($0) } ?? false
+
+        // Mark PiP as inactive
+        isPipCurrentlyActive = false
+
+        // Clear manual PiP flag if this was a manual PiP session
+        if wasManualPiP, let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
+            print("   → Cleared manual PiP flag for controller \(controllerIdValue)")
+        }
+
         // Re-establish ownership and Now Playing info when PiP stops
         // This ensures media controls continue working after exiting PiP
-        if let mediaInfo = currentMediaInfo {
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("📱 Retrieved media info from SharedPlayerManager for PiP stop")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Re-establishing Now Playing info and remote commands for PiP stop: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
@@ -34,24 +121,27 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
             print("⚠️ No media info available after PiP stop")
         }
 
-        // Always try to send pipStop event
+        // Re-enable automatic PiP if this was a MANUAL PiP session and automatic PiP was requested
+        // For automatic PiP sessions, it will auto re-enable when video plays again
+        if #available(iOS 14.2, *) {
+            if wasManualPiP, let controllerIdValue = controllerId, canStartPictureInPictureAutomatically {
+                print("🎬 Re-enabling automatic PiP after MANUAL PiP stop")
+                SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
+            }
+        }
+
+        // Emit current state to sync UI after PiP stops
+        // Note: pipStop event was already sent in willStopPictureInPicture
         if eventSink != nil {
-            print("✅ View \(viewId) is active - sending pipStop event")
-            sendEvent("pipStop", data: ["isPictureInPicture": false])
+            print("✅ Emitting current state after PiP stop")
             emitCurrentState()
         } else if let controllerIdValue = controllerId {
             // Try any view for this controller
             let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
-            var eventSent = false
             for view in allViews where view.eventSink != nil {
-                print("✅ Sending pipStop event to view \(view.viewId)")
-                view.sendEvent("pipStop", data: ["isPictureInPicture": false])
+                print("✅ Emitting current state to view \(view.viewId) after PiP stop")
                 view.emitCurrentState()
-                eventSent = true
                 break
-            }
-            if !eventSent {
-                print("⚠️ No active view with listener found - pipStop event cannot be sent")
             }
         }
     }
@@ -98,13 +188,36 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
     public func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         print("🎬 Custom PiP controller will start")
 
+        // Mark PiP as active
+        isPipCurrentlyActive = true
+
+        // Disable automatic inline PiP while PiP is active
+        // This prevents the system from trying to trigger automatic PiP again
+        if #available(iOS 14.2, *) {
+            if let controllerIdValue = controllerId {
+                print("🎬 Disabling automatic inline PiP (custom PiP is starting)")
+                SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: false)
+            }
+        }
+
         // Ensure player view stays visible and keeps playing
         playerViewController.view.isHidden = false
         playerViewController.view.alpha = 1.0
 
         // Ensure this view owns the remote commands when entering PiP
         // This is critical because the PiP window needs working media controls
-        if let mediaInfo = currentMediaInfo {
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("📱 Retrieved media info from SharedPlayerManager for custom PiP start")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Setting Now Playing info and remote commands for custom PiP start: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
@@ -129,19 +242,89 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
     }
     
     public func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        print("🎬 Custom PiP controller will stop")
+        print("🎬 Custom PiP controller will stop on view \(viewId)")
+
+        // Send pipStop event BEFORE PiP actually stops
+        // This gives Flutter time to react before the native PiP window closes
+        if eventSink != nil {
+            print("✅ View \(viewId) is active - sending pipStop event (before stop)")
+            sendEvent("pipStop", data: ["isPictureInPicture": false])
+        } else if let controllerIdValue = controllerId {
+            // Try any view for this controller
+            let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+            var eventSent = false
+            for view in allViews where view.eventSink != nil {
+                print("✅ Sending pipStop event to view \(view.viewId) (before stop)")
+                view.sendEvent("pipStop", data: ["isPictureInPicture": false])
+                eventSent = true
+                break
+            }
+            if !eventSent {
+                print("⚠️ No active view with listener found - pipStop event cannot be sent")
+            }
+        }
     }
     
     public func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         print("🎬 Custom PiP controller did stop on view \(viewId)")
 
+        // Check if video was playing before PiP stopped
+        let wasPlaying = player?.rate ?? 0 > 0
+        print("   → Video was playing before stop: \(wasPlaying)")
+
+        // Mark PiP as inactive
+        isPipCurrentlyActive = false
+
         // Ensure player view is visible after exiting PiP
         playerViewController.view.isHidden = false
         playerViewController.view.alpha = 1.0
 
+        // IMPORTANT: Clear manual PiP flag FIRST before re-enabling anything
+        // This allows the automatic PiP system to work again
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
+            print("   → Cleared manual PiP flag for controller \(controllerIdValue)")
+        }
+
+        // CRITICAL: Re-enable AVPlayerViewController's PiP management immediately
+        // This was disabled when manual PiP started to prevent conflicts
+        if let controllerIdValue = controllerId {
+            if let pipSettings = SharedPlayerManager.shared.getPipSettings(for: controllerIdValue) {
+                playerViewController.allowsPictureInPicturePlayback = pipSettings.allowsPictureInPicture
+                print("   → Re-enabled AVPlayerViewController PiP: \(pipSettings.allowsPictureInPicture)")
+            } else {
+                playerViewController.allowsPictureInPicturePlayback = true
+                print("   → Re-enabled AVPlayerViewController PiP (fallback): true")
+            }
+        }
+
+        // CRITICAL: Destroy the custom PiP controller so it doesn't interfere with automatic PiP
+        // The custom controller "owns" the player layer and prevents AVPlayerViewController's
+        // automatic PiP from working on the same layer
+        pipController = nil
+        print("   → Destroyed custom PiP controller to allow automatic PiP")
+
+        // Resume playback if it was playing before
+        // Keep video playing so automatic PiP can trigger when backgrounding
+        if wasPlaying {
+            print("   → Video will resume automatically")
+            // Don't need to manually resume - iOS will handle it
+        }
+
         // Re-establish ownership and Now Playing info when PiP stops
         // This ensures media controls continue working after exiting PiP
-        if let mediaInfo = currentMediaInfo {
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("📱 Retrieved media info from SharedPlayerManager for custom PiP stop")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Re-establishing Now Playing info and remote commands for custom PiP stop: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
@@ -149,24 +332,41 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             print("⚠️ No media info available after custom PiP stop")
         }
 
-        // Always try to send pipStop event
+        // Re-enable automatic PiP ALWAYS if automatic PiP was requested
+        // Don't check if playing - let the system handle it
+        if #available(iOS 14.2, *) {
+            if let controllerIdValue = controllerId {
+                print("🎬 Checking if should re-enable automatic PiP:")
+                print("   - controllerId: \(controllerIdValue)")
+                print("   - view.canStartPictureInPictureAutomatically: \(canStartPictureInPictureAutomatically)")
+                print("   - viewId: \(viewId)")
+
+                // Check both the view's setting AND the shared settings
+                if canStartPictureInPictureAutomatically {
+                    print("🎬 Re-enabling automatic PiP after custom PiP stop (from view property)")
+                    SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
+                } else if let pipSettings = SharedPlayerManager.shared.getPipSettings(for: controllerIdValue),
+                          pipSettings.canStartPictureInPictureAutomatically {
+                    print("🎬 Re-enabling automatic PiP after custom PiP stop (from shared settings)")
+                    SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
+                } else {
+                    print("⚠️ NOT re-enabling automatic PiP - neither view nor shared settings allow it")
+                }
+            }
+        }
+
+        // Emit current state to sync UI after PiP stops
+        // Note: pipStop event was already sent in willStopPictureInPicture
         if eventSink != nil {
-            print("✅ View \(viewId) is active - sending pipStop event")
-            sendEvent("pipStop", data: ["isPictureInPicture": false])
+            print("✅ Emitting current state after custom PiP stop")
             emitCurrentState()
         } else if let controllerIdValue = controllerId {
             // Try any view for this controller
             let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
-            var eventSent = false
             for view in allViews where view.eventSink != nil {
-                print("✅ Sending pipStop event to view \(view.viewId)")
-                view.sendEvent("pipStop", data: ["isPictureInPicture": false])
+                print("✅ Emitting current state to view \(view.viewId) after custom PiP stop")
                 view.emitCurrentState()
-                eventSent = true
                 break
-            }
-            if !eventSent {
-                print("⚠️ No active view with listener found - pipStop event cannot be sent")
             }
         }
     }

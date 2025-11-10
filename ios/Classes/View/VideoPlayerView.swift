@@ -20,7 +20,10 @@ import QuartzCore
     let bitrateCheckInterval: TimeInterval = 5.0 // Check every 5 seconds
     var controllerId: Int?
     var pipController: AVPictureInPictureController?
-    
+
+    // Track if PiP is currently active (for both automatic and manual PiP)
+    var isPipCurrentlyActive: Bool = false
+
     // Store the platform view ID for registration
     var viewId: Int64 = 0
     
@@ -155,6 +158,11 @@ import QuartzCore
             if let mediaInfo = args["mediaInfo"] as? [String: Any] {
                 currentMediaInfo = mediaInfo
                 print("📱 Stored media info during init: \(mediaInfo["title"] ?? "Unknown")")
+
+                // Also store in SharedPlayerManager to persist across view recreations
+                if let controllerIdValue = controllerId {
+                    SharedPlayerManager.shared.setMediaInfo(for: controllerIdValue, mediaInfo: mediaInfo)
+                }
             }
         }
         
@@ -165,15 +173,21 @@ import QuartzCore
 
             // If this controller is currently the one with automatic PiP enabled,
             // this new view should become the primary view and get automatic PiP
+            // BUT ONLY if manual PiP is not active
             if #available(iOS 14.2, *) {
                 if SharedPlayerManager.shared.isControllerActiveForAutoPiP(controllerIdValue) {
                     print("🎬 This controller is currently active for auto PiP")
                     if canStartPictureInPictureAutomatically {
-                        // Set this new view as the primary view
-                        SharedPlayerManager.shared.setPrimaryView(viewId, for: controllerIdValue)
-                        // Re-apply automatic PiP settings to enable it on this new view
-                        SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
-                        print("   → Set new view as primary and enabled automatic PiP (viewId: \(viewId))")
+                        // Check if manual PiP is active - if so, skip re-enabling automatic PiP
+                        if SharedPlayerManager.shared.isManualPiPActive(controllerIdValue) {
+                            print("   ⚠️ Skipping automatic PiP re-enable - manual PiP is active")
+                        } else {
+                            // Set this new view as the primary view
+                            SharedPlayerManager.shared.setPrimaryView(viewId, for: controllerIdValue)
+                            // Re-apply automatic PiP settings to enable it on this new view
+                            SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
+                            print("   → Set new view as primary and enabled automatic PiP (viewId: \(viewId))")
+                        }
                     }
                 }
             }
@@ -445,13 +459,8 @@ import QuartzCore
     deinit {
         print("VideoPlayerView deinit for channel: \(channelName), viewId: \(viewId)")
 
-        // Check if PiP is currently active - if so, we need to handle the transition
-        var isPipActiveNow = false
-        if #available(iOS 14.0, *) {
-            if let pipCtrl = pipController {
-                isPipActiveNow = pipCtrl.isPictureInPictureActive
-            }
-        }
+        // Use the isPipCurrentlyActive flag to check if PiP is active
+        let isPipActiveNow = isPipCurrentlyActive
 
         if isPipActiveNow {
             print("⚠️ View being disposed while PiP is active - sending pipStop event")
@@ -541,8 +550,25 @@ import QuartzCore
         NotificationCenter.default.removeObserver(self)
         methodChannel.setMethodCallHandler(nil)
 
-        // Clear current media info
+        // Clear current media info from this view
+        // BUT do NOT clear from SharedPlayerManager if PiP is active
+        // This ensures media controls survive view disposal during PiP
         currentMediaInfo = nil
+        if !isPipActiveNow {
+            // Only clear from SharedPlayerManager if PiP is NOT active
+            if let controllerIdValue = controllerId {
+                // But first check if there are other views using this controller
+                let otherViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+                if otherViews.count <= 1 {
+                    // This is the last view, safe to clear media info
+                    print("🧹 Clearing media info from SharedPlayerManager (last view)")
+                } else {
+                    print("📱 Keeping media info in SharedPlayerManager (other views exist)")
+                }
+            }
+        } else {
+            print("📱 Keeping media info in SharedPlayerManager (PiP is active)")
+        }
 
         // Note: player and playerViewController are NOT disposed here
         // They remain in SharedPlayerManager for reuse

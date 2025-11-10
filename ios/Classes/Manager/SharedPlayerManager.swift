@@ -15,6 +15,10 @@ class SharedPlayerManager {
     /// Only one controller should have automatic PiP active at a time
     private var controllerWithAutomaticPiP: Int?
 
+    /// Track which controllers have MANUAL PiP active
+    /// This prevents automatic PiP from interfering with manual PiP
+    private var controllersWithManualPiP: Set<Int> = []
+
     /// Track which view ID is the PRIMARY (most recently played) view for each controller
     /// This ensures we enable PiP on the correct view when multiple views exist (list + detail)
     private var primaryViewIdForController: [Int: Int64] = [:]
@@ -35,6 +39,10 @@ class SharedPlayerManager {
 
     /// Store quality levels for each controller
     private var qualityLevelsCache: [Int: [VideoPlayer.QualityLevel]] = [:]
+
+    /// Store media info for each controller
+    /// This ensures media info persists across view recreations and during PiP transitions
+    private var mediaInfoCache: [Int: [String: Any]] = [:]
 
     struct PipSettings {
         let allowsPictureInPicture: Bool
@@ -91,6 +99,23 @@ class SharedPlayerManager {
     /// Returns nil if no quality levels have been stored for this controller
     func getQualityLevels(for controllerId: Int) -> [VideoPlayer.QualityLevel]? {
         return qualityLevelsCache[controllerId]
+    }
+
+    /// Sets media info for a controller
+    /// This ensures media info persists across view recreations and during PiP transitions
+    func setMediaInfo(for controllerId: Int, mediaInfo: [String: Any]) {
+        mediaInfoCache[controllerId] = mediaInfo
+        if let title = mediaInfo["title"] as? String {
+            print("   ✅ Stored media info for controller \(controllerId): \(title)")
+        } else {
+            print("   ✅ Stored media info for controller \(controllerId)")
+        }
+    }
+
+    /// Gets media info for a controller
+    /// Returns nil if no media info has been stored for this controller
+    func getMediaInfo(for controllerId: Int) -> [String: Any]? {
+        return mediaInfoCache[controllerId]
     }
 
     /// Stops and clears player from all views using this controller
@@ -150,10 +175,16 @@ class SharedPlayerManager {
         qualitiesCache.removeValue(forKey: controllerId)
         qualityLevelsCache.removeValue(forKey: controllerId)
 
+        // Remove media info cache
+        mediaInfoCache.removeValue(forKey: controllerId)
+
         // If this was the controller with automatic PiP, clear it
         if controllerWithAutomaticPiP == controllerId {
             controllerWithAutomaticPiP = nil
         }
+
+        // Clear manual PiP flag
+        controllersWithManualPiP.remove(controllerId)
 
         print("✅ [SharedPlayerManager] Fully removed player for controller ID: \(controllerId)")
     }
@@ -166,7 +197,9 @@ class SharedPlayerManager {
         pipSettings.removeAll()
         qualitiesCache.removeAll()
         qualityLevelsCache.removeAll()
+        mediaInfoCache.removeAll()
         controllerWithAutomaticPiP = nil
+        controllersWithManualPiP.removeAll()
     }
     
     /// Register a VideoPlayerView instance
@@ -225,6 +258,22 @@ class SharedPlayerManager {
     func isControllerActiveForAutoPiP(_ controllerId: Int) -> Bool {
         return controllerWithAutomaticPiP == controllerId
     }
+
+    /// Mark that manual PiP is active for a controller
+    func setManualPiPActive(_ controllerId: Int, active: Bool) {
+        if active {
+            controllersWithManualPiP.insert(controllerId)
+            print("🎬 Marked controller \(controllerId) as having manual PiP active")
+        } else {
+            controllersWithManualPiP.remove(controllerId)
+            print("🎬 Cleared manual PiP flag for controller \(controllerId)")
+        }
+    }
+
+    /// Check if manual PiP is active for a controller
+    func isManualPiPActive(_ controllerId: Int) -> Bool {
+        return controllersWithManualPiP.contains(controllerId)
+    }
     
     /// Set the primary (currently playing) view for a controller
     /// This should be called whenever play() is called on a view
@@ -259,6 +308,12 @@ class SharedPlayerManager {
         }
         
         if enabled {
+            // Check if manual PiP is active for this controller
+            if isManualPiPActive(controllerId) {
+                print("⚠️ Cannot enable automatic PiP for controller \(controllerId) - manual PiP is active")
+                return
+            }
+
             // Disable automatic PiP on all other controllers first
             if let previousControllerId = controllerWithAutomaticPiP, previousControllerId != controllerId {
                 print("🎬 Disabling automatic PiP for controller \(previousControllerId)")
@@ -291,6 +346,11 @@ class SharedPlayerManager {
             if let primaryViewId = primaryViewIdForController[controllerId] {
                 let key = "\(primaryViewId)"
                 if let wrapper = videoPlayerViews[key], let view = wrapper.view {
+                    print("   🔍 Checking primary view \(primaryViewId):")
+                    print("      - view.canStartPictureInPictureAutomatically: \(view.canStartPictureInPictureAutomatically)")
+                    print("      - playerViewController.allowsPictureInPicturePlayback: \(view.playerViewController.allowsPictureInPicturePlayback)")
+                    print("      - player rate: \(view.player?.rate ?? -1)")
+
                     if view.canStartPictureInPictureAutomatically {
                         let wasBefore = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
                         view.playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
@@ -332,8 +392,14 @@ class SharedPlayerManager {
                     print("   ⚠️ No available view found for controller \(controllerId) that allows automatic PiP")
                 }
             }
-            
-            controllerWithAutomaticPiP = controllerId
+
+            // Only set controllerWithAutomaticPiP if we actually enabled a view
+            if enabledOnView {
+                controllerWithAutomaticPiP = controllerId
+                print("   ✅ Set controller \(controllerId) as the active automatic PiP controller")
+            } else {
+                print("   ⚠️ Not setting as active automatic PiP controller - no view was enabled")
+            }
         } else {
             // Disable automatic PiP for ALL platform views of the specified controller
             print("🎬 Disabling automatic PiP for controller \(controllerId)")

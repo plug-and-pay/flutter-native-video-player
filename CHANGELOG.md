@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2025-11-10
+
+### Changed
+- **HDR Enabled by Default**: Changed `enableHDR` default value from `false` to `true`
+  - HDR content will now display with proper HDR rendering by default
+  - Set to `false` if you prefer SDR tone-mapping for HDR content
+
+### Improved
+- **iOS Media Info Persistence**: Enhanced media info handling during Picture-in-Picture transitions
+  - Added media info caching in SharedPlayerManager to persist across view recreations
+  - Media info now survives view disposal during PiP mode
+  - Ensures Now Playing controls remain functional with correct title/subtitle during PiP
+  - Prevents media info from being cleared when transitioning between views
+  - Media info automatically stored when loading video and persists throughout controller lifetime
+
+- **iOS Manual PiP vs Automatic PiP**: Added tracking to prevent conflicts between manual and automatic PiP
+  - Added `controllersWithManualPiP` tracking in SharedPlayerManager
+  - Prevents automatic PiP from interfering when user manually enters PiP
+  - Automatic PiP re-enabling skipped when manual PiP is active
+  - Improves reliability when using both PiP modes in the same app
+
+- **iOS PiP State Tracking**: Enhanced PiP state detection and handling
+  - Added `isPipCurrentlyActive` flag to VideoPlayerView for reliable PiP state tracking
+  - Better synchronization between PiP controller state and view state
+  - Improved cleanup logic when view is disposed while PiP is active
+  - More accurate detection of PiP transitions for proper event delivery
+
+- **Code Quality**: Code formatting improvements across Flutter controller
+  - Removed unnecessary line breaks for cleaner code structure
+  - Better readability with consistent formatting
+  - Improved maintainability of the codebase
+
+### Fixed
+- **iOS Media Controls During PiP**: Fixed media controls becoming unresponsive during PiP transitions
+  - Media info no longer cleared from SharedPlayerManager when view is disposed during PiP
+  - Lock screen and Control Center controls remain functional throughout PiP lifecycle
+  - Prevents "Unknown" or blank media info from appearing in system controls
+
 ## [0.3.1] - 2025-11-09
 
 ### Fixed

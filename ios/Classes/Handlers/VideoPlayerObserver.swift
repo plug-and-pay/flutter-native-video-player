@@ -140,12 +140,15 @@ extension VideoPlayerView {
                     // Only send pause if not waiting to play (buffering)
                     // This prevents sending pause when seeking to unbuffered position
                     if player.reasonForWaitingToPlay == nil {
-                        // Disable automatic PiP when paused (even from native controls)
-                        // This prevents automatic PiP from triggering for paused videos
+                        // DON'T disable automatic PiP on pause
+                        // The system will handle when to trigger automatic PiP based on playback state
+                        // Disabling it here causes issues:
+                        // 1. When exiting manual PiP (video might pause during transition)
+                        // 2. Prevents automatic PiP from working afterward
+                        // The automatic PiP system already checks if video is playing before triggering
                         if #available(iOS 14.2, *) {
-                            if let controllerIdValue = controllerId, canStartPictureInPictureAutomatically {
-                                print("📱 [Observer] Disabling automatic PiP for controller \(controllerIdValue) (triggered by native controls)")
-                                SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: false)
+                            if let controllerIdValue = controllerId {
+                                print("📱 [Observer] Video paused, but keeping automatic PiP state unchanged for controller \(controllerIdValue)")
                             }
                         }
 

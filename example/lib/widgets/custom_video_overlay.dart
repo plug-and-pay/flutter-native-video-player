@@ -84,17 +84,12 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
 
     // Also check PiP availability once (for first load)
     _getPipAvailability();
-
-    debugPrint(
-      'CustomVideoOverlay initialized with ${_qualities.length} qualities',
-    );
   }
 
   void _handleQualitiesChanged(List<NativeVideoPlayerQuality> qualities) {
     if (!mounted) {
       return;
     }
-    debugPrint('Qualities changed: ${qualities.length} qualities available');
     setState(() {
       _qualities = qualities;
     });
@@ -114,7 +109,6 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
     if (!mounted) {
       return;
     }
-    debugPrint('PiP availability: $isAvailable');
     setState(() {
       _isPipAvailable = isAvailable;
     });
@@ -124,7 +118,6 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
     if (!mounted) {
       return;
     }
-    debugPrint('AirPlay availability changed: $isAvailable');
     setState(() {
       _isAirPlayAvailable = isAvailable;
     });
@@ -134,7 +127,6 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
     if (!mounted) {
       return;
     }
-    debugPrint('AirPlay connection changed: $isConnected');
     setState(() {
       _isAirPlayConnected = isConnected;
     });
@@ -144,7 +136,6 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
     if (!mounted) {
       return;
     }
-    debugPrint('PiP availability changed (from stream): $isAvailable');
     setState(() {
       _isPipAvailable = isAvailable;
     });
@@ -166,12 +157,8 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
 
   void _handleActivityEvent(PlayerActivityEvent event) {
     if (!mounted) {
-      debugPrint(
-        'CustomVideoOverlay._handleActivityEvent called but not mounted',
-      );
       return;
     }
-    debugPrint('CustomVideoOverlay._handleActivityEvent: ${event.state}');
     setState(() {
       _activityState = event.state;
     });
@@ -179,16 +166,12 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
 
   void _handleControlEvent(PlayerControlEvent event) {
     if (!mounted) {
-      debugPrint(
-        'CustomVideoOverlay._handleControlEvent called but not mounted',
-      );
       return;
     }
 
     // Handle PiP availability changes
     if (event.state == PlayerControlState.pipAvailabilityChanged) {
       final isAvailable = event.data?['isAvailable'] as bool? ?? false;
-      debugPrint('PiP availability changed: $isAvailable');
       setState(() {
         _isPipAvailable = isAvailable;
       });
@@ -198,7 +181,6 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
     // Handle AirPlay availability changes
     if (event.state == PlayerControlState.airPlayAvailabilityChanged) {
       final isAvailable = event.data?['isAvailable'] as bool? ?? false;
-      debugPrint('AirPlay availability changed: $isAvailable');
       setState(() {
         _isAirPlayAvailable = isAvailable;
       });
@@ -248,7 +230,6 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
       // Update current speed when it changes (e.g., from another overlay instance)
       if (event.data != null && event.data!.containsKey('speed')) {
         final speed = event.data!['speed'] as num;
-        debugPrint('CustomVideoOverlay: Speed changed to ${speed}x');
         setState(() {
           _currentSpeed = speed.toDouble();
         });
@@ -256,14 +237,9 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
     } else if (event.state == PlayerControlState.fullscreenEntered ||
         event.state == PlayerControlState.fullscreenExited) {
       // Trigger rebuild when fullscreen state changes so controls visibility updates
-      debugPrint(
-        'CustomVideoOverlay: Fullscreen state changed to ${widget.controller.isFullScreen}',
-      );
       setState(() {
         // No state to update, just trigger rebuild to update conditional UI elements
       });
-    } else if (event.state != PlayerControlState.timeUpdated) {
-      debugPrint('CustomVideoOverlay._handleControlEvent: ${event.state}');
     }
   }
 
@@ -578,9 +554,6 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
           size: 36,
         ),
         onPressed: () {
-          debugPrint(
-            'Play/Pause button pressed, isPlaying: ${_activityState.isPlaying}',
-          );
           if (_activityState.isPlaying) {
             widget.controller.pause();
           } else {
@@ -720,9 +693,7 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
                           ? const Icon(Icons.check, color: Colors.red)
                           : null,
                       onTap: () async {
-                        debugPrint('Setting speed to: $speed');
                         await widget.controller.setSpeed(speed);
-                        debugPrint('Speed set successfully');
                         if (!context.mounted) return;
                         Navigator.pop(context);
                         if (mounted) {
