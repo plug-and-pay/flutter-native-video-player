@@ -119,7 +119,9 @@ extension VideoPlayerView {
         }
 
         // --- Playback rate (0 = paused, 1 = playing) ---
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = player?.rate ?? 0.0
+        let playbackRate = player?.rate ?? 0.0
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = playbackRate
+        print("   → Playback rate: \(playbackRate)")
 
         // --- Commit initial metadata immediately (before artwork loads) ---
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
@@ -135,6 +137,26 @@ extension VideoPlayerView {
             print("   → Delayed check (0.5s later): Now Playing info is: \(delayedCheck)")
             if delayedCheck == "nil" {
                 print("   ⚠️ WARNING: Now Playing info was CLEARED by something after we set it!")
+            }
+
+            // Diagnostic: Check audio session state
+            let audioSession = AVAudioSession.sharedInstance()
+            print("   → Audio session category: \(audioSession.category.rawValue)")
+            print("   → Audio session is active: \(audioSession.isOtherAudioPlaying ? "No (other audio playing)" : "Yes")")
+
+            // Diagnostic: Check remote command center
+            let commandCenter = MPRemoteCommandCenter.shared()
+            print("   → Play command has targets: \(commandCenter.playCommand.isEnabled)")
+            print("   → Pause command has targets: \(commandCenter.pauseCommand.isEnabled)")
+
+            // Diagnostic: Dump all Now Playing info
+            if let info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                print("   → Complete Now Playing info:")
+                for (key, value) in info {
+                    print("      • \(key): \(value)")
+                }
+            } else {
+                print("   → Now Playing info is completely nil!")
             }
         }
 
