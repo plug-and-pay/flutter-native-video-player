@@ -388,6 +388,28 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             // Restore the player view
             playerViewController.view.isHidden = false
             playerViewController.view.alpha = 1.0
+
+            // CRITICAL: Re-establish Now Playing info when restoring from background
+            // This ensures media controls work when user taps fullscreen from PiP while app is backgrounded
+            var mediaInfo = currentMediaInfo
+
+            // Fallback: Try to retrieve from SharedPlayerManager if not available
+            if mediaInfo == nil, let controllerIdValue = controllerId {
+                mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+                if mediaInfo != nil {
+                    print("📱 Retrieved media info from SharedPlayerManager for PiP restore (active view)")
+                    currentMediaInfo = mediaInfo // Update local copy
+                }
+            }
+
+            if let mediaInfo = mediaInfo {
+                let title = mediaInfo["title"] ?? "Unknown"
+                print("📱 Re-establishing Now Playing info for PiP restore (active view): \(title)")
+                setupNowPlayingInfo(mediaInfo: mediaInfo)
+            } else {
+                print("⚠️ No media info available for PiP restore (active view)")
+            }
+
             completionHandler(true)
             return
         }
