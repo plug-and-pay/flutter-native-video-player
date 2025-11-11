@@ -206,12 +206,15 @@ import QuartzCore
             SharedPlayerManager.shared.registerVideoPlayerView(self, viewId: viewId)
             print("✅ Registered VideoPlayerView for controller \(controllerIdValue), viewId: \(viewId)")
 
-            // If this controller is currently the one with automatic PiP enabled,
+            // If this controller is currently the one with automatic PiP enabled OR if the player is playing,
             // this new view should become the primary view and get automatic PiP
             // BUT ONLY if manual PiP is not active
             if #available(iOS 14.2, *) {
-                if SharedPlayerManager.shared.isControllerActiveForAutoPiP(controllerIdValue) {
-                    print("🎬 This controller is currently active for auto PiP")
+                let isActiveForAutoPiP = SharedPlayerManager.shared.isControllerActiveForAutoPiP(controllerIdValue)
+                let isPlaying = player?.rate ?? 0 > 0
+
+                if isActiveForAutoPiP || isPlaying {
+                    print("🎬 Controller state - activeForAutoPiP: \(isActiveForAutoPiP), isPlaying: \(isPlaying)")
                     if canStartPictureInPictureAutomatically {
                         // Check if manual PiP is active - if so, skip re-enabling automatic PiP
                         if SharedPlayerManager.shared.isManualPiPActive(controllerIdValue) {
@@ -223,6 +226,8 @@ import QuartzCore
                             SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
                             print("   → Set new view as primary and enabled automatic PiP (viewId: \(viewId))")
                         }
+                    } else {
+                        print("   ⚠️ Cannot enable automatic PiP - canStartPictureInPictureAutomatically is false")
                     }
                 }
             }
@@ -576,14 +581,18 @@ import QuartzCore
         cleanupRemoteCommandOwnership()
 
         // Handle automatic PiP transfer for shared players
-        // If this was the primary view (the one with automatic PiP enabled), we need to
-        // transfer automatic PiP to another view using the same controller
+        // If this was the primary view (the one with automatic PiP enabled) OR if the player is playing,
+        // we need to transfer automatic PiP to another view using the same controller
         if #available(iOS 14.2, *), let controllerIdValue = controllerId {
             let wasPrimaryView = SharedPlayerManager.shared.isPrimaryView(viewId, for: controllerIdValue)
             let wasAutoEnabled = SharedPlayerManager.shared.isControllerActiveForAutoPiP(controllerIdValue)
+            let isPlaying = player?.rate ?? 0 > 0
 
-            if wasPrimaryView && wasAutoEnabled {
-                print("🎬 Primary view being disposed - transferring automatic PiP to another view")
+            // Transfer automatic PiP if:
+            // 1. This was the primary view AND auto PiP was enabled, OR
+            // 2. The player is currently playing (should maintain auto PiP capability)
+            if (wasPrimaryView && wasAutoEnabled) || isPlaying {
+                print("🎬 View being disposed (primary: \(wasPrimaryView), autoEnabled: \(wasAutoEnabled), playing: \(isPlaying)) - transferring automatic PiP to another view")
 
                 // Disable automatic PiP on this view before unregistering
                 playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
