@@ -350,7 +350,9 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
         if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Re-establishing Now Playing info and remote commands for custom PiP stop: \(title)")
-            setupNowPlayingInfo(mediaInfo: mediaInfo)
+
+            // Force re-registration of remote commands because PiP might have cleared them
+            forceReregisterRemoteCommands()
         } else {
             print("⚠️ No media info available after custom PiP stop")
             // Try to find ANY view with this controller that has media info

@@ -115,7 +115,19 @@ extension VideoPlayerView {
         // --- Commit initial metadata immediately (before artwork loads) ---
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         print("   → Now Playing info SET to: \(nowPlayingInfo[MPMediaItemPropertyTitle] ?? "Unknown")")
-        print("   → Verified Now Playing info after set: \(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String ?? "nil")")
+
+        // Verify immediately
+        let immediateCheck = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String ?? "nil"
+        print("   → Verified Now Playing info immediately after set: \(immediateCheck)")
+
+        // Check again after a delay to see if something clears it
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let delayedCheck = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String ?? "nil"
+            print("   → Delayed check (0.5s later): Now Playing info is: \(delayedCheck)")
+            if delayedCheck == "nil" {
+                print("   ⚠️ WARNING: Now Playing info was CLEARED by something after we set it!")
+            }
+        }
 
         // --- Load artwork asynchronously (if available) ---
         if let artworkUrlString = mediaInfo["artworkUrl"] as? String,
@@ -262,6 +274,12 @@ extension VideoPlayerView {
         }
 
         print("🎛️ View \(viewId) registered remote command handlers")
+
+        // Verify remote commands are enabled
+        print("   → Play command enabled: \(commandCenter.playCommand.isEnabled)")
+        print("   → Pause command enabled: \(commandCenter.pauseCommand.isEnabled)")
+        print("   → Skip forward enabled: \(commandCenter.skipForwardCommand.isEnabled)")
+        print("   → Skip backward enabled: \(commandCenter.skipBackwardCommand.isEnabled)")
     }
 
     /// Updates playback time and rate dynamically (e.g., every second or on state change)

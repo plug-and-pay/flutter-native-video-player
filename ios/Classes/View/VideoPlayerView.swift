@@ -33,6 +33,16 @@ import QuartzCore
     // This prevents re-registering and clearing targets unnecessarily
     var hasRegisteredRemoteCommands: Bool = false
 
+    /// Force re-registration of remote commands
+    /// Call this when you know the targets might have been removed externally
+    func forceReregisterRemoteCommands() {
+        print("🔄 Forcing re-registration of remote commands for view \(viewId)")
+        hasRegisteredRemoteCommands = false
+        if let mediaInfo = currentMediaInfo {
+            setupNowPlayingInfo(mediaInfo: mediaInfo)
+        }
+    }
+
     // Store the platform view ID for registration
     var viewId: Int64 = 0
     
