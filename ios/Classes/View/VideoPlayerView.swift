@@ -29,6 +29,10 @@ import QuartzCore
     // until after didStopPictureInPicture completes
     var isPipRestoringUI: Bool = false
 
+    // Track if we've already registered remote command handlers
+    // This prevents re-registering and clearing targets unnecessarily
+    var hasRegisteredRemoteCommands: Bool = false
+
     // Store the platform view ID for registration
     var viewId: Int64 = 0
     

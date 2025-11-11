@@ -160,9 +160,20 @@ extension VideoPlayerView {
     private func setupRemoteCommandCenter() {
         let commandCenter = MPRemoteCommandCenter.shared()
 
+        // Check if we've already registered handlers for this view
+        // If so, skip the registration to avoid clearing and re-adding targets
+        // This prevents iOS from clearing Now Playing info
+        if hasRegisteredRemoteCommands && RemoteCommandManager.shared.isOwner(viewId) {
+            print("🎛️ View \(viewId) already has remote commands registered - skipping re-registration")
+            return
+        }
+
+        print("🎛️ View \(viewId) registering remote commands for the first time or taking ownership")
+
         // Atomically take ownership and clear all existing targets
         // This prevents race conditions when multiple views try to register concurrently
         RemoteCommandManager.shared.atomicallySetOwnerAndRemoveTargets(viewId)
+        hasRegisteredRemoteCommands = true
 
         // --- Play ---
         commandCenter.playCommand.addTarget { [weak self] _ in
