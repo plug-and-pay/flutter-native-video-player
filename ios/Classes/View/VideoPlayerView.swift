@@ -257,6 +257,15 @@ import QuartzCore
         )
         print("✅ Registered foreground notification observer for view \(viewId)")
 
+        // Observe audio session interruptions
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioSessionInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+        print("✅ Registered audio session interruption observer for view \(viewId)")
+
         // Set up AirPlay route detector (iOS 11.0+)
         if #available(iOS 11.0, *) {
             setupAirPlayRouteDetector()
@@ -641,6 +650,14 @@ import QuartzCore
     @objc func handleAppWillEnterForeground() {
         print("📱 App entering foreground - restoring Now Playing info for view \(viewId)")
 
+        // CRITICAL: Reactivate audio session first
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            print("   → Audio session reactivated")
+        } catch {
+            print("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+        }
+
         // Check if this view owns the remote commands
         guard RemoteCommandManager.shared.isOwner(viewId) else {
             print("   → View \(viewId) doesn't own remote commands, skipping restore")
@@ -664,12 +681,68 @@ import QuartzCore
             return
         }
 
-        // Restore Now Playing info
-        print("   → Restoring Now Playing info: \(mediaInfo["title"] ?? "Unknown")")
-        setupNowPlayingInfo(mediaInfo: mediaInfo)
+        // Delay slightly to ensure audio session is fully active
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            // Restore Now Playing info
+            print("   → Restoring Now Playing info: \(mediaInfo["title"] ?? "Unknown")")
+            self.setupNowPlayingInfo(mediaInfo: mediaInfo)
 
-        // Also update the playback time to ensure controls show correct position
-        updateNowPlayingPlaybackTime()
+            // Also update the playback time to ensure controls show correct position
+            self.updateNowPlayingPlaybackTime()
+        }
+    }
+
+    /// Called when audio session is interrupted (e.g., phone call, other app's audio)
+    @objc func handleAudioSessionInterruption(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        print("🔊 Audio session interruption: \(type == .began ? "began" : "ended")")
+
+        switch type {
+        case .began:
+            print("   → Audio session interrupted, Now Playing info may be cleared")
+
+        case .ended:
+            // Check if we should resume playback
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) {
+                    print("   → Should resume after interruption")
+                }
+            }
+
+            // Reactivate audio session
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                print("   → Audio session reactivated")
+            } catch {
+                print("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+            }
+
+            // Restore Now Playing info after audio session is reactivated
+            if RemoteCommandManager.shared.isOwner(viewId) {
+                var mediaInfo = currentMediaInfo
+                if mediaInfo == nil, let controllerIdValue = controllerId {
+                    mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+                }
+
+                if let mediaInfo = mediaInfo {
+                    print("   → Restoring Now Playing info after interruption")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                        self?.setupNowPlayingInfo(mediaInfo: mediaInfo)
+                        self?.updateNowPlayingPlaybackTime()
+                    }
+                }
+            }
+
+        @unknown default:
+            break
+        }
     }
 }
 
