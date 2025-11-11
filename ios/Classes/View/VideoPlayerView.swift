@@ -324,7 +324,18 @@ import QuartzCore
             print("🎛️ Transferring ownership to view \(alternativeView.viewId)")
 
             // Transfer ownership by setting up Now Playing info on the alternative view
-            if let mediaInfo = alternativeView.currentMediaInfo {
+            var mediaInfo = alternativeView.currentMediaInfo
+
+            // Fallback: Try to get media info from SharedPlayerManager
+            if mediaInfo == nil {
+                mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+                if mediaInfo != nil {
+                    print("📱 Retrieved media info from SharedPlayerManager for ownership transfer")
+                    alternativeView.currentMediaInfo = mediaInfo
+                }
+            }
+
+            if let mediaInfo = mediaInfo {
                 alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
                 ownershipTransferred = true
                 print("✅ Ownership transferred to view \(alternativeView.viewId)")
@@ -333,12 +344,20 @@ import QuartzCore
             }
         }
 
-        // If no transfer was possible, clear everything
+        // CRITICAL: If no transfer was possible BUT PiP is active, DO NOT clear Now Playing info
+        // PiP needs the media controls to work, so we must preserve them
         if !ownershipTransferred {
-            print("🗑️ No transfer possible - clearing ownership and Now Playing info")
-            RemoteCommandManager.shared.clearOwner(viewId)
-            RemoteCommandManager.shared.removeAllTargets()
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            if isPipCurrentlyActive {
+                print("⚠️ No transfer possible but PiP is active - keeping Now Playing info")
+                // Just clear the ownership flag, but keep the Now Playing info and remote commands active
+                RemoteCommandManager.shared.clearOwner(viewId)
+                // Do NOT clear nowPlayingInfo or remove targets while PiP is active
+            } else {
+                print("🗑️ No transfer possible - clearing ownership and Now Playing info")
+                RemoteCommandManager.shared.clearOwner(viewId)
+                RemoteCommandManager.shared.removeAllTargets()
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            }
         }
     }
 

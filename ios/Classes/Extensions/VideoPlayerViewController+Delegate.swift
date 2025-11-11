@@ -113,12 +113,26 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
             }
         }
 
+        // ALWAYS re-establish Now Playing info after PiP stops, even if we already have it
+        // This is critical when the app was backgrounded and then came back to foreground
         if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Re-establishing Now Playing info and remote commands for PiP stop: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
         } else {
             print("⚠️ No media info available after PiP stop")
+            // Try to find ANY view with this controller that has media info
+            if let controllerIdValue = controllerId {
+                let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+                for view in allViews {
+                    if let viewMediaInfo = view.currentMediaInfo {
+                        print("📱 Found media info on view \(view.viewId), using it for PiP stop")
+                        currentMediaInfo = viewMediaInfo
+                        setupNowPlayingInfo(mediaInfo: viewMediaInfo)
+                        break
+                    }
+                }
+            }
         }
 
         // Re-enable automatic PiP if this was a MANUAL PiP session and automatic PiP was requested
@@ -324,12 +338,26 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             }
         }
 
+        // ALWAYS re-establish Now Playing info after PiP stops, even if we already have it
+        // This is critical when the app was backgrounded and then came back to foreground
         if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Re-establishing Now Playing info and remote commands for custom PiP stop: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
         } else {
             print("⚠️ No media info available after custom PiP stop")
+            // Try to find ANY view with this controller that has media info
+            if let controllerIdValue = controllerId {
+                let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+                for view in allViews {
+                    if let viewMediaInfo = view.currentMediaInfo {
+                        print("📱 Found media info on view \(view.viewId), using it for PiP stop")
+                        currentMediaInfo = viewMediaInfo
+                        setupNowPlayingInfo(mediaInfo: viewMediaInfo)
+                        break
+                    }
+                }
+            }
         }
 
         // Re-enable automatic PiP ALWAYS if automatic PiP was requested
