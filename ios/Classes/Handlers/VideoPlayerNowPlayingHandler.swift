@@ -163,12 +163,20 @@ extension VideoPlayerView {
         // Check if we've already registered handlers for this view
         // If so, skip the registration to avoid clearing and re-adding targets
         // This prevents iOS from clearing Now Playing info
-        if hasRegisteredRemoteCommands && RemoteCommandManager.shared.isOwner(viewId) {
-            print("🎛️ View \(viewId) already has remote commands registered - skipping re-registration")
-            return
+        if hasRegisteredRemoteCommands {
+            // We've registered before - check if we're still the owner
+            if RemoteCommandManager.shared.isOwner(viewId) {
+                print("🎛️ View \(viewId) already has remote commands registered and is still owner - skipping re-registration")
+                return
+            } else {
+                // We registered before but lost ownership - take it back without clearing
+                print("🎛️ View \(viewId) re-taking ownership without clearing targets")
+                RemoteCommandManager.shared.setOwner(viewId)
+                return
+            }
         }
 
-        print("🎛️ View \(viewId) registering remote commands for the first time or taking ownership")
+        print("🎛️ View \(viewId) registering remote commands for the first time")
 
         // Atomically take ownership and clear all existing targets
         // This prevents race conditions when multiple views try to register concurrently
