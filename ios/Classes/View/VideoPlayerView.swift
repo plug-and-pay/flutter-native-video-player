@@ -248,6 +248,15 @@ import QuartzCore
             setupPeriodicTimeObserver()
         }
 
+        // Observe app entering foreground to restore Now Playing info
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        print("✅ Registered foreground notification observer for view \(viewId)")
+
         // Set up AirPlay route detector (iOS 11.0+)
         if #available(iOS 11.0, *) {
             setupAirPlayRouteDetector()
@@ -623,6 +632,44 @@ import QuartzCore
         // Note: player and playerViewController are NOT disposed here
         // They remain in SharedPlayerManager for reuse
         print("Platform view disposed but player kept alive for controller ID: \(String(describing: controllerId))")
+    }
+
+    // MARK: - App Lifecycle Handling
+
+    /// Called when app returns to foreground
+    /// Restores Now Playing info which may have been cleared by the system
+    @objc func handleAppWillEnterForeground() {
+        print("📱 App entering foreground - restoring Now Playing info for view \(viewId)")
+
+        // Check if this view owns the remote commands
+        guard RemoteCommandManager.shared.isOwner(viewId) else {
+            print("   → View \(viewId) doesn't own remote commands, skipping restore")
+            return
+        }
+
+        // Check if we have media info to restore
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("   → Retrieved media info from SharedPlayerManager")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        guard let mediaInfo = mediaInfo else {
+            print("   ⚠️ No media info available to restore")
+            return
+        }
+
+        // Restore Now Playing info
+        print("   → Restoring Now Playing info: \(mediaInfo["title"] ?? "Unknown")")
+        setupNowPlayingInfo(mediaInfo: mediaInfo)
+
+        // Also update the playback time to ensure controls show correct position
+        updateNowPlayingPlaybackTime()
     }
 }
 
