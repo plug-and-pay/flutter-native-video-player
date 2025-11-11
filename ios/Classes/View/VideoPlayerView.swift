@@ -36,7 +36,23 @@ import QuartzCore
     /// Force re-registration of remote commands
     /// Call this when you know the targets might have been removed externally
     func forceReregisterRemoteCommands() {
-        print("🔄 Forcing re-registration of remote commands for view \(viewId)")
+        print("🔄 Checking if need to re-register remote commands for view \(viewId)")
+
+        // Only force re-registration if we don't already own the commands
+        // or if the commands aren't properly set up
+        let commandCenter = MPRemoteCommandCenter.shared()
+        let hasTargets = commandCenter.playCommand.isEnabled && commandCenter.pauseCommand.isEnabled
+
+        if RemoteCommandManager.shared.isOwner(viewId) && hasTargets {
+            print("   → View \(viewId) already owns commands and they're active - skipping re-registration")
+            // Just restore Now Playing info without touching remote commands
+            if let mediaInfo = currentMediaInfo {
+                setupNowPlayingInfo(mediaInfo: mediaInfo)
+            }
+            return
+        }
+
+        print("   → Re-registering remote commands for view \(viewId)")
         hasRegisteredRemoteCommands = false
         if let mediaInfo = currentMediaInfo {
             setupNowPlayingInfo(mediaInfo: mediaInfo)
