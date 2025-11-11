@@ -75,6 +75,10 @@ class RemoteCommandManager {
 extension VideoPlayerView {
     /// Sets up the Now Playing info for the Control Center and Lock Screen
     func setupNowPlayingInfo(mediaInfo: [String: Any]) {
+        print("🎵 setupNowPlayingInfo called for view \(viewId)")
+        print("   → Media title: \(mediaInfo["title"] ?? "Unknown")")
+        print("   → Current Now Playing info before update: \(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String ?? "nil")")
+
         var nowPlayingInfo: [String: Any] = [:]
 
         // --- Core metadata ---
@@ -110,6 +114,8 @@ extension VideoPlayerView {
 
         // --- Commit initial metadata immediately (before artwork loads) ---
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+        print("   → Now Playing info SET to: \(nowPlayingInfo[MPMediaItemPropertyTitle] ?? "Unknown")")
+        print("   → Verified Now Playing info after set: \(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String ?? "nil")")
 
         // --- Load artwork asynchronously (if available) ---
         if let artworkUrlString = mediaInfo["artworkUrl"] as? String,

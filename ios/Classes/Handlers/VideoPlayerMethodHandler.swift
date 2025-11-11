@@ -271,7 +271,18 @@ extension VideoPlayerView {
 
         // ALWAYS set media item on play to ensure this player has control
         // This is critical for both normal playback and PiP mode
-        if let mediaInfo = currentMediaInfo {
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("📱 Retrieved media info from SharedPlayerManager for play")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Setting Now Playing info for: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
@@ -284,6 +295,7 @@ extension VideoPlayerView {
             }
         } else {
             print("⚠️  No media info available when playing - media controls will not work correctly")
+            print("   → currentMediaInfo was nil and SharedPlayerManager has no cached info for controller \(controllerId ?? -1)")
         }
         
         // Mark this view as the primary (active) view for this controller
