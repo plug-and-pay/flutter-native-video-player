@@ -274,7 +274,19 @@ class SharedPlayerManager {
     func isManualPiPActive(_ controllerId: Int) -> Bool {
         return controllersWithManualPiP.contains(controllerId)
     }
-    
+
+    /// Check if ANY view for this controller currently has PiP active
+    /// This checks the isPipCurrentlyActive flag on all views for the controller
+    func isPipActiveForController(_ controllerId: Int) -> Bool {
+        let allViews = findAllViewsForController(controllerId)
+        for view in allViews {
+            if view.isPipCurrentlyActive {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Set the primary (currently playing) view for a controller
     /// This should be called whenever play() is called on a view
     func setPrimaryView(_ viewId: Int64, for controllerId: Int) {

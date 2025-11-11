@@ -352,17 +352,25 @@ import QuartzCore
         // CRITICAL: If no transfer was possible BUT PiP is active OR restoring, DO NOT clear Now Playing info
         // PiP needs the media controls to work, so we must preserve them
         if !ownershipTransferred {
-            if isPipCurrentlyActive || isPipRestoringUI {
+            // Check if PiP is active:
+            // 1. On this view (isPipCurrentlyActive)
+            // 2. On ANY view for this controller (isPipActiveForController)
+            // 3. Currently restoring UI (isPipRestoringUI)
+            let isPipActiveForController = controllerId.flatMap { SharedPlayerManager.shared.isPipActiveForController($0) } ?? false
+
+            if isPipCurrentlyActive || isPipRestoringUI || isPipActiveForController {
                 if isPipCurrentlyActive {
-                    print("⚠️ No transfer possible but PiP is active - keeping Now Playing info")
-                } else {
+                    print("⚠️ No transfer possible but PiP is active on this view - keeping Now Playing info")
+                } else if isPipRestoringUI {
                     print("⚠️ No transfer possible but PiP is restoring UI - keeping Now Playing info")
+                } else {
+                    print("⚠️ No transfer possible but PiP is active on another view for controller \(controllerId ?? -1) - keeping Now Playing info")
                 }
                 // Just clear the ownership flag, but keep the Now Playing info and remote commands active
                 RemoteCommandManager.shared.clearOwner(viewId)
                 // Do NOT clear nowPlayingInfo or remove targets while PiP is active or restoring
             } else {
-                print("🗑️ No transfer possible - clearing ownership and Now Playing info")
+                print("🗑️ No transfer possible and PiP is not active - clearing ownership and Now Playing info")
                 RemoteCommandManager.shared.clearOwner(viewId)
                 RemoteCommandManager.shared.removeAllTargets()
                 MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
