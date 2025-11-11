@@ -24,6 +24,11 @@ import QuartzCore
     // Track if PiP is currently active (for both automatic and manual PiP)
     var isPipCurrentlyActive: Bool = false
 
+    // Track if we're currently in the middle of a PiP restoration
+    // This is true from when restoreUserInterfaceForPictureInPictureStop is called
+    // until after didStopPictureInPicture completes
+    var isPipRestoringUI: Bool = false
+
     // Store the platform view ID for registration
     var viewId: Int64 = 0
     
@@ -344,14 +349,18 @@ import QuartzCore
             }
         }
 
-        // CRITICAL: If no transfer was possible BUT PiP is active, DO NOT clear Now Playing info
+        // CRITICAL: If no transfer was possible BUT PiP is active OR restoring, DO NOT clear Now Playing info
         // PiP needs the media controls to work, so we must preserve them
         if !ownershipTransferred {
-            if isPipCurrentlyActive {
-                print("⚠️ No transfer possible but PiP is active - keeping Now Playing info")
+            if isPipCurrentlyActive || isPipRestoringUI {
+                if isPipCurrentlyActive {
+                    print("⚠️ No transfer possible but PiP is active - keeping Now Playing info")
+                } else {
+                    print("⚠️ No transfer possible but PiP is restoring UI - keeping Now Playing info")
+                }
                 // Just clear the ownership flag, but keep the Now Playing info and remote commands active
                 RemoteCommandManager.shared.clearOwner(viewId)
-                // Do NOT clear nowPlayingInfo or remove targets while PiP is active
+                // Do NOT clear nowPlayingInfo or remove targets while PiP is active or restoring
             } else {
                 print("🗑️ No transfer possible - clearing ownership and Now Playing info")
                 RemoteCommandManager.shared.clearOwner(viewId)

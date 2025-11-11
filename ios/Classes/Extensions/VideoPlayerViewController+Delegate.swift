@@ -289,6 +289,13 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
         // Mark PiP as inactive
         isPipCurrentlyActive = false
 
+        // Clear the restoration flag after a delay to allow any pending view disposals to complete
+        // This ensures cleanupRemoteCommandOwnership sees the flag during the disposal
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.isPipRestoringUI = false
+            print("   → Cleared PiP restoration flag")
+        }
+
         // Ensure player view is visible after exiting PiP
         playerViewController.view.isHidden = false
         playerViewController.view.alpha = 1.0
@@ -410,6 +417,21 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         print("🎬 Restoring UI from PiP on view \(viewId)")
 
+        // CRITICAL: Mark that we're restoring UI from PiP
+        // This prevents cleanupRemoteCommandOwnership from clearing Now Playing info
+        // during the view disposal/recreation that happens when app foregrounds
+        isPipRestoringUI = true
+
+        // CRITICAL: Get media info from SharedPlayerManager FIRST before anything else
+        // This ensures we have it even if views are being disposed/recreated during app foregrounding
+        var mediaInfoFromCache: [String: Any]?
+        if let controllerIdValue = controllerId {
+            mediaInfoFromCache = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfoFromCache != nil {
+                print("📱 Retrieved media info from SharedPlayerManager cache for PiP restore")
+            }
+        }
+
         // Check if we have an event sink (indicates the view is still active)
         if eventSink != nil {
             print("✅ View \(viewId) is still active - restoring UI normally")
@@ -418,21 +440,13 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             playerViewController.view.alpha = 1.0
 
             // CRITICAL: Re-establish Now Playing info when restoring from background
-            // This ensures media controls work when user taps fullscreen from PiP while app is backgrounded
-            var mediaInfo = currentMediaInfo
-
-            // Fallback: Try to retrieve from SharedPlayerManager if not available
-            if mediaInfo == nil, let controllerIdValue = controllerId {
-                mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
-                if mediaInfo != nil {
-                    print("📱 Retrieved media info from SharedPlayerManager for PiP restore (active view)")
-                    currentMediaInfo = mediaInfo // Update local copy
-                }
-            }
+            // Use cached media info (most reliable) or fall back to current view's media info
+            let mediaInfo = mediaInfoFromCache ?? currentMediaInfo
 
             if let mediaInfo = mediaInfo {
                 let title = mediaInfo["title"] ?? "Unknown"
                 print("📱 Re-establishing Now Playing info for PiP restore (active view): \(title)")
+                currentMediaInfo = mediaInfo // Update local copy
                 setupNowPlayingInfo(mediaInfo: mediaInfo)
             } else {
                 print("⚠️ No media info available for PiP restore (active view)")
@@ -455,24 +469,16 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             alternativeView.playerViewController.view.alpha = 1.0
 
             // CRITICAL: Re-establish Now Playing info and remote command ownership
-            // This ensures media controls work after restoring from PiP
-            var mediaInfo = alternativeView.currentMediaInfo
-
-            // Fallback: Try to retrieve from SharedPlayerManager if not available
-            if mediaInfo == nil {
-                mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
-                if mediaInfo != nil {
-                    print("📱 Retrieved media info from SharedPlayerManager for PiP restore")
-                    alternativeView.currentMediaInfo = mediaInfo // Update local copy
-                }
-            }
+            // Use cached media info (most reliable) or fall back to alternative view's media info
+            let mediaInfo = mediaInfoFromCache ?? alternativeView.currentMediaInfo
 
             if let mediaInfo = mediaInfo {
                 let title = mediaInfo["title"] ?? "Unknown"
-                print("📱 Re-establishing Now Playing info for PiP restore: \(title)")
+                print("📱 Re-establishing Now Playing info for PiP restore (alternative view): \(title)")
+                alternativeView.currentMediaInfo = mediaInfo // Update local copy
                 alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
             } else {
-                print("⚠️ No media info available for PiP restore")
+                print("⚠️ No media info available for PiP restore (alternative view)")
             }
 
             // The alternative view should send pipStop event via its delegate
