@@ -857,16 +857,36 @@ extension VideoPlayerView {
 
     func handleExitPictureInPicture(result: @escaping FlutterResult) {
         if #available(iOS 14.0, *) {
+            // First check this view's pipController
             if let pipController = pipController {
                 if pipController.isPictureInPictureActive {
+                    print("🛑 Stopping PiP from current view")
                     pipController.stopPictureInPicture()
                     result(true)
-                } else {
-                    result(false)
+                    return
                 }
-            } else {
-                result(FlutterError(code: "PIP_NOT_INITIALIZED", message: "Picture-in-Picture controller not initialized", details: nil))
             }
+
+            // If this view doesn't have an active PiP, check other views for the same controller
+            // This handles the case where user navigated away from the detail screen back to list
+            if let controllerIdValue = controllerId {
+                print("🔍 Checking other views for controller \(controllerIdValue) to stop PiP")
+                let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+
+                for view in allViews {
+                    if let otherPipController = view.pipController,
+                       otherPipController.isPictureInPictureActive {
+                        print("🛑 Found active PiP on view \(view.viewId), stopping it")
+                        otherPipController.stopPictureInPicture()
+                        result(true)
+                        return
+                    }
+                }
+            }
+
+            // No active PiP found on any view
+            print("⚠️ No active PiP found for this controller")
+            result(false)
         } else {
             result(FlutterError(code: "NOT_SUPPORTED", message: "PiP not supported on this iOS version", details: nil))
         }
