@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2025-11-12
+
+### Improved
+- **iOS Picture-in-Picture Multi-View Handling**: Enhanced PiP functionality when using multiple views with shared controllers
+  - Added checks for active PiP across multiple views to prevent conflicts
+  - Improved PiP stopping actions to work correctly even when navigating between views
+  - Better error handling for cases where no active PiP is found
+  - Enhanced user experience by ensuring PiP can be stopped from any active view
+
+- **iOS Picture-in-Picture Reliability**: Major improvements to PiP start/stop mechanisms
+  - Implemented retry mechanism for starting PiP with detailed logging for attempts and outcomes
+  - Enhanced automatic PiP handling with improved player state detection
+  - Better PiP activation and transfer logic to improve reliability during playback
+  - Added comprehensive diagnostics and logging for debugging PiP transitions
+
+- **iOS Audio Session Interruption Handling**: Added robust handling for audio session interruptions
+  - Implemented observer for audio session interruptions (e.g., phone calls, alarms)
+  - Automatic reactivation of audio session after interruption ends
+  - Restoration of Now Playing info post-interruption
+  - Enhanced logging for better tracking of audio session states during playback
+
+- **iOS Now Playing Info Persistence**: Comprehensive improvements to media control reliability
+  - Implemented foreground notification handling to restore Now Playing info when app returns from background
+  - Added fallback mechanism to retrieve media info from SharedPlayerManager when local data is unavailable
+  - Enhanced media info retrieval in VideoPlayerObserver for accurate Now Playing info during playback
+  - Improved PiP restoration logic with proper cleanup during view disposal
+  - Media info now persists correctly when PiP is active or during restoration transitions
+  - Added `isPipActiveForController` method to check PiP status across all views for a controller
+
+- **iOS Remote Command Management**: Enhanced reliability of media control registration
+  - Refined remote command re-registration logic to prevent unnecessary re-registration
+  - Added ownership status checks before re-registering commands
+  - Introduced flag to track registration status for better management during ownership transfers
+  - Force re-registration capability with immediate and delayed verification checks
+  - Improved Now Playing info accuracy with better tracking of command status
+
+- **iOS Audio Session Activation**: Enhanced audio session handling for Now Playing info
+  - Activate audio session in VideoPlayerNowPlayingHandler to ensure info displays correctly
+  - Added error handling for session activation to improve reliability
+  - Added playback rate logging and detailed checks for audio session state
+  - Comprehensive diagnostics for remote command targets and Now Playing info completeness
+
+### Fixed
+- **iOS Now Playing Controls**: Fixed media controls becoming unresponsive after various transitions
+  - Fixed Now Playing info not displaying after returning from background
+  - Fixed media info being lost during PiP restoration
+  - Fixed remote command targets not being properly re-registered during ownership transfers
+  - Prevents "Unknown" or blank media info from appearing in Control Center and lock screen
+
+- **iOS HDR Performance**: Removed outdated HDR correction code for improved performance optimization
+
 ## [0.3.2] - 2025-11-10
 
 ### Changed
