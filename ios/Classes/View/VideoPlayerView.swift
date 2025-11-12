@@ -24,6 +24,41 @@ import QuartzCore
     // Track if PiP is currently active (for both automatic and manual PiP)
     var isPipCurrentlyActive: Bool = false
 
+    // Track if we're currently in the middle of a PiP restoration
+    // This is true from when restoreUserInterfaceForPictureInPictureStop is called
+    // until after didStopPictureInPicture completes
+    var isPipRestoringUI: Bool = false
+
+    // Track if we've already registered remote command handlers
+    // This prevents re-registering and clearing targets unnecessarily
+    var hasRegisteredRemoteCommands: Bool = false
+
+    /// Force re-registration of remote commands
+    /// Call this when you know the targets might have been removed externally
+    func forceReregisterRemoteCommands() {
+        print("🔄 Checking if need to re-register remote commands for view \(viewId)")
+
+        // Only force re-registration if we don't already own the commands
+        // or if the commands aren't properly set up
+        let commandCenter = MPRemoteCommandCenter.shared()
+        let hasTargets = commandCenter.playCommand.isEnabled && commandCenter.pauseCommand.isEnabled
+
+        if RemoteCommandManager.shared.isOwner(viewId) && hasTargets {
+            print("   → View \(viewId) already owns commands and they're active - skipping re-registration")
+            // Just restore Now Playing info without touching remote commands
+            if let mediaInfo = currentMediaInfo {
+                setupNowPlayingInfo(mediaInfo: mediaInfo)
+            }
+            return
+        }
+
+        print("   → Re-registering remote commands for view \(viewId)")
+        hasRegisteredRemoteCommands = false
+        if let mediaInfo = currentMediaInfo {
+            setupNowPlayingInfo(mediaInfo: mediaInfo)
+        }
+    }
+
     // Store the platform view ID for registration
     var viewId: Int64 = 0
     
@@ -171,12 +206,15 @@ import QuartzCore
             SharedPlayerManager.shared.registerVideoPlayerView(self, viewId: viewId)
             print("✅ Registered VideoPlayerView for controller \(controllerIdValue), viewId: \(viewId)")
 
-            // If this controller is currently the one with automatic PiP enabled,
+            // If this controller is currently the one with automatic PiP enabled OR if the player is playing,
             // this new view should become the primary view and get automatic PiP
             // BUT ONLY if manual PiP is not active
             if #available(iOS 14.2, *) {
-                if SharedPlayerManager.shared.isControllerActiveForAutoPiP(controllerIdValue) {
-                    print("🎬 This controller is currently active for auto PiP")
+                let isActiveForAutoPiP = SharedPlayerManager.shared.isControllerActiveForAutoPiP(controllerIdValue)
+                let isPlaying = player?.rate ?? 0 > 0
+
+                if isActiveForAutoPiP || isPlaying {
+                    print("🎬 Controller state - activeForAutoPiP: \(isActiveForAutoPiP), isPlaying: \(isPlaying)")
                     if canStartPictureInPictureAutomatically {
                         // Check if manual PiP is active - if so, skip re-enabling automatic PiP
                         if SharedPlayerManager.shared.isManualPiPActive(controllerIdValue) {
@@ -188,6 +226,8 @@ import QuartzCore
                             SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
                             print("   → Set new view as primary and enabled automatic PiP (viewId: \(viewId))")
                         }
+                    } else {
+                        print("   ⚠️ Cannot enable automatic PiP - canStartPictureInPictureAutomatically is false")
                     }
                 }
             }
@@ -228,6 +268,24 @@ import QuartzCore
             // Also set up periodic time observer for this new view
             setupPeriodicTimeObserver()
         }
+
+        // Observe app entering foreground to restore Now Playing info
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        print("✅ Registered foreground notification observer for view \(viewId)")
+
+        // Observe audio session interruptions
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioSessionInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+        print("✅ Registered audio session interruption observer for view \(viewId)")
 
         // Set up AirPlay route detector (iOS 11.0+)
         if #available(iOS 11.0, *) {
@@ -324,7 +382,18 @@ import QuartzCore
             print("🎛️ Transferring ownership to view \(alternativeView.viewId)")
 
             // Transfer ownership by setting up Now Playing info on the alternative view
-            if let mediaInfo = alternativeView.currentMediaInfo {
+            var mediaInfo = alternativeView.currentMediaInfo
+
+            // Fallback: Try to get media info from SharedPlayerManager
+            if mediaInfo == nil {
+                mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+                if mediaInfo != nil {
+                    print("📱 Retrieved media info from SharedPlayerManager for ownership transfer")
+                    alternativeView.currentMediaInfo = mediaInfo
+                }
+            }
+
+            if let mediaInfo = mediaInfo {
                 alternativeView.setupNowPlayingInfo(mediaInfo: mediaInfo)
                 ownershipTransferred = true
                 print("✅ Ownership transferred to view \(alternativeView.viewId)")
@@ -333,12 +402,32 @@ import QuartzCore
             }
         }
 
-        // If no transfer was possible, clear everything
+        // CRITICAL: If no transfer was possible BUT PiP is active OR restoring, DO NOT clear Now Playing info
+        // PiP needs the media controls to work, so we must preserve them
         if !ownershipTransferred {
-            print("🗑️ No transfer possible - clearing ownership and Now Playing info")
-            RemoteCommandManager.shared.clearOwner(viewId)
-            RemoteCommandManager.shared.removeAllTargets()
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            // Check if PiP is active:
+            // 1. On this view (isPipCurrentlyActive)
+            // 2. On ANY view for this controller (isPipActiveForController)
+            // 3. Currently restoring UI (isPipRestoringUI)
+            let isPipActiveForController = controllerId.flatMap { SharedPlayerManager.shared.isPipActiveForController($0) } ?? false
+
+            if isPipCurrentlyActive || isPipRestoringUI || isPipActiveForController {
+                if isPipCurrentlyActive {
+                    print("⚠️ No transfer possible but PiP is active on this view - keeping Now Playing info")
+                } else if isPipRestoringUI {
+                    print("⚠️ No transfer possible but PiP is restoring UI - keeping Now Playing info")
+                } else {
+                    print("⚠️ No transfer possible but PiP is active on another view for controller \(controllerId ?? -1) - keeping Now Playing info")
+                }
+                // Just clear the ownership flag, but keep the Now Playing info and remote commands active
+                RemoteCommandManager.shared.clearOwner(viewId)
+                // Do NOT clear nowPlayingInfo or remove targets while PiP is active or restoring
+            } else {
+                print("🗑️ No transfer possible and PiP is not active - clearing ownership and Now Playing info")
+                RemoteCommandManager.shared.clearOwner(viewId)
+                RemoteCommandManager.shared.removeAllTargets()
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            }
         }
     }
 
@@ -492,14 +581,18 @@ import QuartzCore
         cleanupRemoteCommandOwnership()
 
         // Handle automatic PiP transfer for shared players
-        // If this was the primary view (the one with automatic PiP enabled), we need to
-        // transfer automatic PiP to another view using the same controller
+        // If this was the primary view (the one with automatic PiP enabled) OR if the player is playing,
+        // we need to transfer automatic PiP to another view using the same controller
         if #available(iOS 14.2, *), let controllerIdValue = controllerId {
             let wasPrimaryView = SharedPlayerManager.shared.isPrimaryView(viewId, for: controllerIdValue)
             let wasAutoEnabled = SharedPlayerManager.shared.isControllerActiveForAutoPiP(controllerIdValue)
+            let isPlaying = player?.rate ?? 0 > 0
 
-            if wasPrimaryView && wasAutoEnabled {
-                print("🎬 Primary view being disposed - transferring automatic PiP to another view")
+            // Transfer automatic PiP if:
+            // 1. This was the primary view AND auto PiP was enabled, OR
+            // 2. The player is currently playing (should maintain auto PiP capability)
+            if (wasPrimaryView && wasAutoEnabled) || isPlaying {
+                print("🎬 View being disposed (primary: \(wasPrimaryView), autoEnabled: \(wasAutoEnabled), playing: \(isPlaying)) - transferring automatic PiP to another view")
 
                 // Disable automatic PiP on this view before unregistering
                 playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
@@ -573,6 +666,108 @@ import QuartzCore
         // Note: player and playerViewController are NOT disposed here
         // They remain in SharedPlayerManager for reuse
         print("Platform view disposed but player kept alive for controller ID: \(String(describing: controllerId))")
+    }
+
+    // MARK: - App Lifecycle Handling
+
+    /// Called when app returns to foreground
+    /// Restores Now Playing info which may have been cleared by the system
+    @objc func handleAppWillEnterForeground() {
+        print("📱 App entering foreground - restoring Now Playing info for view \(viewId)")
+
+        // CRITICAL: Reactivate audio session first
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            print("   → Audio session reactivated")
+        } catch {
+            print("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+        }
+
+        // Check if this view owns the remote commands
+        guard RemoteCommandManager.shared.isOwner(viewId) else {
+            print("   → View \(viewId) doesn't own remote commands, skipping restore")
+            return
+        }
+
+        // Check if we have media info to restore
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("   → Retrieved media info from SharedPlayerManager")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        guard let mediaInfo = mediaInfo else {
+            print("   ⚠️ No media info available to restore")
+            return
+        }
+
+        // Delay slightly to ensure audio session is fully active
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            // Restore Now Playing info
+            print("   → Restoring Now Playing info: \(mediaInfo["title"] ?? "Unknown")")
+            self.setupNowPlayingInfo(mediaInfo: mediaInfo)
+
+            // Also update the playback time to ensure controls show correct position
+            self.updateNowPlayingPlaybackTime()
+        }
+    }
+
+    /// Called when audio session is interrupted (e.g., phone call, other app's audio)
+    @objc func handleAudioSessionInterruption(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        print("🔊 Audio session interruption: \(type == .began ? "began" : "ended")")
+
+        switch type {
+        case .began:
+            print("   → Audio session interrupted, Now Playing info may be cleared")
+
+        case .ended:
+            // Check if we should resume playback
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) {
+                    print("   → Should resume after interruption")
+                }
+            }
+
+            // Reactivate audio session
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                print("   → Audio session reactivated")
+            } catch {
+                print("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+            }
+
+            // Restore Now Playing info after audio session is reactivated
+            if RemoteCommandManager.shared.isOwner(viewId) {
+                var mediaInfo = currentMediaInfo
+                if mediaInfo == nil, let controllerIdValue = controllerId {
+                    mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+                }
+
+                if let mediaInfo = mediaInfo {
+                    print("   → Restoring Now Playing info after interruption")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                        self?.setupNowPlayingInfo(mediaInfo: mediaInfo)
+                        self?.updateNowPlayingPlaybackTime()
+                    }
+                }
+            }
+
+        @unknown default:
+            break
+        }
     }
 }
 

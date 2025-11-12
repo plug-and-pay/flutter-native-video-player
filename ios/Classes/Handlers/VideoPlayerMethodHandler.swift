@@ -108,7 +108,7 @@ extension VideoPlayerView {
             // The video composition causes significant overhead during loading, especially for network assets
             // Most videos will display correctly without it
             print("🎨 HDR disabled - skipping video composition for better performance")
-            /*
+            
             // Original HDR correction code - disabled for performance
             // Only re-enable this if you encounter actual HDR color issues
             print("🎨 HDR disabled - will apply SDR color space via videoComposition asynchronously")
@@ -174,7 +174,7 @@ extension VideoPlayerView {
                     }
                 }
             }
-            */
+            
         } else {
             print("🎨 HDR enabled - allowing native HDR playback")
         }
@@ -271,7 +271,18 @@ extension VideoPlayerView {
 
         // ALWAYS set media item on play to ensure this player has control
         // This is critical for both normal playback and PiP mode
-        if let mediaInfo = currentMediaInfo {
+        var mediaInfo = currentMediaInfo
+
+        // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+        if mediaInfo == nil, let controllerIdValue = controllerId {
+            mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+            if mediaInfo != nil {
+                print("📱 Retrieved media info from SharedPlayerManager for play")
+                currentMediaInfo = mediaInfo // Update local copy
+            }
+        }
+
+        if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
             print("📱 Setting Now Playing info for: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
@@ -284,6 +295,7 @@ extension VideoPlayerView {
             }
         } else {
             print("⚠️  No media info available when playing - media controls will not work correctly")
+            print("   → currentMediaInfo was nil and SharedPlayerManager has no cached info for controller \(controllerId ?? -1)")
         }
         
         // Mark this view as the primary (active) view for this controller
@@ -757,29 +769,50 @@ extension VideoPlayerView {
             }
 
             // Start PiP using the controller
-            // Wait a brief moment for the controller to be ready if just created
-            let shouldWait = pipController?.isPictureInPicturePossible == false
-            let delay: TimeInterval = shouldWait ? 0.1 : 0.0
+            // Wait for the controller to be ready with retries
+            var attempt = 0
+            let maxAttempts = 3
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self = self else {
+            func tryStartPip() {
+                attempt += 1
+                print("🎬 Attempt \(attempt)/\(maxAttempts) to start PiP")
+
+                if let pipController = pipController {
+                    print("   → isPictureInPicturePossible: \(pipController.isPictureInPicturePossible)")
+
+                    if pipController.isPictureInPicturePossible {
+                        print("🎬 Starting manual PiP now")
+                        pipController.startPictureInPicture()
+                        result(true)
+                    } else if attempt < maxAttempts {
+                        // Retry after a short delay
+                        print("   → PiP not ready yet, retrying in 0.2s...")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                            guard self != nil else { return }
+                            tryStartPip()
+                        }
+                    } else {
+                        print("❌ PiP not possible after \(maxAttempts) attempts")
+                        if let controllerIdValue = controllerId {
+                            SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
+                            // Re-enable AVPlayerViewController PiP since we're not starting
+                            playerViewController.allowsPictureInPicturePlayback = true
+                        }
+                        result(FlutterError(code: "PIP_NOT_POSSIBLE", message: "Picture-in-Picture is not possible at this time. Make sure the video is playing and loaded.", details: nil))
+                    }
+                } else {
+                    print("❌ PiP controller is nil")
+                    result(FlutterError(code: "NO_CONTROLLER", message: "PiP controller is not available", details: nil))
+                }
+            }
+
+            // Start the first attempt after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard self != nil else {
                     result(FlutterError(code: "DISPOSED", message: "View was disposed", details: nil))
                     return
                 }
-
-                if let pipController = self.pipController, pipController.isPictureInPicturePossible {
-                    print("🎬 Starting manual PiP now")
-                    pipController.startPictureInPicture()
-                    result(true)
-                } else {
-                    print("❌ PiP not possible at this time")
-                    if let controllerIdValue = self.controllerId {
-                        SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
-                        // Re-enable AVPlayerViewController PiP since we're not starting
-                        self.playerViewController.allowsPictureInPicturePlayback = true
-                    }
-                    result(FlutterError(code: "PIP_NOT_POSSIBLE", message: "Picture-in-Picture is not possible at this time. Make sure the video is playing.", details: nil))
-                }
+                tryStartPip()
             }
         } else {
             result(FlutterError(code: "NOT_SUPPORTED", message: "PiP requires iOS 14.0+", details: nil))
@@ -824,16 +857,36 @@ extension VideoPlayerView {
 
     func handleExitPictureInPicture(result: @escaping FlutterResult) {
         if #available(iOS 14.0, *) {
+            // First check this view's pipController
             if let pipController = pipController {
                 if pipController.isPictureInPictureActive {
+                    print("🛑 Stopping PiP from current view")
                     pipController.stopPictureInPicture()
                     result(true)
-                } else {
-                    result(false)
+                    return
                 }
-            } else {
-                result(FlutterError(code: "PIP_NOT_INITIALIZED", message: "Picture-in-Picture controller not initialized", details: nil))
             }
+
+            // If this view doesn't have an active PiP, check other views for the same controller
+            // This handles the case where user navigated away from the detail screen back to list
+            if let controllerIdValue = controllerId {
+                print("🔍 Checking other views for controller \(controllerIdValue) to stop PiP")
+                let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+
+                for view in allViews {
+                    if let otherPipController = view.pipController,
+                       otherPipController.isPictureInPictureActive {
+                        print("🛑 Found active PiP on view \(view.viewId), stopping it")
+                        otherPipController.stopPictureInPicture()
+                        result(true)
+                        return
+                    }
+                }
+            }
+
+            // No active PiP found on any view
+            print("⚠️ No active PiP found for this controller")
+            result(false)
         } else {
             result(FlutterError(code: "NOT_SUPPORTED", message: "PiP not supported on this iOS version", details: nil))
         }

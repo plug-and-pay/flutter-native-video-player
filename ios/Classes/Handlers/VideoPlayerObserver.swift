@@ -82,7 +82,18 @@ extension VideoPlayerView {
                 case .playing:
                     // ALWAYS update Now Playing info when playback starts
                     // This ensures media controls show the correct info whether in normal view or PiP
-                    if let mediaInfo = currentMediaInfo {
+                    var mediaInfo = currentMediaInfo
+
+                    // Fallback: Try to retrieve from SharedPlayerManager if not available locally
+                    if mediaInfo == nil, let controllerIdValue = controllerId {
+                        mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
+                        if mediaInfo != nil {
+                            print("📱 [Observer] Retrieved media info from SharedPlayerManager for playback")
+                            currentMediaInfo = mediaInfo // Update local copy
+                        }
+                    }
+
+                    if let mediaInfo = mediaInfo {
                         print("📱 [Observer] Player started playing, updating Now Playing info for: \(mediaInfo["title"] ?? "Unknown")")
                         setupNowPlayingInfo(mediaInfo: mediaInfo)
                     } else {
