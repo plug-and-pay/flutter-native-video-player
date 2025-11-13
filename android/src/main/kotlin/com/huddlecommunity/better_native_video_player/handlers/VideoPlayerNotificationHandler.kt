@@ -286,7 +286,6 @@ class VideoPlayerNotificationHandler(
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(session.sessionCompatToken)
-                    .setShowActionsInCompactView(0) // Show play/pause in compact view
             )
             .build()
     }

@@ -93,6 +93,9 @@ class VideoPlayerView(
     // Layout change listener for updating PiP params
     private var pipLayoutChangeListener: View.OnLayoutChangeListener? = null
 
+    // Broadcast receiver for PiP actions
+    private var pipActionReceiver: android.content.BroadcastReceiver? = null
+
 
     init {
         Log.d(TAG, "Creating VideoPlayerView with id: $viewId")
@@ -328,6 +331,7 @@ class VideoPlayerView(
         // This prevents Android from showing the wrong area in PiP after layout changes
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             setupPipLayoutListener()
+            setupPipActionReceiver()
         }
 
         // Setup event channel
@@ -685,6 +689,90 @@ class VideoPlayerView(
     }
 
     /**
+     * Sets up a broadcast receiver to handle PiP action buttons (play/pause)
+     */
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun setupPipActionReceiver() {
+        pipActionReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                when (intent?.action) {
+                    "com.huddlecommunity.better_native_video_player.PIP_PLAY" -> {
+                        Log.d(TAG, "PiP Play action received")
+                        player.play()
+                        // Update PiP controls to reflect new state
+                        updatePictureInPictureParams()
+                    }
+                    "com.huddlecommunity.better_native_video_player.PIP_PAUSE" -> {
+                        Log.d(TAG, "PiP Pause action received")
+                        player.pause()
+                        // Update PiP controls to reflect new state
+                        updatePictureInPictureParams()
+                    }
+                }
+            }
+        }
+
+        val intentFilter = android.content.IntentFilter().apply {
+            addAction("com.huddlecommunity.better_native_video_player.PIP_PLAY")
+            addAction("com.huddlecommunity.better_native_video_player.PIP_PAUSE")
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(pipActionReceiver, intentFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(pipActionReceiver, intentFilter)
+        }
+
+        Log.d(TAG, "PiP action receiver registered")
+    }
+
+    /**
+     * Creates RemoteActions for PiP controls (play/pause)
+     */
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun createPipActions(): List<android.app.RemoteAction> {
+        val actions = mutableListOf<android.app.RemoteAction>()
+
+        // Create play/pause action based on current state
+        val isPlaying = player.isPlaying
+
+        val actionIntent = if (isPlaying) {
+            android.content.Intent("com.huddlecommunity.better_native_video_player.PIP_PAUSE")
+        } else {
+            android.content.Intent("com.huddlecommunity.better_native_video_player.PIP_PLAY")
+        }
+
+        val pendingIntent = android.app.PendingIntent.getBroadcast(
+            context,
+            if (isPlaying) 1 else 0,
+            actionIntent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val icon = if (isPlaying) {
+            android.graphics.drawable.Icon.createWithResource(
+                context,
+                android.R.drawable.ic_media_pause
+            )
+        } else {
+            android.graphics.drawable.Icon.createWithResource(
+                context,
+                android.R.drawable.ic_media_play
+            )
+        }
+
+        val action = android.app.RemoteAction(
+            icon,
+            if (isPlaying) "Pause" else "Play",
+            if (isPlaying) "Pause" else "Play",
+            pendingIntent
+        )
+
+        actions.add(action)
+        return actions
+    }
+
+    /**
      * Updates the Activity's PiP params with the current player view bounds
      * This should be called whenever the player view layout changes
      */
@@ -708,6 +796,10 @@ class VideoPlayerView(
             val paramsBuilder = android.app.PictureInPictureParams.Builder()
                 .setAspectRatio(aspectRatio)
                 .setSourceRectHint(sourceRectHint)
+
+            // Add PiP actions for play/pause controls
+            val actions = createPipActions()
+            paramsBuilder.setActions(actions)
 
             // For Android 12+, enable seamless resize but NOT auto-enter
             // auto-enter causes Android to enter PiP automatically without calling onUserLeaveHint
@@ -814,22 +906,22 @@ class VideoPlayerView(
                     }
                 }
 
-                // Get the bounds - when we just entered fullscreen, use full screen bounds
-                val sourceRectHint = if (isFullScreen && fullscreenDialog != null) {
-                    val displayMetrics = activity.resources.displayMetrics
-                    android.graphics.Rect(0, 0, displayMetrics.widthPixels, displayMetrics.heightPixels).also {
-                        Log.d(TAG, "Using fullscreen rect: $it")
-                    }
-                } else {
-                    android.graphics.Rect().also { rect ->
-                        playerView.getGlobalVisibleRect(rect)
-                        Log.d(TAG, "Using player view rect: $rect")
-                    }
+                // Get the bounds of the actual player view
+                // Always use playerView bounds, even in fullscreen, to ensure only the video shows in PiP
+                val sourceRectHint = android.graphics.Rect().also { rect ->
+                    playerView.getGlobalVisibleRect(rect)
+                    Log.d(TAG, "Using player view rect: $rect (fullscreen: $isFullScreen)")
                 }
 
                 val paramsBuilder = android.app.PictureInPictureParams.Builder()
                     .setAspectRatio(aspectRatio)
                     .setSourceRectHint(sourceRectHint)
+
+                // Add PiP actions for play/pause controls
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val actions = createPipActions()
+                    paramsBuilder.setActions(actions)
+                }
 
                 // For Android 12+, enable seamless resize but NOT auto-enter
                 // auto-enter causes Android to enter PiP automatically without calling onUserLeaveHint
@@ -932,6 +1024,13 @@ class VideoPlayerView(
             playerView.showController()
         }
         Log.d(TAG, "ExoPlayer controls restored to: $showNativeControlsOriginal")
+
+        // Reconnect surface to prevent black screen when switching videos
+        // This ensures the player's surface is properly attached to the PlayerView
+        playerView.post {
+            reconnectSurface()
+            Log.d(TAG, "Surface reconnected after PiP exit")
+        }
 
         // Send pipStop event to Flutter IMMEDIATELY to update controller state
         eventHandler.sendEvent("pipStop", mapOf("isPictureInPicture" to false))
@@ -1056,6 +1155,17 @@ class VideoPlayerView(
             playerView.removeOnLayoutChangeListener(listener)
             pipLayoutChangeListener = null
             Log.d(TAG, "Removed PiP layout change listener")
+        }
+
+        // Unregister PiP action receiver
+        pipActionReceiver?.let { receiver ->
+            try {
+                context.unregisterReceiver(receiver)
+                pipActionReceiver = null
+                Log.d(TAG, "Unregistered PiP action receiver")
+            } catch (e: Exception) {
+                Log.w(TAG, "Error unregistering PiP action receiver: ${e.message}")
+            }
         }
 
         // Remove listeners and stop periodic updates
