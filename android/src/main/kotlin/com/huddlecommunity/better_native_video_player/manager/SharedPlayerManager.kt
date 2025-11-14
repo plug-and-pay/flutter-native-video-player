@@ -31,6 +31,10 @@ object SharedPlayerManager {
     // This ensures qualities persist across view recreations
     private val qualitiesCache = mutableMapOf<Int, List<Map<String, Any>>>()
 
+    // Store fullscreen state before PiP for each controller
+    // This ensures we can restore the correct fullscreen state after PiP, even if the view is recreated
+    private val fullscreenBeforePip = mutableMapOf<Int, Boolean>()
+
     data class PipSettings(
         val allowsPictureInPicture: Boolean,
         val canStartPictureInPictureAutomatically: Boolean,
@@ -174,6 +178,9 @@ object SharedPlayerManager {
         // Remove qualities cache
         qualitiesCache.remove(controllerId)
 
+        // Remove fullscreen state
+        fullscreenBeforePip.remove(controllerId)
+
         // Clear active views for this controller
         activeViews.remove(controllerId)
 
@@ -183,6 +190,31 @@ object SharedPlayerManager {
         if (players.isEmpty()) {
             stopMediaSessionService(context)
         }
+    }
+
+    /**
+     * Sets the fullscreen state before entering PiP for a controller
+     * This ensures the correct fullscreen state can be restored after PiP, even if view is recreated
+     */
+    fun setFullscreenBeforePip(controllerId: Int, wasFullscreen: Boolean) {
+        fullscreenBeforePip[controllerId] = wasFullscreen
+        Log.d(TAG, "Stored fullscreen state before PiP for controller $controllerId: $wasFullscreen")
+    }
+
+    /**
+     * Gets the fullscreen state before entering PiP for a controller
+     * Returns null if no state has been stored for this controller
+     */
+    fun getFullscreenBeforePip(controllerId: Int): Boolean? {
+        return fullscreenBeforePip[controllerId]
+    }
+
+    /**
+     * Clears the fullscreen state after PiP is complete
+     */
+    fun clearFullscreenBeforePip(controllerId: Int) {
+        fullscreenBeforePip.remove(controllerId)
+        Log.d(TAG, "Cleared fullscreen state for controller $controllerId")
     }
 
     /**
@@ -202,6 +234,9 @@ object SharedPlayerManager {
 
         // Clear qualities cache
         qualitiesCache.clear()
+
+        // Clear fullscreen state
+        fullscreenBeforePip.clear()
 
         // Stop the service when clearing all players
         stopMediaSessionService(context)

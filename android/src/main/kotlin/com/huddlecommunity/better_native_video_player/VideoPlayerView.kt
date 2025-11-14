@@ -93,9 +93,6 @@ class VideoPlayerView(
     // Layout change listener for updating PiP params
     private var pipLayoutChangeListener: View.OnLayoutChangeListener? = null
 
-    // Broadcast receiver for PiP actions
-    private var pipActionReceiver: android.content.BroadcastReceiver? = null
-
 
     init {
         Log.d(TAG, "Creating VideoPlayerView with id: $viewId")
@@ -331,7 +328,7 @@ class VideoPlayerView(
         // This prevents Android from showing the wrong area in PiP after layout changes
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             setupPipLayoutListener()
-            setupPipActionReceiver()
+            // MediaSession automatically handles PiP controls - no need for custom broadcast receiver
         }
 
         // Setup event channel
@@ -688,89 +685,8 @@ class VideoPlayerView(
         Log.d(TAG, "PiP layout change listener set up")
     }
 
-    /**
-     * Sets up a broadcast receiver to handle PiP action buttons (play/pause)
-     */
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun setupPipActionReceiver() {
-        pipActionReceiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-                when (intent?.action) {
-                    "com.huddlecommunity.better_native_video_player.PIP_PLAY" -> {
-                        Log.d(TAG, "PiP Play action received")
-                        player.play()
-                        // Update PiP controls to reflect new state
-                        updatePictureInPictureParams()
-                    }
-                    "com.huddlecommunity.better_native_video_player.PIP_PAUSE" -> {
-                        Log.d(TAG, "PiP Pause action received")
-                        player.pause()
-                        // Update PiP controls to reflect new state
-                        updatePictureInPictureParams()
-                    }
-                }
-            }
-        }
-
-        val intentFilter = android.content.IntentFilter().apply {
-            addAction("com.huddlecommunity.better_native_video_player.PIP_PLAY")
-            addAction("com.huddlecommunity.better_native_video_player.PIP_PAUSE")
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(pipActionReceiver, intentFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(pipActionReceiver, intentFilter)
-        }
-
-        Log.d(TAG, "PiP action receiver registered")
-    }
-
-    /**
-     * Creates RemoteActions for PiP controls (play/pause)
-     */
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun createPipActions(): List<android.app.RemoteAction> {
-        val actions = mutableListOf<android.app.RemoteAction>()
-
-        // Create play/pause action based on current state
-        val isPlaying = player.isPlaying
-
-        val actionIntent = if (isPlaying) {
-            android.content.Intent("com.huddlecommunity.better_native_video_player.PIP_PAUSE")
-        } else {
-            android.content.Intent("com.huddlecommunity.better_native_video_player.PIP_PLAY")
-        }
-
-        val pendingIntent = android.app.PendingIntent.getBroadcast(
-            context,
-            if (isPlaying) 1 else 0,
-            actionIntent,
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val icon = if (isPlaying) {
-            android.graphics.drawable.Icon.createWithResource(
-                context,
-                android.R.drawable.ic_media_pause
-            )
-        } else {
-            android.graphics.drawable.Icon.createWithResource(
-                context,
-                android.R.drawable.ic_media_play
-            )
-        }
-
-        val action = android.app.RemoteAction(
-            icon,
-            if (isPlaying) "Pause" else "Play",
-            if (isPlaying) "Pause" else "Play",
-            pendingIntent
-        )
-
-        actions.add(action)
-        return actions
-    }
+    // Removed setupPipActionReceiver() and createPipActions()
+    // MediaSession automatically provides PiP controls - no need for custom broadcast receivers
 
     /**
      * Updates the Activity's PiP params with the current player view bounds
@@ -797,9 +713,9 @@ class VideoPlayerView(
                 .setAspectRatio(aspectRatio)
                 .setSourceRectHint(sourceRectHint)
 
-            // Add PiP actions for play/pause controls
-            val actions = createPipActions()
-            paramsBuilder.setActions(actions)
+            // MediaSession automatically provides PiP controls (play/pause/etc.)
+            // No need to manually create RemoteActions - ExoPlayer's MediaSession handles this
+            Log.d(TAG, "PiP params configured - MediaSession will provide native controls")
 
             // For Android 12+, enable seamless resize but NOT auto-enter
             // auto-enter causes Android to enter PiP automatically without calling onUserLeaveHint
@@ -884,7 +800,11 @@ class VideoPlayerView(
 
                 // Save the fullscreen state before entering PiP so we can restore it later
                 wasFullscreenBeforePip = isFullScreen
-                Log.d(TAG, "Saved fullscreen state before PiP: $wasFullscreenBeforePip")
+                // For shared players, also store in SharedPlayerManager to persist across view recreations
+                if (controllerId != null) {
+                    SharedPlayerManager.setFullscreenBeforePip(controllerId, isFullScreen)
+                }
+                Log.d(TAG, "Saved fullscreen state before PiP: $wasFullscreenBeforePip (controllerId: $controllerId)")
 
                 // If not already in fullscreen, we need to enter fullscreen to ensure only video shows in PiP
                 // But we'll do it without animation by entering fullscreen RIGHT before calling enterPictureInPictureMode
@@ -894,6 +814,16 @@ class VideoPlayerView(
                     enterFullscreenNative(activity)
                     isFullScreen = true
                     // DON'T send fullscreen event to Flutter yet - we'll enter PiP immediately
+
+                    // CRITICAL: Reconnect surface after fullscreen transition to prevent black screen
+                    // This ensures the player surface is properly attached to the PlayerView
+                    // We do this synchronously to ensure it happens before entering PiP
+                    val currentPlayer = playerView.player
+                    if (currentPlayer != null) {
+                        playerView.player = null
+                        playerView.player = currentPlayer
+                        Log.d(TAG, "Surface reconnected synchronously after fullscreen transition before PiP")
+                    }
                 }
 
                 val aspectRatio = player.videoSize.let { size ->
@@ -917,11 +847,7 @@ class VideoPlayerView(
                     .setAspectRatio(aspectRatio)
                     .setSourceRectHint(sourceRectHint)
 
-                // Add PiP actions for play/pause controls
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    val actions = createPipActions()
-                    paramsBuilder.setActions(actions)
-                }
+                // MediaSession automatically provides PiP controls - no custom actions needed
 
                 // For Android 12+, enable seamless resize but NOT auto-enter
                 // auto-enter causes Android to enter PiP automatically without calling onUserLeaveHint
@@ -947,6 +873,8 @@ class VideoPlayerView(
                 Log.d(TAG, "PiP mode entered: $entered")
 
                 if (entered) {
+                    // Already set above
+
                     // ALWAYS set media item when entering PiP to ensure correct media controls
                     currentMediaInfo?.let { mediaInfo ->
                         val title = mediaInfo["title"] as? String
@@ -961,6 +889,8 @@ class VideoPlayerView(
                     eventHandler.sendEvent("pipStart", eventData)
                     return true
                 } else {
+                    Log.d(TAG, "PiP entry failed")
+
                     // Restore controls if PiP failed
                     playerView.useController = showNativeControlsOriginal
 
@@ -1047,24 +977,41 @@ class VideoPlayerView(
         emitCurrentState()
 
         // Restore fullscreen state to what it was before entering PiP
+        // For shared players, get the state from SharedPlayerManager (persists across view recreations)
+        val effectiveWasFullscreenBeforePip = if (controllerId != null) {
+            SharedPlayerManager.getFullscreenBeforePip(controllerId) ?: wasFullscreenBeforePip
+        } else {
+            wasFullscreenBeforePip
+        }
+        Log.d(TAG, "Restoring fullscreen state - wasFullscreenBeforePip: $effectiveWasFullscreenBeforePip, current isFullScreen: $isFullScreen")
+
         // No delay needed - let Android handle the transition smoothly
         val pluginActivity = NativeVideoPlayerPlugin.getActivity()
         val activity = pluginActivity ?: getActivity(context)
 
         if (activity != null) {
-            if (!wasFullscreenBeforePip && isFullScreen) {
-                // Was inline before PiP, so exit fullscreen to return to inline
+            // When entering PiP, we always force the activity into fullscreen mode
+            // So when exiting PiP, the activity is always in fullscreen
+            // We need to restore based on what the state was BEFORE entering PiP
+
+            if (!effectiveWasFullscreenBeforePip) {
+                // Was inline before PiP -> exit fullscreen to return to inline
                 Log.d(TAG, "Was inline before PiP, exiting fullscreen to restore inline state")
                 exitFullscreenNative(activity)
                 isFullScreen = false
                 eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to false))
-            } else if (wasFullscreenBeforePip && !isFullScreen) {
-                // Was fullscreen before PiP, should stay fullscreen (this shouldn't happen normally)
-                Log.d(TAG, "Was fullscreen before PiP, ensuring fullscreen state")
-                isFullScreen = true
             } else {
-                // State matches - just log
-                Log.d(TAG, "Fullscreen state matches saved state: $wasFullscreenBeforePip")
+                // Was fullscreen before PiP -> stay in fullscreen
+                Log.d(TAG, "Was fullscreen before PiP, staying in fullscreen")
+                // Make sure local state is correct
+                isFullScreen = true
+                // Send event to ensure Flutter UI is in sync
+                eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to true))
+            }
+
+            // Clear the stored fullscreen state now that we've restored it
+            if (controllerId != null) {
+                SharedPlayerManager.clearFullscreenBeforePip(controllerId)
             }
         } else {
             Log.w(TAG, "Could not get activity to restore fullscreen state")
@@ -1157,16 +1104,7 @@ class VideoPlayerView(
             Log.d(TAG, "Removed PiP layout change listener")
         }
 
-        // Unregister PiP action receiver
-        pipActionReceiver?.let { receiver ->
-            try {
-                context.unregisterReceiver(receiver)
-                pipActionReceiver = null
-                Log.d(TAG, "Unregistered PiP action receiver")
-            } catch (e: Exception) {
-                Log.w(TAG, "Error unregistering PiP action receiver: ${e.message}")
-            }
-        }
+        Log.d(TAG, "dispose() - controllerId: $controllerId")
 
         // Remove listeners and stop periodic updates
         player.removeListener(observer)
