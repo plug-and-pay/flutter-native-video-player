@@ -869,12 +869,19 @@ class VideoPlayerView(
                 playerView.hideController()
                 Log.d(TAG, "All controls hidden (useController: ${playerView.useController})")
 
+                // Send pipStart event to Flutter BEFORE entering PiP natively
+                // This allows Flutter to prepare for PiP transition before native changes happen
+                val eventData = mutableMapOf<String, Any>("isPictureInPicture" to true)
+                if (isAutoTriggered) {
+                    eventData["auto"] = true
+                }
+                eventHandler.sendEvent("pipStart", eventData)
+                Log.d(TAG, "Sent pipStart event to Flutter before native PiP entry")
+
                 val entered = activity.enterPictureInPictureMode(params)
                 Log.d(TAG, "PiP mode entered: $entered")
 
                 if (entered) {
-                    // Already set above
-
                     // ALWAYS set media item when entering PiP to ensure correct media controls
                     currentMediaInfo?.let { mediaInfo ->
                         val title = mediaInfo["title"] as? String
@@ -882,11 +889,6 @@ class VideoPlayerView(
                         notificationHandler.setupMediaSession(mediaInfo)
                     }
 
-                    val eventData = mutableMapOf<String, Any>("isPictureInPicture" to true)
-                    if (isAutoTriggered) {
-                        eventData["auto"] = true
-                    }
-                    eventHandler.sendEvent("pipStart", eventData)
                     return true
                 } else {
                     Log.d(TAG, "PiP entry failed")
