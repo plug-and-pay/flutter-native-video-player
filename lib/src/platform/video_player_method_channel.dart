@@ -246,6 +246,24 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Disconnects from AirPlay (iOS only)
+  ///
+  /// Stops sending video to the currently connected AirPlay device.
+  /// AirPlay can be reconnected again later by the user.
+  ///
+  /// Throws if not currently connected to AirPlay.
+  Future<void> disconnectAirPlay() async {
+    try {
+      await _methodChannel.invokeMethod<void>(
+        'disconnectAirPlay',
+        <String, Object>{'viewId': primaryPlatformViewId},
+      );
+    } catch (e) {
+      debugPrint('Error calling disconnectAirPlay: $e');
+      rethrow;
+    }
+  }
+
   /// Disposes the native player resources
   Future<void> dispose() async {
     try {

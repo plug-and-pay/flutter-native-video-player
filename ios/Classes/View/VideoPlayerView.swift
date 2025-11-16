@@ -348,6 +348,8 @@ import QuartzCore
             handleIsAirPlayAvailable(result: result)
         case "showAirPlayPicker":
             handleShowAirPlayPicker(result: result)
+        case "disconnectAirPlay":
+            handleDisconnectAirPlay(result: result)
         case "dispose":
             handleDispose(result: result)
         default:

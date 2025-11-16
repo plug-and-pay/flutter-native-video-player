@@ -1479,6 +1479,28 @@ class NativeVideoPlayerController {
     await _methodChannel!.showAirPlayPicker();
   }
 
+  /// Disconnects from the currently connected AirPlay device (iOS only)
+  ///
+  /// This method stops sending video to the AirPlay device. The user can
+  /// reconnect to AirPlay later using the AirPlay picker.
+  ///
+  /// Throws a [PlatformException] if:
+  /// - Not currently connected to AirPlay
+  /// - Player is not initialized
+  ///
+  /// Example:
+  /// ```dart
+  /// if (controller.isAirplayConnected) {
+  ///   await controller.disconnectAirPlay();
+  /// }
+  /// ```
+  Future<void> disconnectAirPlay() async {
+    if (_methodChannel == null) {
+      throw StateError('Player not initialized');
+    }
+    await _methodChannel!.disconnectAirPlay();
+  }
+
   /// Locks the custom overlay to be always visible
   ///
   /// When the overlay is locked, it cannot be dismissed by tapping or by auto-hide timer.
