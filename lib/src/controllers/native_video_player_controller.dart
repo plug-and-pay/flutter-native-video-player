@@ -419,12 +419,7 @@ class NativeVideoPlayerController {
     if (!_isPipAvailableController.isClosed) {
       _isPipAvailableController.add(_state.isPipAvailable);
     }
-    if (!_isAirplayAvailableController.isClosed) {
-      _isAirplayAvailableController.add(_state.isAirplayAvailable);
-    }
-    if (!_isAirplayConnectedController.isClosed) {
-      _isAirplayConnectedController.add(_state.isAirplayConnected);
-    }
+    // Note: AirPlay state is now managed globally by AirPlayStateManager
     if (!_isFullscreenController.isClosed) {
       _isFullscreenController.add(_state.isFullScreen);
     }
@@ -454,9 +449,8 @@ class NativeVideoPlayerController {
       // Re-fetch AirPlay availability (iOS only)
       final isAirplayAvailable = await _methodChannel!.isAirPlayAvailable();
       _state = _state.copyWith(isAirplayAvailable: isAirplayAvailable);
-      if (!_isAirplayAvailableController.isClosed) {
-        _isAirplayAvailableController.add(isAirplayAvailable);
-      }
+      // Update global AirPlay state manager
+      AirPlayStateManager.instance.updateAvailability(isAirplayAvailable);
 
       // Re-fetch available qualities if video was loaded before
       // Even if current state isn't "loaded", we may have qualities cached from before
