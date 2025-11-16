@@ -184,27 +184,12 @@ extension VideoPlayerView {
                 let isActive = player.isExternalPlaybackActive
 
                 if isActive {
-                    // When AirPlay connects, try to get device name
-                    var deviceName = getAirPlayDeviceName()
-                    print("AVPlayer externalPlaybackActive changed to: \(isActive), device: \(deviceName ?? "none")")
+                    // When AirPlay connects, try to get device name with multiple retry attempts
+                    print("🎯 AVPlayer externalPlaybackActive changed to: \(isActive)")
 
-                    // If device name is nil, the audio route might not have updated yet
-                    // Try again after a short delay
-                    if deviceName == nil {
-                        print("⏳ Device name not available yet, retrying in 0.3s...")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                            guard let self = self else { return }
-                            let retryDeviceName = self.getAirPlayDeviceName()
-                            print("🔄 Retry result: \(retryDeviceName ?? "still nil")")
-
-                            // Send updated event with device name
-                            var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
-                            if let retryDeviceName = retryDeviceName {
-                                eventData["deviceName"] = retryDeviceName
-                            }
-                            self.sendEvent("airPlayConnectionChanged", data: eventData)
-                        }
-                    }
+                    // Try to get device name immediately
+                    let deviceName = getAirPlayDeviceName()
+                    print("📱 Initial device name check: \(deviceName ?? "nil")")
 
                     // Send initial event (might have deviceName or might be nil)
                     var eventData: [String: Any] = ["isConnected": isActive, "isConnecting": false]
@@ -212,9 +197,15 @@ extension VideoPlayerView {
                         eventData["deviceName"] = deviceName
                     }
                     sendEvent("airPlayConnectionChanged", data: eventData)
+
+                    // If device name is nil, retry multiple times with increasing delays
+                    if deviceName == nil {
+                        print("⏳ Device name not available yet, starting retry sequence...")
+                        retryGetAirPlayDeviceName(attempt: 1, maxAttempts: 4)
+                    }
                 } else {
                     // Disconnected from AirPlay
-                    print("AVPlayer externalPlaybackActive changed to: \(isActive)")
+                    print("🎯 AVPlayer externalPlaybackActive changed to: \(isActive)")
                     var eventData: [String: Any] = ["isConnected": false, "isConnecting": false]
                     sendEvent("airPlayConnectionChanged", data: eventData)
                 }
@@ -297,25 +288,105 @@ extension VideoPlayerView {
         let audioSession = AVAudioSession.sharedInstance()
         let currentRoute = audioSession.currentRoute
 
-        print("🔍 Checking audio route for AirPlay device. Output count: \(currentRoute.outputs.count)")
+        print("🔍 Checking audio route for AirPlay device")
+        print("   - Route description: \(currentRoute)")
+        print("   - Output count: \(currentRoute.outputs.count)")
+        print("   - Input count: \(currentRoute.inputs.count)")
 
         // Look for AirPlay output in the current route
-        for output in currentRoute.outputs {
-            print("🔍 Found output - type: \(output.portType.rawValue), name: \(output.portName)")
+        for (index, output) in currentRoute.outputs.enumerated() {
+            print("   - Output[\(index)]: type=\(output.portType.rawValue), name='\(output.portName)', uid=\(output.uid)")
 
             // AirPlay outputs have port type .airPlay
             if output.portType == .airPlay {
-                print("✅ Found AirPlay device: \(output.portName)")
+                print("✅ Found AirPlay device at output[\(index)]: '\(output.portName)'")
                 return output.portName
             }
         }
 
-        print("⚠️ No AirPlay device found in audio routes")
+        // Log all output types we found for debugging
+        let outputTypes = currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")
+        print("⚠️ No AirPlay device found. Current output types: [\(outputTypes)]")
+
+        // Also check if video is being sent via AirPlay but audio route hasn't updated
+        if let player = player, player.isExternalPlaybackActive {
+            print("ℹ️ Note: Player shows externalPlaybackActive=true but no AirPlay in audio route")
+            print("   This may indicate video-only AirPlay where audio route lags behind")
+        }
+
         return nil
+    }
+
+    /// Retries getting the AirPlay device name with exponential backoff
+    ///
+    /// This function recursively retries getting the device name because iOS sometimes
+    /// takes time to update the audio route when AirPlay video streaming starts.
+    ///
+    /// - Parameters:
+    ///   - attempt: Current attempt number (1-based)
+    ///   - maxAttempts: Maximum number of retry attempts
+    func retryGetAirPlayDeviceName(attempt: Int, maxAttempts: Int) {
+        guard attempt <= maxAttempts else {
+            print("❌ Failed to get device name after \(maxAttempts) attempts")
+            return
+        }
+
+        // Calculate delay with exponential backoff: 0.1s, 0.3s, 0.6s, 1.0s
+        let delay: Double
+        switch attempt {
+        case 1: delay = 0.1
+        case 2: delay = 0.3
+        case 3: delay = 0.6
+        default: delay = 1.0
+        }
+
+        print("🔄 Retry attempt \(attempt)/\(maxAttempts) - waiting \(delay)s...")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self else { return }
+
+            let deviceName = self.getAirPlayDeviceName()
+            print("🔍 Attempt \(attempt) result: \(deviceName ?? "still nil")")
+
+            if let deviceName = deviceName {
+                // Success! Send event with device name
+                print("✅ Device name found on attempt \(attempt): \(deviceName)")
+                var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
+                eventData["deviceName"] = deviceName
+                self.sendEvent("airPlayConnectionChanged", data: eventData)
+            } else if attempt < maxAttempts {
+                // Try again
+                self.retryGetAirPlayDeviceName(attempt: attempt + 1, maxAttempts: maxAttempts)
+            } else {
+                // Exhausted all retries
+                print("⚠️ Device name still not available after \(maxAttempts) attempts")
+                // Send event without device name - the Dart caching layer will handle it
+                var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
+                self.sendEvent("airPlayConnectionChanged", data: eventData)
+            }
+        }
     }
 
     /// Handles audio route changes to detect AirPlay device changes
     @objc func handleAudioRouteChange(notification: Notification) {
+        print("🔔 Audio route change notification received")
+
+        // Log the reason for the route change
+        if let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt {
+            let reasonString: String
+            switch AVAudioSession.RouteChangeReason(rawValue: reason) {
+            case .newDeviceAvailable: reasonString = "NewDeviceAvailable"
+            case .oldDeviceUnavailable: reasonString = "OldDeviceUnavailable"
+            case .categoryChange: reasonString = "CategoryChange"
+            case .override: reasonString = "Override"
+            case .wakeFromSleep: reasonString = "WakeFromSleep"
+            case .noSuitableRouteForCategory: reasonString = "NoSuitableRouteForCategory"
+            case .routeConfigurationChange: reasonString = "RouteConfigurationChange"
+            default: reasonString = "Unknown(\(reason))"
+            }
+            print("   - Reason: \(reasonString)")
+        }
+
         guard let player = player else { return }
 
         let deviceName = getAirPlayDeviceName()
@@ -334,7 +405,12 @@ extension VideoPlayerView {
 
         // Only send events for AirPlay-related changes
         if deviceName != nil || isPlayerActive {
-            print("Audio route changed - device: \(deviceName ?? "none"), playerActive: \(isPlayerActive), systemActive: \(isSystemActive), connected: \(isConnected), connecting: \(isConnecting)")
+            print("📡 AirPlay state change detected:")
+            print("   - Device: \(deviceName ?? "none")")
+            print("   - Player active: \(isPlayerActive)")
+            print("   - System active: \(isSystemActive)")
+            print("   - Connected: \(isConnected)")
+            print("   - Connecting: \(isConnecting)")
 
             var eventData: [String: Any] = [
                 "isConnected": isConnected,
@@ -344,6 +420,8 @@ extension VideoPlayerView {
                 eventData["deviceName"] = deviceName
             }
             sendEvent("airPlayConnectionChanged", data: eventData)
+        } else {
+            print("   - No AirPlay-related changes (device=nil, playerActive=false)")
         }
     }
 }
