@@ -801,7 +801,7 @@ class NativeVideoPlayerController {
                 // Enable native controls for PiP mode and enter native fullscreen
                 // Use method channel directly to avoid state checks in enterFullScreen()
                 unawaited(setShowNativeControls(true));
-                unawaited(_methodChannel?.enterFullScreen());
+                unawaited(enterFullScreen());
               }
             } else {
               // Normal fullscreen change from native side (e.g., PiP exit restoration)
