@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2025-11-16
+
+### Added
+- **Global AirPlay State Management**: Complete refactor to use centralized AirPlay state across all video player instances
+  - Added `AirPlayStateManager` singleton service for global AirPlay state management
+  - Added `airPlayDeviceName` property with stream support to track connected AirPlay device name
+  - Added `isAirplayConnecting` state to track connection progress between device selection and streaming
+  - Added `AirPlayStateManager.instance.showAirPlayPicker()` - Show AirPlay picker from anywhere in the app
+  - Added `AirPlayStateManager.instance.disconnectAirPlay()` - Disconnect from AirPlay globally
+  - Added `controller.disconnectAirPlay()` method for programmatic AirPlay disconnection
+  - Controllers now delegate to global manager for consistent state across all instances
+
+### Improved
+- **iOS AirPlay Device Name Detection**: Enhanced reliability with robust retry mechanism
+  - Implemented multi-attempt retry with exponential backoff (4 attempts: 0.1s, 0.3s, 0.6s, 1.0s delays)
+  - Added smart device name caching to prevent null values during temporary iOS audio route updates
+  - Comprehensive logging for audio route inspection and device detection
+  - Device names persist correctly even when iOS has timing issues with audio route updates
+  - Retry logic used in both initial state detection and audio route change events
+
+- **iOS AirPlay State Emission**: Improved state synchronization across multiple controllers
+  - New controllers immediately receive current global AirPlay state on subscription
+  - Modified stream getters to emit current state immediately to new subscribers
+  - All controllers stay synchronized regardless of creation order
+  - Fixed issue where AirPlay state was only visible on first controller
+
+- **iOS AirPlay Connection Detection**: Enhanced initial connection state handling
+  - Checks both player-level and system-level (audio route) AirPlay state on initialization
+  - Correctly detects existing AirPlay connections when new players are created
+  - Emits initial connection state even if AirPlay was active before player initialization
+  - Added audio route change observer to track AirPlay device switches
+
+- **iOS AirPlay Connecting State Logic**: Fixed inconsistent state detection
+  - Unified logic between initial state check and audio route change handler
+  - Consistently checks both `player.isExternalPlaybackActive` and system audio route
+  - Added detailed debug logging showing playerActive, systemActive, connected, and connecting states
+
+### Fixed
+- **iOS AirPlay Connecting State**: Fixed `isAirPlayConnecting` incorrectly showing true when connected and playing
+  - Audio route change handler now uses same detection logic as initial state check
+  - `isConnecting` properly calculated as: systemActive AND NOT playerActive AND isConnected
+  - Prevents showing "connecting" UI when already connected and playing
+  - Fixed state calculation issues during audio route changes while connected
+
+- **iOS Redundant State Updates**: Prevented unnecessary global state updates with multiple controllers
+  - Added pre-checks before calling `updateConnection()` and `updateAvailability()`
+  - Only updates global state if values differ from current state
+  - Prevents duplicate stream emissions when multiple controllers report same state
+  - Maintains single source of truth in `AirPlayStateManager`
+
+### Technical Details
+- **iOS Implementation**: Added `getAirPlayDeviceName()` method using `AVAudioSession` to detect device names
+- **iOS Audio Route Handling**: Added `handleAudioRouteChange()` observer for device switching and state monitoring
+- **Flutter State Model**: Extended with `airPlayDeviceName` and `isAirplayConnecting` properties
+- **API Compatibility**: Backward compatibility maintained for controller-level listener handlers
+- **Event Protocol**: Updated `airPlayConnectionChanged` event to include `deviceName` parameter
+
+### Breaking Changes
+- AirPlay state is now global across all video player instances (shared via `AirPlayStateManager`)
+- All controllers see the same AirPlay state regardless of which controller initiated the connection
+- This change provides more accurate representation of system-level AirPlay connectivity
+
 ## [0.3.3] - 2025-11-12
 
 ### Improved
