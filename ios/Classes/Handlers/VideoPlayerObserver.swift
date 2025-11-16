@@ -319,16 +319,22 @@ extension VideoPlayerView {
         guard let player = player else { return }
 
         let deviceName = getAirPlayDeviceName()
-        let isConnected = player.isExternalPlaybackActive
+        let isPlayerActive = player.isExternalPlaybackActive
+
+        // Use same logic as initial state check:
+        // We're connected if EITHER the player is using AirPlay OR device is in audio route
+        let isSystemActive = deviceName != nil
+        let isConnected = isPlayerActive || isSystemActive
 
         // Determine if we're in a connecting state:
-        // - AirPlay device is present in audio route
-        // - But video playback hasn't started yet (isExternalPlaybackActive = false)
-        let isConnecting = deviceName != nil && !isConnected
+        // - AirPlay device is present in audio route (systemActive)
+        // - But player hasn't started streaming yet (!playerActive)
+        // - AND we consider this "connected" at system level (isConnected)
+        let isConnecting = isSystemActive && !isPlayerActive && isConnected
 
         // Only send events for AirPlay-related changes
-        if deviceName != nil || isConnected {
-            print("Audio route changed - device: \(deviceName ?? "none"), connected: \(isConnected), connecting: \(isConnecting)")
+        if deviceName != nil || isPlayerActive {
+            print("Audio route changed - device: \(deviceName ?? "none"), playerActive: \(isPlayerActive), systemActive: \(isSystemActive), connected: \(isConnected), connecting: \(isConnecting)")
 
             var eventData: [String: Any] = [
                 "isConnected": isConnected,
