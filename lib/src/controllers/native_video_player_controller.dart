@@ -789,23 +789,33 @@ class NativeVideoPlayerController {
             final bool isFromAndroidPipPreparation =
                 PlatformUtils.isAndroid && controlEvent.data?['fromAndroidPipPreparation'] == true;
 
-            // If Android is requesting fullscreen for PiP and we're not already in fullscreen,
-            // actually enter fullscreen mode
-            if (isFromAndroidPipPreparation && isFullscreen && !_state.isFullScreen) {
-              // Hide custom overlay during PiP preparation
-              // This ensures the overlay controls don't show in PiP mode
-              // We set a flag instead of nulling _overlayBuilder so we can restore it later
-              _hideOverlayForPip = true;
-              _isOverlayLocked = false;
+            if (isFromAndroidPipPreparation) {
+              // Android is preparing for PiP - enter fullscreen
+              if (isFullscreen) {
+                // Hide custom overlay during PiP preparation
+                // This ensures the overlay controls don't show in PiP mode
+                // We set a flag instead of nulling _overlayBuilder so we can restore it later
+                _hideOverlayForPip = true;
+                _isOverlayLocked = false;
 
-              // Enable native controls for PiP mode
-              // This is done asynchronously so it doesn't block event processing
-              unawaited(setShowNativeControls(true));
-
-              // Enter fullscreen asynchronously without blocking event processing
-              unawaited(enterFullScreen());
+                // Enable native controls for PiP mode and enter native fullscreen
+                // Use method channel directly to avoid state checks in enterFullScreen()
+                unawaited(setShowNativeControls(true));
+                unawaited(_methodChannel?.enterFullScreen());
+              }
+            } else {
+              // Normal fullscreen change from native side (e.g., PiP exit restoration)
+              // Actually call the fullscreen methods to sync UI state
+              if (isFullscreen && !_state.isFullScreen) {
+                // Native side entered fullscreen, sync Flutter state
+                unawaited(enterFullScreen());
+              } else if (!isFullscreen && _state.isFullScreen) {
+                // Native side exited fullscreen, sync Flutter state
+                unawaited(exitFullScreen());
+              }
             }
 
+            // Always update state for fullscreen changes
             _updateState(_state.copyWith(isFullScreen: isFullscreen, controlState: controlEvent.state));
           }
 

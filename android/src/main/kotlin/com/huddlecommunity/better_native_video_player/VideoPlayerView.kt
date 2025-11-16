@@ -807,12 +807,19 @@ class VideoPlayerView(
                 eventHandler.sendEvent("pipStart", eventData)
                 Log.d(TAG, "Sent pipStart event to Flutter BEFORE any native changes")
 
-                // Give Flutter a brief moment (100ms) to receive and process the event
-                // before we make native changes that could trigger Flutter dispose
-                // This prevents Flutter from stopping the audio service prematurely
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (isAutoTriggered) {
+                    // For auto PiP (home button), enter immediately without delay
+                    // The activity must be resumed to enter PiP, and it's about to be paused
+                    Log.d(TAG, "Auto PiP - proceeding immediately without delay")
                     continueEnterPictureInPictureMode(activity, isAutoTriggered)
-                }, 100)
+                } else {
+                    // For manual PiP, give Flutter a brief moment (100ms) to receive and process the event
+                    // before we make native changes that could trigger Flutter dispose
+                    // This prevents Flutter from stopping the audio service prematurely
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        continueEnterPictureInPictureMode(activity, isAutoTriggered)
+                    }, 100)
+                }
 
                 // Return true immediately - PiP entry will complete asynchronously
                 return true
@@ -841,23 +848,31 @@ class VideoPlayerView(
         }
         Log.d(TAG, "Saved fullscreen state before PiP: $wasFullscreenBeforePip (controllerId: $controllerId)")
 
-        // If not already in fullscreen, tell Flutter to enter fullscreen first
-        // This will hide the app bar and FAB on the Flutter side
-        if (!isFullScreen) {
-            Log.d(TAG, "Entering Flutter fullscreen before PiP")
-            eventHandler.sendEvent("fullscreenChange", mapOf(
-                "isFullscreen" to true,
-                "fromAndroidPipPreparation" to true
-            ))
-
-            // Give Flutter time to process fullscreen change and update UI (300ms)
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                finalizePictureInPictureEntry(activity, isAutoTriggered)
-            }, 300)
-        } else {
-            // Already in fullscreen, proceed immediately
-            Log.d(TAG, "Already in fullscreen, proceeding to PiP")
+        // For auto PiP (triggered by home button), we must enter immediately
+        // because the activity is about to be stopped and won't be resumed
+        if (isAutoTriggered) {
+            Log.d(TAG, "Auto PiP - entering immediately without fullscreen transition")
             finalizePictureInPictureEntry(activity, isAutoTriggered)
+        } else {
+            // For manual PiP, enter fullscreen first if not already in fullscreen
+            // This will hide the app bar and FAB on the Flutter side
+            if (!isFullScreen) {
+                Log.d(TAG, "Manual PiP - requesting Flutter to enter fullscreen first")
+                eventHandler.sendEvent("fullscreenChange", mapOf(
+                    "isFullscreen" to true,
+                    "fromAndroidPipPreparation" to true
+                ))
+
+                // Give Flutter time to process fullscreen change and update UI (500ms)
+                // This needs to be long enough for Flutter to complete its fullscreen animation
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    finalizePictureInPictureEntry(activity, isAutoTriggered)
+                }, 500)
+            } else {
+                // Already in fullscreen, proceed immediately
+                Log.d(TAG, "Manual PiP - already in fullscreen, proceeding immediately")
+                finalizePictureInPictureEntry(activity, isAutoTriggered)
+            }
         }
     }
 
@@ -921,6 +936,16 @@ class VideoPlayerView(
                 Log.d(TAG, "📱 Setting media session for PiP start: $title")
                 notificationHandler.setupMediaSession(mediaInfo)
             }
+
+            // For auto PiP, tell Flutter to enter fullscreen AFTER PiP is established
+            // This ensures when user expands from PiP, they see fullscreen
+            if (isAutoTriggered) {
+                Log.d(TAG, "Auto PiP - requesting Flutter fullscreen after PiP entry")
+                eventHandler.sendEvent("fullscreenChange", mapOf(
+                    "isFullscreen" to true,
+                    "fromAndroidPipPreparation" to true
+                ))
+            }
         } else {
             Log.d(TAG, "PiP entry failed")
 
@@ -928,7 +953,7 @@ class VideoPlayerView(
             playerView.useController = showNativeControlsOriginal
 
             // Exit fullscreen if we entered it for PiP
-            if (!wasFullscreenBeforePip && isFullScreen) {
+            if (!wasFullscreenBeforePip) {
                 exitFullscreenNative(activity)
                 isFullScreen = false
                 eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to false))
