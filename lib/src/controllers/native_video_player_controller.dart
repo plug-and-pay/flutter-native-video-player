@@ -183,10 +183,18 @@ class NativeVideoPlayerController {
 
   /// Updates the method channel to use the specified platform view ID
   void _updateMethodChannel(int platformViewId) {
+    // Unregister old method channel from AirPlay manager
+    if (_methodChannel != null) {
+      AirPlayStateManager.instance.unregisterMethodChannel(_methodChannel!);
+    }
+
     _primaryPlatformViewId = platformViewId;
     _methodChannel = VideoPlayerMethodChannel(
       primaryPlatformViewId: platformViewId,
     );
+
+    // Register new method channel with AirPlay manager
+    AirPlayStateManager.instance.registerMethodChannel(_methodChannel!);
   }
 
   /// Completer to wait for initialization to complete
@@ -1683,6 +1691,11 @@ class NativeVideoPlayerController {
     _controlEventHandlers.clear();
     _airPlayAvailabilityHandlers.clear();
     _airPlayConnectionHandlers.clear();
+
+    // Unregister method channel from AirPlay manager
+    if (_methodChannel != null) {
+      AirPlayStateManager.instance.unregisterMethodChannel(_methodChannel!);
+    }
 
     // Dispose native player resources (removes shared player from manager)
     await _methodChannel?.dispose();

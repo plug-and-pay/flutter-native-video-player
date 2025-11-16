@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../platform/video_player_method_channel.dart';
+
 /// Global singleton manager for AirPlay state across all video player instances.
 ///
 /// Since AirPlay is a system-level feature (the entire app connects to an AirPlay
@@ -31,6 +33,29 @@ class AirPlayStateManager {
   // Cache the last known device name to handle cases where iOS temporarily
   // reports null while the device is still connected
   String? _lastKnownDeviceName;
+
+  // Keep track of registered method channels from controllers
+  // We need at least one to perform actions like showing the picker
+  final Set<VideoPlayerMethodChannel> _registeredChannels =
+      <VideoPlayerMethodChannel>{};
+
+  /// Registers a method channel from a controller
+  ///
+  /// Controllers should call this when they're created so the manager
+  /// can use them to perform AirPlay actions.
+  void registerMethodChannel(VideoPlayerMethodChannel channel) {
+    _registeredChannels.add(channel);
+  }
+
+  /// Unregisters a method channel when a controller is disposed
+  void unregisterMethodChannel(VideoPlayerMethodChannel channel) {
+    _registeredChannels.remove(channel);
+  }
+
+  /// Gets any available method channel for performing actions
+  VideoPlayerMethodChannel? get _anyMethodChannel {
+    return _registeredChannels.isNotEmpty ? _registeredChannels.first : null;
+  }
 
   /// Whether AirPlay is available on the device
   bool get isAirPlayAvailable => _isAirPlayAvailable;
@@ -164,6 +189,56 @@ class AirPlayStateManager {
     }
   }
 
+  /// Shows the AirPlay device picker (iOS only)
+  ///
+  /// Opens the native iOS AirPlay picker UI that allows users to select
+  /// an AirPlay device to connect to.
+  ///
+  /// Throws [StateError] if no video player controller is available.
+  /// Create at least one video player controller before calling this method.
+  ///
+  /// Example:
+  /// ```dart
+  /// // From anywhere in your app
+  /// await AirPlayStateManager.instance.showAirPlayPicker();
+  /// ```
+  Future<void> showAirPlayPicker() async {
+    final channel = _anyMethodChannel;
+    if (channel == null) {
+      throw StateError(
+        'No video player controller available. '
+        'Create a NativeVideoPlayerController before showing the AirPlay picker.',
+      );
+    }
+    await channel.showAirPlayPicker();
+  }
+
+  /// Disconnects from the currently connected AirPlay device (iOS only)
+  ///
+  /// Stops sending video to the AirPlay device. The user can reconnect
+  /// to AirPlay later using the picker.
+  ///
+  /// Throws [StateError] if:
+  /// - No video player controller is available
+  /// - Not currently connected to AirPlay
+  ///
+  /// Example:
+  /// ```dart
+  /// if (AirPlayStateManager.instance.isAirPlayConnected) {
+  ///   await AirPlayStateManager.instance.disconnectAirPlay();
+  /// }
+  /// ```
+  Future<void> disconnectAirPlay() async {
+    final channel = _anyMethodChannel;
+    if (channel == null) {
+      throw StateError(
+        'No video player controller available. '
+        'Create a NativeVideoPlayerController before disconnecting AirPlay.',
+      );
+    }
+    await channel.disconnectAirPlay();
+  }
+
   /// Disposes all stream controllers
   ///
   /// Note: This should only be called when the app is shutting down,
@@ -173,5 +248,6 @@ class AirPlayStateManager {
     _isAirPlayConnectedController.close();
     _isAirPlayConnectingController.close();
     _airPlayDeviceNameController.close();
+    _registeredChannels.clear();
   }
 }
