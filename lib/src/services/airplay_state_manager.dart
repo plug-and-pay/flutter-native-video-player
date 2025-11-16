@@ -17,12 +17,15 @@ class AirPlayStateManager {
       StreamController<bool>.broadcast();
   final StreamController<bool> _isAirPlayConnectedController =
       StreamController<bool>.broadcast();
+  final StreamController<bool> _isAirPlayConnectingController =
+      StreamController<bool>.broadcast();
   final StreamController<String?> _airPlayDeviceNameController =
       StreamController<String?>.broadcast();
 
   // Current state values
   bool _isAirPlayAvailable = false;
   bool _isAirPlayConnected = false;
+  bool _isAirPlayConnecting = false;
   String? _airPlayDeviceName;
 
   /// Whether AirPlay is available on the device
@@ -30,6 +33,9 @@ class AirPlayStateManager {
 
   /// Whether the app is currently connected to an AirPlay device
   bool get isAirPlayConnected => _isAirPlayConnected;
+
+  /// Whether the app is currently connecting to an AirPlay device
+  bool get isAirPlayConnecting => _isAirPlayConnecting;
 
   /// The name of the currently connected AirPlay device, or null if not connected
   String? get airPlayDeviceName => _airPlayDeviceName;
@@ -41,6 +47,13 @@ class AirPlayStateManager {
   /// Stream of AirPlay connection state changes
   Stream<bool> get isAirPlayConnectedStream =>
       _isAirPlayConnectedController.stream;
+
+  /// Stream of AirPlay connecting state changes
+  ///
+  /// Emits true when connecting to an AirPlay device,
+  /// false when connection completes or fails.
+  Stream<bool> get isAirPlayConnectingStream =>
+      _isAirPlayConnectingController.stream;
 
   /// Stream of AirPlay device name changes
   ///
@@ -60,14 +73,36 @@ class AirPlayStateManager {
   }
 
   /// Updates the AirPlay connection state and device name
-  void updateConnection(bool isConnected, {String? deviceName}) {
+  void updateConnection(
+    bool isConnected, {
+    bool? isConnecting,
+    String? deviceName,
+  }) {
     final bool connectionChanged = _isAirPlayConnected != isConnected;
+    final bool connectingChanged =
+        isConnecting != null && _isAirPlayConnecting != isConnecting;
     final bool deviceNameChanged = _airPlayDeviceName != deviceName;
 
     if (connectionChanged) {
       _isAirPlayConnected = isConnected;
       if (!_isAirPlayConnectedController.isClosed) {
         _isAirPlayConnectedController.add(isConnected);
+      }
+
+      // When connected, automatically clear connecting state
+      if (isConnected && _isAirPlayConnecting) {
+        _isAirPlayConnecting = false;
+        if (!_isAirPlayConnectingController.isClosed) {
+          _isAirPlayConnectingController.add(false);
+        }
+      }
+    }
+
+    // Update connecting state if provided
+    if (connectingChanged) {
+      _isAirPlayConnecting = isConnecting!;
+      if (!_isAirPlayConnectingController.isClosed) {
+        _isAirPlayConnectingController.add(isConnecting);
       }
     }
 
@@ -87,6 +122,7 @@ class AirPlayStateManager {
   void dispose() {
     _isAirPlayAvailableController.close();
     _isAirPlayConnectedController.close();
+    _isAirPlayConnectingController.close();
     _airPlayDeviceNameController.close();
   }
 }

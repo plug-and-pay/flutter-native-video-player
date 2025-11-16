@@ -184,7 +184,7 @@ extension VideoPlayerView {
                 let isActive = player.isExternalPlaybackActive
                 let deviceName = isActive ? getAirPlayDeviceName() : nil
                 print("AVPlayer externalPlaybackActive changed to: \(isActive), device: \(deviceName ?? "none")")
-                var eventData: [String: Any] = ["isConnected": isActive]
+                var eventData: [String: Any] = ["isConnected": isActive, "isConnecting": false]
                 if let deviceName = deviceName {
                     eventData["deviceName"] = deviceName
                 }
@@ -283,13 +283,22 @@ extension VideoPlayerView {
     @objc func handleAudioRouteChange(notification: Notification) {
         guard let player = player else { return }
 
-        // Only send the event if we're currently connected to AirPlay
-        // This prevents unnecessary events when other audio routes change
-        if player.isExternalPlaybackActive {
-            let deviceName = getAirPlayDeviceName()
-            print("Audio route changed, AirPlay device: \(deviceName ?? "none")")
+        let deviceName = getAirPlayDeviceName()
+        let isConnected = player.isExternalPlaybackActive
 
-            var eventData: [String: Any] = ["isConnected": true]
+        // Determine if we're in a connecting state:
+        // - AirPlay device is present in audio route
+        // - But video playback hasn't started yet (isExternalPlaybackActive = false)
+        let isConnecting = deviceName != nil && !isConnected
+
+        // Only send events for AirPlay-related changes
+        if deviceName != nil || isConnected {
+            print("Audio route changed - device: \(deviceName ?? "none"), connected: \(isConnected), connecting: \(isConnecting)")
+
+            var eventData: [String: Any] = [
+                "isConnected": isConnected,
+                "isConnecting": isConnecting
+            ]
             if let deviceName = deviceName {
                 eventData["deviceName"] = deviceName
             }

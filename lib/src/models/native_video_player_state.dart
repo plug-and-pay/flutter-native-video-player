@@ -17,6 +17,7 @@ class NativeVideoPlayerState {
     this.isPipAvailable = false,
     this.isAirplayAvailable = false,
     this.isAirplayConnected = false,
+    this.isAirplayConnecting = false,
     this.airPlayDeviceName,
   });
 
@@ -59,6 +60,9 @@ class NativeVideoPlayerState {
   /// Whether the video is currently connected to an AirPlay device
   final bool isAirplayConnected;
 
+  /// Whether the video is currently connecting to an AirPlay device
+  final bool isAirplayConnecting;
+
   /// The name of the currently connected AirPlay device, or null if not connected
   final String? airPlayDeviceName;
 
@@ -77,6 +81,7 @@ class NativeVideoPlayerState {
     bool? isPipAvailable,
     bool? isAirplayAvailable,
     bool? isAirplayConnected,
+    bool? isAirplayConnecting,
     String? airPlayDeviceName,
   }) {
     return NativeVideoPlayerState(
@@ -93,6 +98,7 @@ class NativeVideoPlayerState {
       isPipAvailable: isPipAvailable ?? this.isPipAvailable,
       isAirplayAvailable: isAirplayAvailable ?? this.isAirplayAvailable,
       isAirplayConnected: isAirplayConnected ?? this.isAirplayConnected,
+      isAirplayConnecting: isAirplayConnecting ?? this.isAirplayConnecting,
       airPlayDeviceName: airPlayDeviceName ?? this.airPlayDeviceName,
     );
   }
@@ -115,6 +121,7 @@ class NativeVideoPlayerState {
         other.isPipAvailable == isPipAvailable &&
         other.isAirplayAvailable == isAirplayAvailable &&
         other.isAirplayConnected == isAirplayConnected &&
+        other.isAirplayConnecting == isAirplayConnecting &&
         other.airPlayDeviceName == airPlayDeviceName;
   }
 
@@ -134,6 +141,7 @@ class NativeVideoPlayerState {
       isPipAvailable,
       isAirplayAvailable,
       isAirplayConnected,
+      isAirplayConnecting,
       airPlayDeviceName,
     );
   }

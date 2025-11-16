@@ -594,6 +594,12 @@ class NativeVideoPlayerController {
   /// This is a global state - when the app is connected to AirPlay, all controllers are connected
   bool get isAirplayConnected => AirPlayStateManager.instance.isAirPlayConnected;
 
+  /// Returns whether the video is currently connecting to an AirPlay device
+  ///
+  /// This is a global state - indicates a connection attempt is in progress
+  bool get isAirplayConnecting =>
+      AirPlayStateManager.instance.isAirPlayConnecting;
+
   /// Returns the name of the currently connected AirPlay device
   ///
   /// Returns null if not connected to any AirPlay device
@@ -633,6 +639,12 @@ class NativeVideoPlayerController {
   /// This is a global stream - all controllers receive the same AirPlay connection state
   Stream<bool> get isAirplayConnectedStream =>
       AirPlayStateManager.instance.isAirPlayConnectedStream;
+
+  /// Stream of AirPlay connecting state changes
+  ///
+  /// This is a global stream - emits true when connecting to AirPlay, false when connection completes or fails
+  Stream<bool> get isAirplayConnectingStream =>
+      AirPlayStateManager.instance.isAirPlayConnectingStream;
 
   /// Stream of AirPlay device name changes
   ///
@@ -794,17 +806,20 @@ class NativeVideoPlayerController {
         // Handle AirPlay connection change event
         if (eventName == 'airPlayConnectionChanged') {
           final bool isConnected = map['isConnected'] as bool? ?? false;
+          final bool isConnecting = map['isConnecting'] as bool? ?? false;
           final String? deviceName = map['deviceName'] as String?;
 
-          // Update global AirPlay state with device name
+          // Update global AirPlay state with connecting state and device name
           AirPlayStateManager.instance.updateConnection(
             isConnected,
+            isConnecting: isConnecting,
             deviceName: deviceName,
           );
 
           // Also update local state for backward compatibility
           _updateState(_state.copyWith(
             isAirplayConnected: isConnected,
+            isAirplayConnecting: isConnecting,
             airPlayDeviceName: deviceName,
           ));
           for (final handler in _airPlayConnectionHandlers) {
