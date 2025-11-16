@@ -538,13 +538,23 @@ import QuartzCore
             }
         }
 
-        // Send initial AirPlay connection state (in case already connected before player initialized)
+        // Send initial AirPlay connection state
+        // Check at system level (audio route) rather than just this player's state
+        // This ensures we detect if ANY player in the app is using AirPlay
+        let deviceName = getAirPlayDeviceName()
+        let isSystemAirPlayActive = deviceName != nil
+
         if let player = player {
-            let isConnected = player.isExternalPlaybackActive
+            // Check if THIS specific player is using AirPlay
+            let isPlayerAirPlayActive = player.isExternalPlaybackActive
+
+            // We're connected if either:
+            // 1. This player is actively using AirPlay, OR
+            // 2. AirPlay device is detected in audio route (another player might be using it)
+            let isConnected = isPlayerAirPlayActive || isSystemAirPlayActive
+
             if isConnected {
-                // AirPlay is already active - get device name and emit state
-                let deviceName = getAirPlayDeviceName()
-                print("[\(channelName)] AirPlay already connected on init: \(deviceName ?? "unknown device")")
+                print("[\(channelName)] AirPlay active on init - playerActive: \(isPlayerAirPlayActive), systemActive: \(isSystemAirPlayActive), device: \(deviceName ?? "unknown")")
 
                 var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
                 if let deviceName = deviceName {
@@ -567,7 +577,7 @@ import QuartzCore
 
                 sendEvent("airPlayConnectionChanged", data: eventData)
             } else {
-                // Not connected - send disconnected state
+                // Not connected at system or player level
                 print("[\(channelName)] AirPlay not connected on init")
                 sendEvent("airPlayConnectionChanged", data: ["isConnected": false, "isConnecting": false])
             }
