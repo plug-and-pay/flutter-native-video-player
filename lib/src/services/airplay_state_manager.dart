@@ -174,7 +174,7 @@ class AirPlayStateManager {
 
     // Update connecting state if provided
     if (connectingChanged) {
-      _isAirPlayConnecting = isConnecting!;
+      _isAirPlayConnecting = isConnecting;
       if (!_isAirPlayConnectingController.isClosed) {
         _isAirPlayConnectingController.add(isConnecting);
       }

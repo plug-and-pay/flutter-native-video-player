@@ -595,12 +595,14 @@ class NativeVideoPlayerController {
   /// Returns whether AirPlay is available on the device
   ///
   /// This is a global state - if AirPlay is available, it's available for all controllers
-  bool get isAirplayAvailable => AirPlayStateManager.instance.isAirPlayAvailable;
+  bool get isAirplayAvailable =>
+      AirPlayStateManager.instance.isAirPlayAvailable;
 
   /// Returns whether the video is currently connected to an AirPlay/Cast device
   ///
   /// This is a global state - when the app is connected to AirPlay, all controllers are connected
-  bool get isAirplayConnected => AirPlayStateManager.instance.isAirPlayConnected;
+  bool get isAirplayConnected =>
+      AirPlayStateManager.instance.isAirPlayConnected;
 
   /// Returns whether the video is currently connecting to an AirPlay device
   ///
@@ -611,7 +613,8 @@ class NativeVideoPlayerController {
   /// Returns the name of the currently connected AirPlay device
   ///
   /// Returns null if not connected to any AirPlay device
-  String? get airPlayDeviceName => AirPlayStateManager.instance.airPlayDeviceName;
+  String? get airPlayDeviceName =>
+      AirPlayStateManager.instance.airPlayDeviceName;
 
   /// Stream of buffered position changes
   Stream<Duration> get bufferedPositionStream =>
@@ -825,7 +828,8 @@ class NativeVideoPlayerController {
           // This ensures one source of truth and prevents redundant stream emissions
           // when multiple controllers report the same state
           final globalManager = AirPlayStateManager.instance;
-          final bool shouldUpdate = globalManager.isAirPlayConnected != isConnected ||
+          final bool shouldUpdate =
+              globalManager.isAirPlayConnected != isConnected ||
               globalManager.isAirPlayConnecting != isConnecting ||
               globalManager.airPlayDeviceName != deviceName;
 
@@ -839,11 +843,13 @@ class NativeVideoPlayerController {
           }
 
           // Also update local state for backward compatibility
-          _updateState(_state.copyWith(
-            isAirplayConnected: isConnected,
-            isAirplayConnecting: isConnecting,
-            airPlayDeviceName: deviceName,
-          ));
+          _updateState(
+            _state.copyWith(
+              isAirplayConnected: isConnected,
+              isAirplayConnecting: isConnecting,
+              airPlayDeviceName: deviceName,
+            ),
+          );
           for (final handler in _airPlayConnectionHandlers) {
             handler(isConnected);
           }
