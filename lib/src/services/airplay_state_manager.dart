@@ -44,15 +44,19 @@ class AirPlayStateManager {
   ///
   /// New subscribers immediately receive the current availability state,
   /// then receive all future changes.
-  Stream<bool> get isAirPlayAvailableStream => Stream.value(_isAirPlayAvailable)
-      .followedBy(_isAirPlayAvailableController.stream);
+  Stream<bool> get isAirPlayAvailableStream async* {
+    yield _isAirPlayAvailable; // Emit current value first
+    yield* _isAirPlayAvailableController.stream; // Then stream all updates
+  }
 
   /// Stream of AirPlay connection state changes
   ///
   /// New subscribers immediately receive the current connection state,
   /// then receive all future changes.
-  Stream<bool> get isAirPlayConnectedStream => Stream.value(_isAirPlayConnected)
-      .followedBy(_isAirPlayConnectedController.stream);
+  Stream<bool> get isAirPlayConnectedStream async* {
+    yield _isAirPlayConnected; // Emit current value first
+    yield* _isAirPlayConnectedController.stream; // Then stream all updates
+  }
 
   /// Stream of AirPlay connecting state changes
   ///
@@ -61,9 +65,10 @@ class AirPlayStateManager {
   ///
   /// Emits true when connecting to an AirPlay device,
   /// false when connection completes or fails.
-  Stream<bool> get isAirPlayConnectingStream =>
-      Stream.value(_isAirPlayConnecting)
-          .followedBy(_isAirPlayConnectingController.stream);
+  Stream<bool> get isAirPlayConnectingStream async* {
+    yield _isAirPlayConnecting; // Emit current value first
+    yield* _isAirPlayConnectingController.stream; // Then stream all updates
+  }
 
   /// Stream of AirPlay device name changes
   ///
@@ -72,9 +77,10 @@ class AirPlayStateManager {
   ///
   /// Emits the device name when connected to an AirPlay device,
   /// or null when disconnected.
-  Stream<String?> get airPlayDeviceNameStream =>
-      Stream.value(_airPlayDeviceName)
-          .followedBy(_airPlayDeviceNameController.stream);
+  Stream<String?> get airPlayDeviceNameStream async* {
+    yield _airPlayDeviceName; // Emit current value first
+    yield* _airPlayDeviceNameController.stream; // Then stream all updates
+  }
 
   /// Updates the AirPlay availability state
   void updateAvailability(bool isAvailable) {
