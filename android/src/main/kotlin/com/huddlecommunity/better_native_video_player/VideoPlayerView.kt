@@ -798,6 +798,15 @@ class VideoPlayerView(
             if (activity != null) {
                 Log.d(TAG, "Activity found for PiP: ${activity.javaClass.simpleName}")
 
+                // Send pipStart event to Flutter FIRST, before any native changes
+                // This allows Flutter to prepare for PiP transition before fullscreen/PiP mode changes
+                val eventData = mutableMapOf<String, Any>("isPictureInPicture" to true)
+                if (isAutoTriggered) {
+                    eventData["auto"] = true
+                }
+                eventHandler.sendEvent("pipStart", eventData)
+                Log.d(TAG, "Sent pipStart event to Flutter BEFORE any native changes")
+
                 // Save the fullscreen state before entering PiP so we can restore it later
                 wasFullscreenBeforePip = isFullScreen
                 // For shared players, also store in SharedPlayerManager to persist across view recreations
@@ -868,15 +877,6 @@ class VideoPlayerView(
                 playerView.controllerAutoShow = false
                 playerView.hideController()
                 Log.d(TAG, "All controls hidden (useController: ${playerView.useController})")
-
-                // Send pipStart event to Flutter BEFORE entering PiP natively
-                // This allows Flutter to prepare for PiP transition before native changes happen
-                val eventData = mutableMapOf<String, Any>("isPictureInPicture" to true)
-                if (isAutoTriggered) {
-                    eventData["auto"] = true
-                }
-                eventHandler.sendEvent("pipStart", eventData)
-                Log.d(TAG, "Sent pipStart event to Flutter before native PiP entry")
 
                 val entered = activity.enterPictureInPictureMode(params)
                 Log.d(TAG, "PiP mode entered: $entered")
