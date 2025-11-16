@@ -914,8 +914,6 @@ class VideoPlayerView(
                         Log.d(TAG, "📱 Setting media session for PiP start: $title")
                         notificationHandler.setupMediaSession(mediaInfo)
                     }
-
-                    return true
                 } else {
                     Log.d(TAG, "PiP entry failed")
 
