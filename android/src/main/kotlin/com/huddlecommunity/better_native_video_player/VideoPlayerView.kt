@@ -807,13 +807,39 @@ class VideoPlayerView(
                 eventHandler.sendEvent("pipStart", eventData)
                 Log.d(TAG, "Sent pipStart event to Flutter BEFORE any native changes")
 
-                // Save the fullscreen state before entering PiP so we can restore it later
-                wasFullscreenBeforePip = isFullScreen
-                // For shared players, also store in SharedPlayerManager to persist across view recreations
-                if (controllerId != null) {
-                    SharedPlayerManager.setFullscreenBeforePip(controllerId, isFullScreen)
-                }
-                Log.d(TAG, "Saved fullscreen state before PiP: $wasFullscreenBeforePip (controllerId: $controllerId)")
+                // Give Flutter a brief moment (100ms) to receive and process the event
+                // before we make native changes that could trigger Flutter dispose
+                // This prevents Flutter from stopping the audio service prematurely
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    continueEnterPictureInPictureMode(activity, isAutoTriggered)
+                }, 100)
+
+                // Return true immediately - PiP entry will complete asynchronously
+                return true
+            } else {
+                Log.e(TAG, "No activity found for PiP")
+                return false
+            }
+        } else {
+            Log.e(TAG, "PiP not supported on Android version: ${android.os.Build.VERSION.SDK_INT}")
+            return false
+        }
+    }
+
+    /**
+     * Continues entering PiP mode after giving Flutter time to process the pipStart event
+     */
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun continueEnterPictureInPictureMode(activity: Activity, isAutoTriggered: Boolean) {
+        Log.d(TAG, "Continuing PiP entry after Flutter event processing delay")
+
+        // Save the fullscreen state before entering PiP so we can restore it later
+        wasFullscreenBeforePip = isFullScreen
+        // For shared players, also store in SharedPlayerManager to persist across view recreations
+        if (controllerId != null) {
+            SharedPlayerManager.setFullscreenBeforePip(controllerId, isFullScreen)
+        }
+        Log.d(TAG, "Saved fullscreen state before PiP: $wasFullscreenBeforePip (controllerId: $controllerId)")
 
                 // If not already in fullscreen, we need to enter fullscreen to ensure only video shows in PiP
                 // But we'll do it without animation by entering fullscreen RIGHT before calling enterPictureInPictureMode
@@ -904,16 +930,7 @@ class VideoPlayerView(
                     }
 
                     Log.e(TAG, "Failed to enter PiP mode")
-                    return false
                 }
-            } else {
-                Log.e(TAG, "No activity found for PiP")
-                return false
-            }
-        } else {
-            Log.e(TAG, "PiP not supported on Android version: ${android.os.Build.VERSION.SDK_INT}")
-            return false
-        }
     }
 
     /**
