@@ -11,6 +11,7 @@ import '../models/native_video_player_quality.dart';
 import '../models/native_video_player_state.dart';
 import '../platform/platform_utils.dart';
 import '../platform/video_player_method_channel.dart';
+import '../services/airplay_state_manager.dart';
 
 /// Controller for managing native video player via platform channels
 ///
@@ -246,10 +247,6 @@ class NativeVideoPlayerController {
       StreamController<bool>.broadcast();
   final StreamController<bool> _isPipAvailableController =
       StreamController<bool>.broadcast();
-  final StreamController<bool> _isAirplayAvailableController =
-      StreamController<bool>.broadcast();
-  final StreamController<bool> _isAirplayConnectedController =
-      StreamController<bool>.broadcast();
   final StreamController<bool> _isFullscreenController =
       StreamController<bool>.broadcast();
   final StreamController<NativeVideoPlayerQuality> _qualityChangedController =
@@ -336,16 +333,8 @@ class NativeVideoPlayerController {
         _isPipAvailableController.add(newState.isPipAvailable);
       }
     }
-    if (oldState.isAirplayAvailable != newState.isAirplayAvailable) {
-      if (!_isAirplayAvailableController.isClosed) {
-        _isAirplayAvailableController.add(newState.isAirplayAvailable);
-      }
-    }
-    if (oldState.isAirplayConnected != newState.isAirplayConnected) {
-      if (!_isAirplayConnectedController.isClosed) {
-        _isAirplayConnectedController.add(newState.isAirplayConnected);
-      }
-    }
+    // Note: AirPlay state changes are now handled by the global AirPlayStateManager
+    // The streams are provided by the manager, not by individual controllers
     if (oldState.isFullScreen != newState.isFullScreen) {
       if (!_isFullscreenController.isClosed) {
         _isFullscreenController.add(newState.isFullScreen);
@@ -602,10 +591,19 @@ class NativeVideoPlayerController {
   bool get isPipAvailable => _state.isPipAvailable;
 
   /// Returns whether AirPlay is available on the device
-  bool get isAirplayAvailable => _state.isAirplayAvailable;
+  ///
+  /// This is a global state - if AirPlay is available, it's available for all controllers
+  bool get isAirplayAvailable => AirPlayStateManager.instance.isAirPlayAvailable;
 
   /// Returns whether the video is currently connected to an AirPlay/Cast device
-  bool get isAirplayConnected => _state.isAirplayConnected;
+  ///
+  /// This is a global state - when the app is connected to AirPlay, all controllers are connected
+  bool get isAirplayConnected => AirPlayStateManager.instance.isAirPlayConnected;
+
+  /// Returns the name of the currently connected AirPlay device
+  ///
+  /// Returns null if not connected to any AirPlay device
+  String? get airPlayDeviceName => AirPlayStateManager.instance.airPlayDeviceName;
 
   /// Stream of buffered position changes
   Stream<Duration> get bufferedPositionStream =>
@@ -631,12 +629,22 @@ class NativeVideoPlayerController {
   Stream<bool> get isPipAvailableStream => _isPipAvailableController.stream;
 
   /// Stream of AirPlay availability changes
+  ///
+  /// This is a global stream - all controllers receive the same AirPlay availability state
   Stream<bool> get isAirplayAvailableStream =>
-      _isAirplayAvailableController.stream;
+      AirPlayStateManager.instance.isAirPlayAvailableStream;
 
   /// Stream of AirPlay connection state changes
+  ///
+  /// This is a global stream - all controllers receive the same AirPlay connection state
   Stream<bool> get isAirplayConnectedStream =>
-      _isAirplayConnectedController.stream;
+      AirPlayStateManager.instance.isAirPlayConnectedStream;
+
+  /// Stream of AirPlay device name changes
+  ///
+  /// Emits the device name when connected to an AirPlay device, or null when disconnected
+  Stream<String?> get airPlayDeviceNameStream =>
+      AirPlayStateManager.instance.airPlayDeviceNameStream;
 
   /// Stream of fullscreen state changes
   Stream<bool> get isFullscreenStream => _isFullscreenController.stream;
@@ -777,6 +785,11 @@ class NativeVideoPlayerController {
         // Handle AirPlay availability change event
         if (eventName == 'airPlayAvailabilityChanged') {
           final bool isAvailable = map['isAvailable'] as bool? ?? false;
+
+          // Update global AirPlay state
+          AirPlayStateManager.instance.updateAvailability(isAvailable);
+
+          // Also update local state for backward compatibility
           _updateState(_state.copyWith(isAirplayAvailable: isAvailable));
           for (final handler in _airPlayAvailabilityHandlers) {
             handler(isAvailable);
@@ -787,7 +800,19 @@ class NativeVideoPlayerController {
         // Handle AirPlay connection change event
         if (eventName == 'airPlayConnectionChanged') {
           final bool isConnected = map['isConnected'] as bool? ?? false;
-          _updateState(_state.copyWith(isAirplayConnected: isConnected));
+          final String? deviceName = map['deviceName'] as String?;
+
+          // Update global AirPlay state with device name
+          AirPlayStateManager.instance.updateConnection(
+            isConnected,
+            deviceName: deviceName,
+          );
+
+          // Also update local state for backward compatibility
+          _updateState(_state.copyWith(
+            isAirplayConnected: isConnected,
+            airPlayDeviceName: deviceName,
+          ));
           for (final handler in _airPlayConnectionHandlers) {
             handler(isConnected);
           }
@@ -1639,8 +1664,7 @@ class NativeVideoPlayerController {
     await _speedController.close();
     await _isPipEnabledController.close();
     await _isPipAvailableController.close();
-    await _isAirplayAvailableController.close();
-    await _isAirplayConnectedController.close();
+    // Note: AirPlay stream controllers are managed by the global AirPlayStateManager
     await _isFullscreenController.close();
     await _qualityChangedController.close();
     await _qualitiesController.close();

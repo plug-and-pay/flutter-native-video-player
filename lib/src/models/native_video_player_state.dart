@@ -17,6 +17,7 @@ class NativeVideoPlayerState {
     this.isPipAvailable = false,
     this.isAirplayAvailable = false,
     this.isAirplayConnected = false,
+    this.airPlayDeviceName,
   });
 
   /// Whether the video is currently in fullscreen mode
@@ -58,6 +59,9 @@ class NativeVideoPlayerState {
   /// Whether the video is currently connected to an AirPlay device
   final bool isAirplayConnected;
 
+  /// The name of the currently connected AirPlay device, or null if not connected
+  final String? airPlayDeviceName;
+
   /// Creates a copy of this state with the given fields replaced with new values
   NativeVideoPlayerState copyWith({
     bool? isFullScreen,
@@ -73,6 +77,7 @@ class NativeVideoPlayerState {
     bool? isPipAvailable,
     bool? isAirplayAvailable,
     bool? isAirplayConnected,
+    String? airPlayDeviceName,
   }) {
     return NativeVideoPlayerState(
       isFullScreen: isFullScreen ?? this.isFullScreen,
@@ -88,6 +93,7 @@ class NativeVideoPlayerState {
       isPipAvailable: isPipAvailable ?? this.isPipAvailable,
       isAirplayAvailable: isAirplayAvailable ?? this.isAirplayAvailable,
       isAirplayConnected: isAirplayConnected ?? this.isAirplayConnected,
+      airPlayDeviceName: airPlayDeviceName ?? this.airPlayDeviceName,
     );
   }
 
@@ -108,7 +114,8 @@ class NativeVideoPlayerState {
         other.isPipEnabled == isPipEnabled &&
         other.isPipAvailable == isPipAvailable &&
         other.isAirplayAvailable == isAirplayAvailable &&
-        other.isAirplayConnected == isAirplayConnected;
+        other.isAirplayConnected == isAirplayConnected &&
+        other.airPlayDeviceName == airPlayDeviceName;
   }
 
   @override
@@ -127,6 +134,7 @@ class NativeVideoPlayerState {
       isPipAvailable,
       isAirplayAvailable,
       isAirplayConnected,
+      airPlayDeviceName,
     );
   }
 }

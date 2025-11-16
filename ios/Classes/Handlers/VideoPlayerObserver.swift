@@ -13,6 +13,14 @@ extension VideoPlayerView {
         // Observe AirPlay connection status
         player?.addObserver(self, forKeyPath: "externalPlaybackActive", options: [.new, .initial], context: nil)
 
+        // Observe audio route changes to detect AirPlay device changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(playerItemFailedToPlay),
@@ -174,8 +182,13 @@ extension VideoPlayerView {
             case "externalPlaybackActive":
                 guard let player = player else { return }
                 let isActive = player.isExternalPlaybackActive
-                print("AVPlayer externalPlaybackActive changed to: \(isActive)")
-                sendEvent("airPlayConnectionChanged", data: ["isConnected": isActive])
+                let deviceName = isActive ? getAirPlayDeviceName() : nil
+                print("AVPlayer externalPlaybackActive changed to: \(isActive), device: \(deviceName ?? "none")")
+                var eventData: [String: Any] = ["isConnected": isActive]
+                if let deviceName = deviceName {
+                    eventData["deviceName"] = deviceName
+                }
+                sendEvent("airPlayConnectionChanged", data: eventData)
             default: break
             }
         }
@@ -247,6 +260,40 @@ extension VideoPlayerView {
             if let isAvailable = routeDetector?.multipleRoutesDetected {
                 sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
             }
+        }
+    }
+
+    /// Gets the name of the currently connected AirPlay device
+    func getAirPlayDeviceName() -> String? {
+        let audioSession = AVAudioSession.sharedInstance()
+        let currentRoute = audioSession.currentRoute
+
+        // Look for AirPlay output in the current route
+        for output in currentRoute.outputs {
+            // AirPlay outputs have port type .airPlay
+            if output.portType == .airPlay {
+                return output.portName
+            }
+        }
+
+        return nil
+    }
+
+    /// Handles audio route changes to detect AirPlay device changes
+    @objc func handleAudioRouteChange(notification: Notification) {
+        guard let player = player else { return }
+
+        // Only send the event if we're currently connected to AirPlay
+        // This prevents unnecessary events when other audio routes change
+        if player.isExternalPlaybackActive {
+            let deviceName = getAirPlayDeviceName()
+            print("Audio route changed, AirPlay device: \(deviceName ?? "none")")
+
+            var eventData: [String: Any] = ["isConnected": true]
+            if let deviceName = deviceName {
+                eventData["deviceName"] = deviceName
+            }
+            sendEvent("airPlayConnectionChanged", data: eventData)
         }
     }
 }
