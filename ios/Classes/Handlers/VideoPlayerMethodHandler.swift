@@ -81,6 +81,16 @@ extension VideoPlayerView {
                     qualityLevels: qualities
                 )
             }
+
+            // Send qualityChange event to notify Flutter that qualities are loaded
+            if !result.isEmpty, let defaultQuality = result.first {
+                self.sendEvent("qualityChange", data: [
+                    "url": defaultQuality["url"] as? String ?? "",
+                    "label": defaultQuality["label"] as? String ?? "Auto",
+                    "isAuto": defaultQuality["isAuto"] as? Bool ?? true
+                ])
+                print("🎬 Sent qualityChange event with \(result.count) available qualities")
+            }
             }
         } else {
             print("🎬 Skipping quality fetch for non-HLS content")
