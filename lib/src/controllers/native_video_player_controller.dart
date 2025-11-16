@@ -800,8 +800,12 @@ class NativeVideoPlayerController {
         if (eventName == 'airPlayAvailabilityChanged') {
           final bool isAvailable = map['isAvailable'] as bool? ?? false;
 
-          // Update global AirPlay state
-          AirPlayStateManager.instance.updateAvailability(isAvailable);
+          // Only update global state if the value is actually different
+          // This ensures one source of truth and prevents redundant stream emissions
+          final globalManager = AirPlayStateManager.instance;
+          if (globalManager.isAirPlayAvailable != isAvailable) {
+            globalManager.updateAvailability(isAvailable);
+          }
 
           // Also update local state for backward compatibility
           _updateState(_state.copyWith(isAirplayAvailable: isAvailable));
@@ -817,12 +821,22 @@ class NativeVideoPlayerController {
           final bool isConnecting = map['isConnecting'] as bool? ?? false;
           final String? deviceName = map['deviceName'] as String?;
 
-          // Update global AirPlay state with connecting state and device name
-          AirPlayStateManager.instance.updateConnection(
-            isConnected,
-            isConnecting: isConnecting,
-            deviceName: deviceName,
-          );
+          // Only update global state if values are actually different
+          // This ensures one source of truth and prevents redundant stream emissions
+          // when multiple controllers report the same state
+          final globalManager = AirPlayStateManager.instance;
+          final bool shouldUpdate = globalManager.isAirPlayConnected != isConnected ||
+              globalManager.isAirPlayConnecting != isConnecting ||
+              globalManager.airPlayDeviceName != deviceName;
+
+          if (shouldUpdate) {
+            // Update global AirPlay state with connecting state and device name
+            globalManager.updateConnection(
+              isConnected,
+              isConnecting: isConnecting,
+              deviceName: deviceName,
+            );
+          }
 
           // Also update local state for backward compatibility
           _updateState(_state.copyWith(
