@@ -841,94 +841,101 @@ class VideoPlayerView(
         }
         Log.d(TAG, "Saved fullscreen state before PiP: $wasFullscreenBeforePip (controllerId: $controllerId)")
 
-                // If not already in fullscreen, we need to enter fullscreen to ensure only video shows in PiP
-                // But we'll do it without animation by entering fullscreen RIGHT before calling enterPictureInPictureMode
-                val needToEnterFullscreen = !isFullScreen
-                if (needToEnterFullscreen) {
-                    Log.d(TAG, "Entering fullscreen silently before PiP")
-                    enterFullscreenNative(activity)
-                    isFullScreen = true
-                    // DON'T send fullscreen event to Flutter yet - we'll enter PiP immediately
+        // If not already in fullscreen, tell Flutter to enter fullscreen first
+        // This will hide the app bar and FAB on the Flutter side
+        if (!isFullScreen) {
+            Log.d(TAG, "Entering Flutter fullscreen before PiP")
+            eventHandler.sendEvent("fullscreenChange", mapOf(
+                "isFullscreen" to true,
+                "fromAndroidPipPreparation" to true
+            ))
 
-                    // CRITICAL: Reconnect surface after fullscreen transition to prevent black screen
-                    // This ensures the player surface is properly attached to the PlayerView
-                    // We do this synchronously to ensure it happens before entering PiP
-                    val currentPlayer = playerView.player
-                    if (currentPlayer != null) {
-                        playerView.player = null
-                        playerView.player = currentPlayer
-                        Log.d(TAG, "Surface reconnected synchronously after fullscreen transition before PiP")
-                    }
-                }
+            // Give Flutter time to process fullscreen change and update UI (300ms)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                finalizePictureInPictureEntry(activity, isAutoTriggered)
+            }, 300)
+        } else {
+            // Already in fullscreen, proceed immediately
+            Log.d(TAG, "Already in fullscreen, proceeding to PiP")
+            finalizePictureInPictureEntry(activity, isAutoTriggered)
+        }
+    }
 
-                val aspectRatio = player.videoSize.let { size ->
-                    if (size.width > 0 && size.height > 0) {
-                        Log.d(TAG, "Using video aspect ratio: ${size.width}x${size.height}")
-                        android.util.Rational(size.width, size.height)
-                    } else {
-                        Log.d(TAG, "Using default aspect ratio 16:9")
-                        android.util.Rational(16, 9)
-                    }
-                }
+    /**
+     * Finalizes PiP entry after Flutter has had time to enter fullscreen
+     */
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun finalizePictureInPictureEntry(activity: Activity, isAutoTriggered: Boolean) {
+        Log.d(TAG, "Finalizing PiP entry")
 
-                // Get the bounds of the actual player view
-                // Always use playerView bounds, even in fullscreen, to ensure only the video shows in PiP
-                val sourceRectHint = android.graphics.Rect().also { rect ->
-                    playerView.getGlobalVisibleRect(rect)
-                    Log.d(TAG, "Using player view rect: $rect (fullscreen: $isFullScreen)")
-                }
+        val aspectRatio = player.videoSize.let { size ->
+            if (size.width > 0 && size.height > 0) {
+                Log.d(TAG, "Using video aspect ratio: ${size.width}x${size.height}")
+                android.util.Rational(size.width, size.height)
+            } else {
+                Log.d(TAG, "Using default aspect ratio 16:9")
+                android.util.Rational(16, 9)
+            }
+        }
 
-                val paramsBuilder = android.app.PictureInPictureParams.Builder()
-                    .setAspectRatio(aspectRatio)
-                    .setSourceRectHint(sourceRectHint)
+        // Get the bounds of the actual player view
+        // Now that Flutter is in fullscreen, this should capture just the video area
+        val sourceRectHint = android.graphics.Rect().also { rect ->
+            playerView.getGlobalVisibleRect(rect)
+            Log.d(TAG, "Using player view rect: $rect (fullscreen: $isFullScreen)")
+        }
 
-                // MediaSession automatically provides PiP controls - no custom actions needed
+        val paramsBuilder = android.app.PictureInPictureParams.Builder()
+            .setAspectRatio(aspectRatio)
+            .setSourceRectHint(sourceRectHint)
 
-                // For Android 12+, enable seamless resize but NOT auto-enter
-                // auto-enter causes Android to enter PiP automatically without calling onUserLeaveHint
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    paramsBuilder.setSeamlessResizeEnabled(true)
-                    // DO NOT use setAutoEnterEnabled(true) - it bypasses onUserLeaveHint/onStop
-                }
+        // MediaSession automatically provides PiP controls - no custom actions needed
 
-                val params = paramsBuilder.build()
+        // For Android 12+, enable seamless resize but NOT auto-enter
+        // auto-enter causes Android to enter PiP automatically without calling onUserLeaveHint
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            paramsBuilder.setSeamlessResizeEnabled(true)
+            // DO NOT use setAutoEnterEnabled(true) - it bypasses onUserLeaveHint/onStop
+        }
 
-                // Update activity PiP params for smooth transitions
-                activity.setPictureInPictureParams(params)
+        val params = paramsBuilder.build()
 
-                // Hide all controls (both native and custom) BEFORE entering PiP mode
-                // Only system PiP controls will show
-                Log.d(TAG, "Current useController: ${playerView.useController}")
-                playerView.useController = false
-                playerView.controllerAutoShow = false
-                playerView.hideController()
-                Log.d(TAG, "All controls hidden (useController: ${playerView.useController})")
+        // Update activity PiP params for smooth transitions
+        activity.setPictureInPictureParams(params)
 
-                val entered = activity.enterPictureInPictureMode(params)
-                Log.d(TAG, "PiP mode entered: $entered")
+        // Hide all controls (both native and custom) BEFORE entering PiP mode
+        // Only system PiP controls will show
+        Log.d(TAG, "Current useController: ${playerView.useController}")
+        playerView.useController = false
+        playerView.controllerAutoShow = false
+        playerView.hideController()
+        Log.d(TAG, "All controls hidden (useController: ${playerView.useController})")
 
-                if (entered) {
-                    // ALWAYS set media item when entering PiP to ensure correct media controls
-                    currentMediaInfo?.let { mediaInfo ->
-                        val title = mediaInfo["title"] as? String
-                        Log.d(TAG, "📱 Setting media session for PiP start: $title")
-                        notificationHandler.setupMediaSession(mediaInfo)
-                    }
-                } else {
-                    Log.d(TAG, "PiP entry failed")
+        val entered = activity.enterPictureInPictureMode(params)
+        Log.d(TAG, "PiP mode entered: $entered")
 
-                    // Restore controls if PiP failed
-                    playerView.useController = showNativeControlsOriginal
+        if (entered) {
+            // ALWAYS set media item when entering PiP to ensure correct media controls
+            currentMediaInfo?.let { mediaInfo ->
+                val title = mediaInfo["title"] as? String
+                Log.d(TAG, "📱 Setting media session for PiP start: $title")
+                notificationHandler.setupMediaSession(mediaInfo)
+            }
+        } else {
+            Log.d(TAG, "PiP entry failed")
 
-                    // Exit fullscreen if we entered it for PiP
-                    if (!wasFullscreenBeforePip && isFullScreen) {
-                        exitFullscreenNative(activity)
-                        isFullScreen = false
-                        eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to false))
-                    }
+            // Restore controls if PiP failed
+            playerView.useController = showNativeControlsOriginal
 
-                    Log.e(TAG, "Failed to enter PiP mode")
-                }
+            // Exit fullscreen if we entered it for PiP
+            if (!wasFullscreenBeforePip && isFullScreen) {
+                exitFullscreenNative(activity)
+                isFullScreen = false
+                eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to false))
+            }
+
+            Log.e(TAG, "Failed to enter PiP mode")
+        }
     }
 
     /**
