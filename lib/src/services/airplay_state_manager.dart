@@ -28,6 +28,10 @@ class AirPlayStateManager {
   bool _isAirPlayConnecting = false;
   String? _airPlayDeviceName;
 
+  // Cache the last known device name to handle cases where iOS temporarily
+  // reports null while the device is still connected
+  String? _lastKnownDeviceName;
+
   /// Whether AirPlay is available on the device
   bool get isAirPlayAvailable => _isAirPlayAvailable;
 
@@ -101,7 +105,32 @@ class AirPlayStateManager {
     final bool connectionChanged = _isAirPlayConnected != isConnected;
     final bool connectingChanged =
         isConnecting != null && _isAirPlayConnecting != isConnecting;
-    final bool deviceNameChanged = _airPlayDeviceName != deviceName;
+
+    // Smart device name handling:
+    // - If we receive a device name, cache it and use it
+    // - If we receive null but are connected, use the cached name
+    // - Only clear the name when disconnected
+    String? effectiveDeviceName;
+    if (isConnected) {
+      if (deviceName != null) {
+        // We got a device name from iOS - cache it and use it
+        _lastKnownDeviceName = deviceName;
+        effectiveDeviceName = deviceName;
+      } else if (_lastKnownDeviceName != null) {
+        // iOS sent null but we have a cached name and are still connected
+        // Use the cached name
+        effectiveDeviceName = _lastKnownDeviceName;
+      } else {
+        // No device name and no cache - device name is unknown
+        effectiveDeviceName = null;
+      }
+    } else {
+      // Disconnected - clear everything
+      effectiveDeviceName = null;
+      _lastKnownDeviceName = null;
+    }
+
+    final bool deviceNameChanged = _airPlayDeviceName != effectiveDeviceName;
 
     if (connectionChanged) {
       _isAirPlayConnected = isConnected;
@@ -128,7 +157,7 @@ class AirPlayStateManager {
 
     // Update device name
     if (deviceNameChanged) {
-      _airPlayDeviceName = isConnected ? deviceName : null;
+      _airPlayDeviceName = effectiveDeviceName;
       if (!_airPlayDeviceNameController.isClosed) {
         _airPlayDeviceNameController.add(_airPlayDeviceName);
       }
