@@ -538,6 +538,41 @@ import QuartzCore
             }
         }
 
+        // Send initial AirPlay connection state (in case already connected before player initialized)
+        if let player = player {
+            let isConnected = player.isExternalPlaybackActive
+            if isConnected {
+                // AirPlay is already active - get device name and emit state
+                let deviceName = getAirPlayDeviceName()
+                print("[\(channelName)] AirPlay already connected on init: \(deviceName ?? "unknown device")")
+
+                var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
+                if let deviceName = deviceName {
+                    eventData["deviceName"] = deviceName
+                } else {
+                    // Device name not available yet - retry after a short delay
+                    print("[\(channelName)] Device name not available on init, retrying in 0.3s...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                        guard let self = self else { return }
+                        let retryDeviceName = self.getAirPlayDeviceName()
+                        print("[\(channelName)] Init retry result: \(retryDeviceName ?? "still nil")")
+
+                        if let retryDeviceName = retryDeviceName {
+                            var retryEventData: [String: Any] = ["isConnected": true, "isConnecting": false]
+                            retryEventData["deviceName"] = retryDeviceName
+                            self.sendEvent("airPlayConnectionChanged", data: retryEventData)
+                        }
+                    }
+                }
+
+                sendEvent("airPlayConnectionChanged", data: eventData)
+            } else {
+                // Not connected - send disconnected state
+                print("[\(channelName)] AirPlay not connected on init")
+                sendEvent("airPlayConnectionChanged", data: ["isConnected": false, "isConnecting": false])
+            }
+        }
+
         return nil
     }
 
