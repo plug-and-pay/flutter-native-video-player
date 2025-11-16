@@ -41,26 +41,40 @@ class AirPlayStateManager {
   String? get airPlayDeviceName => _airPlayDeviceName;
 
   /// Stream of AirPlay availability changes
-  Stream<bool> get isAirPlayAvailableStream =>
-      _isAirPlayAvailableController.stream;
+  ///
+  /// New subscribers immediately receive the current availability state,
+  /// then receive all future changes.
+  Stream<bool> get isAirPlayAvailableStream => Stream.value(_isAirPlayAvailable)
+      .followedBy(_isAirPlayAvailableController.stream);
 
   /// Stream of AirPlay connection state changes
-  Stream<bool> get isAirPlayConnectedStream =>
-      _isAirPlayConnectedController.stream;
+  ///
+  /// New subscribers immediately receive the current connection state,
+  /// then receive all future changes.
+  Stream<bool> get isAirPlayConnectedStream => Stream.value(_isAirPlayConnected)
+      .followedBy(_isAirPlayConnectedController.stream);
 
   /// Stream of AirPlay connecting state changes
+  ///
+  /// New subscribers immediately receive the current connecting state,
+  /// then receive all future changes.
   ///
   /// Emits true when connecting to an AirPlay device,
   /// false when connection completes or fails.
   Stream<bool> get isAirPlayConnectingStream =>
-      _isAirPlayConnectingController.stream;
+      Stream.value(_isAirPlayConnecting)
+          .followedBy(_isAirPlayConnectingController.stream);
 
   /// Stream of AirPlay device name changes
+  ///
+  /// New subscribers immediately receive the current device name,
+  /// then receive all future changes.
   ///
   /// Emits the device name when connected to an AirPlay device,
   /// or null when disconnected.
   Stream<String?> get airPlayDeviceNameStream =>
-      _airPlayDeviceNameController.stream;
+      Stream.value(_airPlayDeviceName)
+          .followedBy(_airPlayDeviceNameController.stream);
 
   /// Updates the AirPlay availability state
   void updateAvailability(bool isAvailable) {
