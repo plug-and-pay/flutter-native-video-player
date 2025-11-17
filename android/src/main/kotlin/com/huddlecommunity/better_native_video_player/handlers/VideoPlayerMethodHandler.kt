@@ -192,6 +192,17 @@ class VideoPlayerMethodHandler(
                 if (controllerId != null) {
                     SharedPlayerManager.setQualities(controllerId, availableQualities)
                 }
+
+                // Send qualityChange event to notify Flutter that qualities are loaded
+                if (availableQualities.isNotEmpty()) {
+                    val defaultQuality = availableQualities.first()
+                    eventHandler.sendEvent("qualityChange", mapOf(
+                        "url" to (defaultQuality["url"] ?: ""),
+                        "label" to (defaultQuality["label"] ?: "Auto"),
+                        "isAuto" to (defaultQuality["isAuto"] ?: true)
+                    ))
+                    Log.d(TAG, "Sent qualityChange event with ${availableQualities.size} available qualities")
+                }
             }
         }
 
