@@ -142,49 +142,14 @@ Add the following to your `Info.plist`:
 
 The plugin automatically configures the required permissions and services in its manifest.
 
-**For Picture-in-Picture support**, you must add the following to your `MainActivity.kt`:
+**For Picture-in-Picture support**, Android PiP is handled by the [floating package](https://pub.dev/packages/floating). The integration is automatic - no additional setup required! The floating package provides:
+- Automatic PiP when the home button is pressed (if `canStartPictureInPictureAutomatically` is enabled)
+- Manual PiP entry via `controller.enterPictureInPicture()`
+- Only the video surface is shown in PiP mode (all overlays are hidden)
 
-```kotlin
-import android.content.res.Configuration
-import android.util.Log
-import com.huddlecommunity.better_native_video_player.VideoPlayerView
+**Important**: On Android, PiP (both manual and automatic) is **only available when the video is in Dart fullscreen mode** (i.e., when using custom overlay controls with `overlayBuilder`). This ensures only the video player is captured in PiP, not the surrounding app UI.
 
-class MainActivity: FlutterActivity() {
-    companion object {
-        private const val TAG = "MainActivity"
-    }
-
-    override fun onPictureInPictureModeChanged(
-        isInPictureInPictureMode: Boolean,
-        newConfig: Configuration
-    ) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        Log.d(TAG, "PiP mode changed: $isInPictureInPictureMode")
-
-        // Restore controls and fullscreen state when exiting PiP
-        if (!isInPictureInPictureMode) {
-            try {
-                val allViews = com.huddlecommunity.better_native_video_player.NativeVideoPlayerPlugin.getAllViews()
-                allViews.forEach { view: VideoPlayerView ->
-                    view.onExitPictureInPicture()
-                }
-                Log.d(TAG, "Restored controls for ${allViews.size} video players")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error restoring controls: ${e.message}", e)
-            }
-        }
-    }
-}
-```
-
-**Why is this required?**
-
-Android requires your MainActivity to notify the plugin when the user exits PiP mode (by pressing back or expanding the PiP window). Without this callback:
-- The video will stay in fullscreen mode even after exiting PiP
-- Custom overlay controls won't reappear
-- The video player will be in an inconsistent state
-
-**Note:** This callback cannot be included in the plugin itself because it must be in your app's MainActivity to receive Android system callbacks.
+**Note**: PiP requires Android 8.0+ (API 26+) and `android:supportsPictureInPicture="true"` in your Activity manifest (already included by the plugin).
 
 ## Usage
 
@@ -285,11 +250,13 @@ _controller = NativeVideoPlayerController(
 
 #### Picture-in-Picture Configuration
 
+**Note**: On Android, PiP requires the video to be in Dart fullscreen mode (using custom overlay controls). On iOS, PiP works in both normal and fullscreen modes.
+
 ```dart
 _controller = NativeVideoPlayerController(
   id: 1,
   allowsPictureInPicture: true,
-  canStartPictureInPictureAutomatically: true, // iOS 14.2+
+  canStartPictureInPictureAutomatically: true, // iOS 14.2+, Android 8.0+ (when in fullscreen)
 );
 ```
 
@@ -642,12 +609,15 @@ await _controller.load(
 
 #### Picture-in-Picture Mode
 
+**Note**: On Android, PiP is only available when the video is in Dart fullscreen mode (using custom overlay controls). On iOS, PiP works in both normal and fullscreen modes.
+
 ```dart
 // Check if PiP is available on the device
 final isPipAvailable = await _controller.isPictureInPictureAvailable();
 
 if (isPipAvailable) {
   // Enter PiP mode
+  // On Android: Requires video to be in fullscreen first
   await _controller.enterPictureInPicture();
 
   // Exit PiP mode
@@ -1058,7 +1028,7 @@ NativeVideoPlayer(
 - Uses ExoPlayer (Media3) for video playback
 - Implements `PlatformView` with `AndroidView`
 - HLS support via Media3 HLS extension
-- Picture-in-Picture via native Android PiP APIs
+- Picture-in-Picture via [floating package](https://pub.dev/packages/floating)
 - Media notifications via `MediaSessionService`
 
 ## Troubleshooting
@@ -1180,18 +1150,15 @@ minSdkVersion 24
 - Verify ExoPlayer supports the video format (HLS, MP4, WebM)
 
 **PiP not working:**
+- **Required**: On Android, PiP is only available when the video is in **Dart fullscreen mode** (using custom overlay controls with `overlayBuilder`)
+- Enter fullscreen first before entering PiP: `await controller.enterFullScreen();`
 - PiP requires Android 8.0+ (API 26+)
 - Check device support: `await controller.isPictureInPictureAvailable()`
-- Ensure your `AndroidManifest.xml` has the activity configured:
-```xml
-<activity
-    android:name=".MainActivity"
-    android:supportsPictureInPicture="true"
-    android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">
-</activity>
-```
-- PiP events are automatically handled by the MainActivity
-- Listen for PiP state changes using `PlayerControlState.pipStarted` and `PlayerControlState.pipStopped`
+- Android PiP is handled by the [floating package](https://pub.dev/packages/floating) - no MainActivity configuration needed
+- For automatic PiP when pressing home button, set `canStartPictureInPictureAutomatically: true` (default)
+- For manual PiP, call `await controller.enterPictureInPicture()`
+- Only the video surface is shown in PiP mode; all overlays are automatically hidden
+- The plugin automatically configures `android:supportsPictureInPicture="true"` in its manifest
 
 **Fullscreen issues:**
 - The plugin handles fullscreen natively using a Dialog on Android

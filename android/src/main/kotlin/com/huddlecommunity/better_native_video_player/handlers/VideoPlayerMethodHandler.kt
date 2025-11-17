@@ -48,10 +48,6 @@ class VideoPlayerMethodHandler(
     // Callback to handle fullscreen requests from Flutter
     var onFullscreenRequest: ((Boolean) -> Unit)? = null
 
-    // Callback to handle PiP requests from Flutter
-    var onEnterPictureInPictureRequest: (() -> Boolean)? = null
-    var onExitPictureInPictureRequest: (() -> Boolean)? = null
-
     /**
      * Handles incoming method calls from Flutter
      */
@@ -70,9 +66,6 @@ class VideoPlayerMethodHandler(
             "getAvailableQualities" -> handleGetAvailableQualities(result)
             "enterFullScreen" -> handleEnterFullScreen(result)
             "exitFullScreen" -> handleExitFullScreen(result)
-            "isPictureInPictureAvailable" -> handleIsPictureInPictureAvailable(result)
-            "enterPictureInPicture" -> handleEnterPictureInPicture(result)
-            "exitPictureInPicture" -> handleExitPictureInPicture(result)
             "isAirPlayAvailable" -> handleIsAirPlayAvailable(result)
             "showAirPlayPicker" -> handleShowAirPlayPicker(result)
             "dispose" -> handleDispose(result)
@@ -215,10 +208,7 @@ class VideoPlayerMethodHandler(
                 if (playbackState == androidx.media3.common.Player.STATE_READY) {
                     eventHandler.sendEvent("loaded")
                     player.removeListener(this)
-                    
-                    // Check and send PiP availability after video is loaded
-                    checkAndSendPipAvailability()
-                    
+
                     // Send AirPlay availability (always false on Android)
                     checkAndSendAirPlayAvailability()
                     
@@ -521,77 +511,6 @@ class VideoPlayerMethodHandler(
         return null
     }
 
-    /**
-     * Checks if Picture-in-Picture is available on this device
-     * PiP is available on Android 8.0 (API 26) and above
-     */
-    private fun handleIsPictureInPictureAvailable(result: MethodChannel.Result) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Try to get activity from plugin first, then unwrap context
-            val pluginActivity = com.huddlecommunity.better_native_video_player.NativeVideoPlayerPlugin.getActivity()
-            val activity = pluginActivity ?: getActivity(context)
-
-            if (activity != null) {
-                // Check if the device supports PiP mode
-                val hasPipFeature = activity.packageManager.hasSystemFeature(
-                    android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE
-                )
-                Log.d(TAG, "PiP availability checked - supported: $hasPipFeature")
-                result.success(hasPipFeature)
-            } else {
-                Log.d(TAG, "PiP availability checked - no Activity context")
-                result.success(false)
-            }
-        } else {
-            Log.d(TAG, "PiP availability checked - requires Android 8.0+")
-            result.success(false)
-        }
-    }
-
-    /**
-     * Enters Picture-in-Picture mode
-     * Only works on Android 8.0 (API 26) and above
-     */
-    private fun handleEnterPictureInPicture(result: MethodChannel.Result) {
-        Log.d(TAG, "Flutter requested enter PiP")
-        val success = onEnterPictureInPictureRequest?.invoke() ?: false
-        result.success(success)
-    }
-
-    /**
-     * Exits Picture-in-Picture mode
-     * Only works on Android 8.0 (API 26) and above
-     */
-    private fun handleExitPictureInPicture(result: MethodChannel.Result) {
-        Log.d(TAG, "Flutter requested exit PiP")
-        val success = onExitPictureInPictureRequest?.invoke() ?: false
-        result.success(success)
-    }
-
-    /**
-     * Checks if PiP is available and sends an event to Flutter
-     */
-    private fun checkAndSendPipAvailability() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Try to get activity from plugin first, then unwrap context
-            val pluginActivity = com.huddlecommunity.better_native_video_player.NativeVideoPlayerPlugin.getActivity()
-            val activity = pluginActivity ?: getActivity(context)
-
-            if (activity != null) {
-                val hasPipFeature = activity.packageManager.hasSystemFeature(
-                    android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE
-                )
-                Log.d(TAG, "🎬 PiP availability check: $hasPipFeature")
-                eventHandler.sendEvent("pipAvailabilityChanged", mapOf("isAvailable" to hasPipFeature))
-            } else {
-                Log.d(TAG, "🎬 PiP availability check: false (no activity)")
-                eventHandler.sendEvent("pipAvailabilityChanged", mapOf("isAvailable" to false))
-            }
-        } else {
-            Log.d(TAG, "🎬 PiP availability check: false (API < 26)")
-            eventHandler.sendEvent("pipAvailabilityChanged", mapOf("isAvailable" to false))
-        }
-    }
 
     /**
      * Sends AirPlay availability (always false on Android)

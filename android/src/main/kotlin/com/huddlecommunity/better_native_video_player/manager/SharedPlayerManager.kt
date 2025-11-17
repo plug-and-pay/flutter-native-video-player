@@ -23,23 +23,9 @@ object SharedPlayerManager {
     // Map<ControllerId, Map<ViewId, SurfaceReconnectCallback>>
     private val activeViews = mutableMapOf<Int, MutableMap<Long, () -> Unit>>()
 
-    // Store PiP settings for each controller
-    // This ensures PiP settings persist across all views using the same controller
-    private val pipSettings = mutableMapOf<Int, PipSettings>()
-
     // Store available qualities for each controller
     // This ensures qualities persist across view recreations
     private val qualitiesCache = mutableMapOf<Int, List<Map<String, Any>>>()
-
-    // Store fullscreen state before PiP for each controller
-    // This ensures we can restore the correct fullscreen state after PiP, even if the view is recreated
-    private val fullscreenBeforePip = mutableMapOf<Int, Boolean>()
-
-    data class PipSettings(
-        val allowsPictureInPicture: Boolean,
-        val canStartPictureInPictureAutomatically: Boolean,
-        val showNativeControls: Boolean
-    )
 
     /**
      * Gets or creates a player for the given controller ID
@@ -103,32 +89,6 @@ object SharedPlayerManager {
     }
 
     /**
-     * Sets PiP settings for a controller
-     * This ensures the settings persist across all views using the same controller
-     */
-    fun setPipSettings(
-        controllerId: Int,
-        allowsPictureInPicture: Boolean,
-        canStartPictureInPictureAutomatically: Boolean,
-        showNativeControls: Boolean
-    ) {
-        pipSettings[controllerId] = PipSettings(
-            allowsPictureInPicture = allowsPictureInPicture,
-            canStartPictureInPictureAutomatically = canStartPictureInPictureAutomatically,
-            showNativeControls = showNativeControls
-        )
-        Log.d(TAG, "Set PiP settings for controller $controllerId - allows: $allowsPictureInPicture, autoStart: $canStartPictureInPictureAutomatically")
-    }
-
-    /**
-     * Gets PiP settings for a controller
-     * Returns null if no settings have been stored for this controller
-     */
-    fun getPipSettings(controllerId: Int): PipSettings? {
-        return pipSettings[controllerId]
-    }
-
-    /**
      * Sets available qualities for a controller
      * This ensures qualities persist across view recreations
      */
@@ -172,14 +132,8 @@ object SharedPlayerManager {
         players[controllerId]?.release()
         players.remove(controllerId)
 
-        // Remove PiP settings
-        pipSettings.remove(controllerId)
-
         // Remove qualities cache
         qualitiesCache.remove(controllerId)
-
-        // Remove fullscreen state
-        fullscreenBeforePip.remove(controllerId)
 
         // Clear active views for this controller
         activeViews.remove(controllerId)
@@ -190,31 +144,6 @@ object SharedPlayerManager {
         if (players.isEmpty()) {
             stopMediaSessionService(context)
         }
-    }
-
-    /**
-     * Sets the fullscreen state before entering PiP for a controller
-     * This ensures the correct fullscreen state can be restored after PiP, even if view is recreated
-     */
-    fun setFullscreenBeforePip(controllerId: Int, wasFullscreen: Boolean) {
-        fullscreenBeforePip[controllerId] = wasFullscreen
-        Log.d(TAG, "Stored fullscreen state before PiP for controller $controllerId: $wasFullscreen")
-    }
-
-    /**
-     * Gets the fullscreen state before entering PiP for a controller
-     * Returns null if no state has been stored for this controller
-     */
-    fun getFullscreenBeforePip(controllerId: Int): Boolean? {
-        return fullscreenBeforePip[controllerId]
-    }
-
-    /**
-     * Clears the fullscreen state after PiP is complete
-     */
-    fun clearFullscreenBeforePip(controllerId: Int) {
-        fullscreenBeforePip.remove(controllerId)
-        Log.d(TAG, "Cleared fullscreen state for controller $controllerId")
     }
 
     /**
@@ -229,14 +158,8 @@ object SharedPlayerManager {
         players.values.forEach { it.release() }
         players.clear()
 
-        // Clear PiP settings
-        pipSettings.clear()
-
         // Clear qualities cache
         qualitiesCache.clear()
-
-        // Clear fullscreen state
-        fullscreenBeforePip.clear()
 
         // Stop the service when clearing all players
         stopMediaSessionService(context)

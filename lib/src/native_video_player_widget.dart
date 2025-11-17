@@ -14,6 +14,14 @@ import 'enums/native_video_player_event.dart';
 ///
 /// Android handles fullscreen natively using a Dialog, so only ONE platform view is used.
 /// iOS uses native AVPlayerViewController presentation for fullscreen.
+///
+/// **Android PiP Support:**
+/// PiP works automatically on Android using the floating package.
+/// The video aspect ratio is automatically calculated from quality information.
+/// Custom overlays are automatically hidden when entering PiP mode.
+///
+/// Note: Android PiP captures the entire activity window. For best results,
+/// ensure your video player is the primary content on screen when entering PiP.
 class NativeVideoPlayer extends StatefulWidget {
   const NativeVideoPlayer({
     required this.controller,
@@ -101,7 +109,7 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
   }
 
   void _handleControlEvent(PlayerControlEvent event) {
-    // Hide overlay when entering PiP (Android only)
+    // Hide custom overlay when entering PiP (Android only)
     if (defaultTargetPlatform == TargetPlatform.android) {
       if (event.state == PlayerControlState.pipStarted && _overlayVisible) {
         setState(() {
@@ -112,7 +120,7 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
         return;
       }
 
-      // Show overlay when exiting PiP (Android only)
+      // Show custom overlay when exiting PiP (Android only)
       if (event.state == PlayerControlState.pipStopped && !_overlayVisible) {
         setState(() {
           _overlayVisible = true;
@@ -255,38 +263,42 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
   Widget build(BuildContext context) {
     final platformView = _buildPlatformView();
 
-    // If no overlay builder is provided, return just the platform view
+    Widget content;
+
+    // If no overlay builder is provided, use just the platform view
     if (widget.overlayBuilder == null) {
-      return platformView;
+      content = platformView;
+    } else {
+      // Wrap platform view with animated overlay in a Stack
+      content = Stack(
+        children: [
+          // Platform view
+          platformView,
+          // Transparent tap layer when overlay is hidden
+          if (!_overlayVisible)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _toggleOverlay,
+                behavior: HitTestBehavior.opaque,
+                child: Container(color: Colors.transparent),
+              ),
+            ),
+          // Animated overlay with tap-to-hide
+          FadeTransition(
+            opacity: _overlayOpacity,
+            child: GestureDetector(
+              onTap: _overlayVisible ? _toggleOverlay : null,
+              behavior: HitTestBehavior.deferToChild,
+              child: IgnorePointer(
+                ignoring: !_overlayVisible,
+                child: widget.overlayBuilder!(context, widget.controller),
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
-    // Wrap platform view with animated overlay in a Stack
-    return Stack(
-      children: [
-        // Platform view
-        platformView,
-        // Transparent tap layer when overlay is hidden
-        if (!_overlayVisible)
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _toggleOverlay,
-              behavior: HitTestBehavior.opaque,
-              child: Container(color: Colors.transparent),
-            ),
-          ),
-        // Animated overlay with tap-to-hide
-        FadeTransition(
-          opacity: _overlayOpacity,
-          child: GestureDetector(
-            onTap: _overlayVisible ? _toggleOverlay : null,
-            behavior: HitTestBehavior.deferToChild,
-            child: IgnorePointer(
-              ignoring: !_overlayVisible,
-              child: widget.overlayBuilder!(context, widget.controller),
-            ),
-          ),
-        ),
-      ],
-    );
+    return content;
   }
 }

@@ -16,8 +16,7 @@ class VideoPlayerObserver(
     private val notificationHandler: com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler? = null,
     private val getMediaInfo: (() -> Map<String, Any>?)? = null,
     private val controllerId: Int? = null,
-    private val viewId: Long? = null,
-    private val canStartPictureInPictureAutomatically: Boolean = false
+    private val viewId: Long? = null
 ) : Player.Listener {
 
     companion object {
