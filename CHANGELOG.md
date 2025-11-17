@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2025-11-17
+
+### Added
+- **Android PiP Enhancement**: Integrated `floating` package (version 6.0.0) for improved Picture-in-Picture functionality on Android
+  - Automatic PiP management with seamless transitions
+  - Simplified PiP implementation using the floating package
+
+### Improved
+- **Android PiP Implementation**: Major refactor of Android Picture-in-Picture handling
+  - Removed legacy PiP handling code, simplifying the codebase
+  - Enhanced NativeVideoPlayerController to utilize the floating package for PiP management
+  - Better PiP user experience with automatic handling
+
+### Changed
+- Updated dependencies with floating package for Android PiP support
+- Code formatting improvements across the codebase
+
+### Documentation
+- Updated documentation to reflect new automatic PiP integration and requirements
+
 ## [0.3.5] - 2025-11-17
 
 ### Changed
