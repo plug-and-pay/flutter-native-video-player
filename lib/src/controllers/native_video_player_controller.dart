@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:floating/floating.dart';
 
 import '../enums/native_video_player_event.dart';
 import '../fullscreen/fullscreen_manager.dart';
@@ -52,6 +55,11 @@ class NativeVideoPlayerController {
     // Set preferred orientations if provided
     if (preferredOrientations != null) {
       FullscreenManager.setPreferredOrientations(preferredOrientations);
+    }
+
+    // Set up app lifecycle listener for Android to hide overlay before PiP
+    if (!kIsWeb && Platform.isAndroid) {
+      WidgetsBinding.instance.addObserver(_AppLifecycleObserver(this));
     }
   }
 
@@ -178,6 +186,9 @@ class NativeVideoPlayerController {
 
   /// Method channel wrapper for platform communication
   VideoPlayerMethodChannel? _methodChannel;
+
+  /// Floating instance for Android PiP management
+  final Floating _floating = Floating();
 
   /// Set of platform view IDs that are using this controller
   final Set<int> _platformViewIds = <int>{};
@@ -451,8 +462,8 @@ class NativeVideoPlayerController {
 
     try {
       // Re-fetch PiP availability
-      final isPipAvailable = await _methodChannel!
-          .isPictureInPictureAvailable();
+      // Use isPictureInPictureAvailable() which handles both Android (floating) and iOS (method channel)
+      final isPipAvailable = await isPictureInPictureAvailable();
       _state = _state.copyWith(isPipAvailable: isPipAvailable);
       if (!_isPipAvailableController.isClosed) {
         _isPipAvailableController.add(isPipAvailable);
@@ -751,6 +762,9 @@ class NativeVideoPlayerController {
       if (_hasCustomOverlay && _methodChannel != null) {
         await setShowNativeControls(false);
       }
+
+      // Enable automatic PiP on Android if configured
+      await _enableAutomaticPiP();
     }
 
     _emitCurrentState();
@@ -1399,16 +1413,99 @@ class NativeVideoPlayerController {
   /// Returns whether Picture-in-Picture is available on this device
   /// Checks the actual device capabilities rather than just the platform
   /// PiP is available on iOS 14+ and Android 8+ (if the device supports it)
+  /// For Android, also requires the video to be in fullscreen mode
+  /// Respects the allowsPictureInPicture setting
   Future<bool> isPictureInPictureAvailable() async {
+    // Check if PiP is allowed by controller settings
+    if (!allowsPictureInPicture) {
+      return false;
+    }
+
+    // Use floating package for Android
+    if (!kIsWeb && Platform.isAndroid) {
+      // Only available when in fullscreen on Android
+      if (!_state.isFullScreen) {
+        return false;
+      }
+      return await _floating.isPipAvailable;
+    }
+
+    // Use method channel for iOS
     if (_methodChannel == null) {
       return false;
     }
     return await _methodChannel!.isPictureInPictureAvailable();
   }
 
-  /// Enters Picture-in-Picture mode
+  /// Calculates the aspect ratio for PiP based on video quality information
+  /// Returns a Rational representing the video aspect ratio, or 16:9 if unavailable
+  Rational _getPiPAspectRatio() {
+    // Try to get dimensions from the current quality
+    if (_state.qualities.isNotEmpty) {
+      // Look for quality with dimensions
+      for (final quality in _state.qualities) {
+        if (quality.width != null && quality.height != null) {
+          final width = quality.width!;
+          final height = quality.height!;
+          debugPrint(
+            'Using video aspect ratio for PiP: $width:$height (${width / height})',
+          );
+          return Rational(width, height);
+        }
+      }
+    }
+
+    // Default to 16:9 if we can't determine the aspect ratio
+    debugPrint('Using default 16:9 aspect ratio for PiP');
+    return Rational(16, 9);
+  }
+
+  /// Enables automatic PiP on Android when app goes to background
+  /// Only enabled when video is in fullscreen
+  Future<void> _enableAutomaticPiP() async {
+    if (!kIsWeb &&
+        Platform.isAndroid &&
+        canStartPictureInPictureAutomatically &&
+        _state.isFullScreen) {
+      try {
+        await _floating.enable(OnLeavePiP(aspectRatio: _getPiPAspectRatio()));
+        debugPrint('Automatic PiP enabled (fullscreen mode)');
+      } catch (e) {
+        debugPrint('Error enabling automatic PiP: $e');
+      }
+    }
+  }
+
+  /// Enters Picture-in-Picture mode immediately
   /// Only works on iOS 14+ and Android 8+
+  /// For Android, only works when video is in fullscreen
   Future<bool> enterPictureInPicture() async {
+    // Use floating package for Android
+    if (!kIsWeb && Platform.isAndroid) {
+      // Only allow PiP when in fullscreen
+      if (!_state.isFullScreen) {
+        debugPrint('PiP requires fullscreen mode on Android');
+        return false;
+      }
+
+      try {
+        // Emit event to hide overlay before entering PiP
+        _emitPipStartedEvent();
+
+        // Give overlay time to hide
+        await Future.delayed(const Duration(milliseconds: 200));
+
+        final status = await _floating.enable(
+          ImmediatePiP(aspectRatio: _getPiPAspectRatio()),
+        );
+        return status == PiPStatus.enabled;
+      } catch (e) {
+        debugPrint('Error entering PiP: $e');
+        return false;
+      }
+    }
+
+    // Use method channel for iOS
     if (_methodChannel == null) {
       return false;
     }
@@ -1418,6 +1515,25 @@ class NativeVideoPlayerController {
   /// Exits Picture-in-Picture mode
   /// Only works on iOS 14+ and Android 8+
   Future<bool> exitPictureInPicture() async {
+    // Use floating package for Android
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        // Cancel any OnLeavePiP if it was enabled
+        _floating.cancelOnLeavePiP();
+        // Re-enable automatic PiP if it was originally configured and still in fullscreen
+        if (canStartPictureInPictureAutomatically && _state.isFullScreen) {
+          await _enableAutomaticPiP();
+        }
+        // The floating package doesn't have an explicit disable method
+        // PiP will exit when the activity returns to foreground
+        return true;
+      } catch (e) {
+        debugPrint('Error exiting PiP: $e');
+        return false;
+      }
+    }
+
+    // Use method channel for iOS
     if (_methodChannel == null) {
       return false;
     }
@@ -1448,6 +1564,13 @@ class NativeVideoPlayerController {
 
     _updateState(_state.copyWith(isFullScreen: true));
 
+    // Enable automatic PiP and refresh availability immediately after entering fullscreen on Android
+    // This ensures isPipAvailable is updated before the UI rebuilds
+    if (!kIsWeb && Platform.isAndroid) {
+      await _enableAutomaticPiP();
+      await _refreshAvailabilityFlags();
+    }
+
     if (_hasCustomOverlay && _fullscreenContext != null) {
       // Emit fullscreen entered event
       final controlEvent = PlayerControlEvent(
@@ -1474,6 +1597,14 @@ class NativeVideoPlayerController {
     }
 
     _updateState(_state.copyWith(isFullScreen: false));
+
+    // Disable automatic PiP and refresh availability immediately after exiting fullscreen on Android
+    // This ensures isPipAvailable is updated before the UI rebuilds
+    if (!kIsWeb && Platform.isAndroid) {
+      _floating.cancelOnLeavePiP();
+      debugPrint('Automatic PiP disabled (exited fullscreen)');
+      await _refreshAvailabilityFlags();
+    }
 
     if (_hasCustomOverlay) {
       // Dart fullscreen: use dedicated callback to close the dialog
@@ -1796,5 +1927,42 @@ class NativeVideoPlayerController {
     _methodChannel = null;
     _url = null;
     _initializeCompleter = null;
+  }
+
+  /// Internal method to emit pipStarted event (hides overlay before PiP)
+  void _emitPipStartedEvent() {
+    final controlEvent = PlayerControlEvent(
+      state: PlayerControlState.pipStarted,
+      data: <String, dynamic>{},
+    );
+    for (final handler in _controlEventHandlers) {
+      handler(controlEvent);
+    }
+  }
+}
+
+/// App lifecycle observer to hide overlay before automatic PiP on Android
+class _AppLifecycleObserver with WidgetsBindingObserver {
+  _AppLifecycleObserver(this.controller);
+
+  final NativeVideoPlayerController controller;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When app goes to background and we're in fullscreen with automatic PiP enabled,
+    // hide the overlay before Android captures the screen for PiP
+    if (state == AppLifecycleState.inactive &&
+        controller._state.isFullScreen &&
+        controller.canStartPictureInPictureAutomatically) {
+      controller._emitPipStartedEvent();
+    }
+
+    // When app returns to foreground (after exiting PiP),
+    // re-enable automatic PiP if still in fullscreen
+    if (state == AppLifecycleState.resumed &&
+        controller._state.isFullScreen &&
+        controller.canStartPictureInPictureAutomatically) {
+      controller._enableAutomaticPiP();
+    }
   }
 }
