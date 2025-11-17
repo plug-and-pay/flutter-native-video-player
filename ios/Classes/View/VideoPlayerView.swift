@@ -348,6 +348,8 @@ import QuartzCore
             handleIsAirPlayAvailable(result: result)
         case "showAirPlayPicker":
             handleShowAirPlayPicker(result: result)
+        case "disconnectAirPlay":
+            handleDisconnectAirPlay(result: result)
         case "dispose":
             handleDispose(result: result)
         default:
@@ -533,6 +535,46 @@ import QuartzCore
                 let isAvailable = detector.multipleRoutesDetected
                 print("[\(channelName)] Sending initial AirPlay availability: \(isAvailable)")
                 sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
+            }
+        }
+
+        // Send initial AirPlay connection state
+        // Check at system level (audio route) rather than just this player's state
+        // This ensures we detect if ANY player in the app is using AirPlay
+        print("[\(channelName)] 🔍 Checking initial AirPlay state on event listener attach")
+        let deviceName = getAirPlayDeviceName()
+        let isSystemAirPlayActive = deviceName != nil
+
+        if let player = player {
+            // Check if THIS specific player is using AirPlay
+            let isPlayerAirPlayActive = player.isExternalPlaybackActive
+
+            // We're connected if either:
+            // 1. This player is actively using AirPlay, OR
+            // 2. AirPlay device is detected in audio route (another player might be using it)
+            let isConnected = isPlayerAirPlayActive || isSystemAirPlayActive
+
+            if isConnected {
+                print("[\(channelName)] ✅ AirPlay active on init:")
+                print("   - Player active: \(isPlayerAirPlayActive)")
+                print("   - System active: \(isSystemAirPlayActive)")
+                print("   - Device: \(deviceName ?? "nil")")
+
+                var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
+                if let deviceName = deviceName {
+                    eventData["deviceName"] = deviceName
+                }
+                sendEvent("airPlayConnectionChanged", data: eventData)
+
+                // If device name is not available yet, start retry sequence
+                if deviceName == nil {
+                    print("[\(channelName)] ⏳ Device name not available on init, starting retry sequence...")
+                    retryGetAirPlayDeviceName(attempt: 1, maxAttempts: 4)
+                }
+            } else {
+                // Not connected at system or player level
+                print("[\(channelName)] ❌ AirPlay not connected on init")
+                sendEvent("airPlayConnectionChanged", data: ["isConnected": false, "isConnecting": false])
             }
         }
 

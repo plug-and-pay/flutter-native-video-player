@@ -628,6 +628,31 @@ extension VideoPlayerView {
         }
     }
 
+    func handleDisconnectAirPlay(result: @escaping FlutterResult) {
+        guard let player = player else {
+            result(FlutterError(code: "NO_PLAYER", message: "Player not initialized", details: nil))
+            return
+        }
+
+        // Check if currently connected to AirPlay
+        guard player.isExternalPlaybackActive else {
+            result(FlutterError(code: "NOT_CONNECTED", message: "Not connected to AirPlay", details: nil))
+            return
+        }
+
+        // Disable external playback to disconnect from AirPlay
+        // This will stop sending video to the AirPlay device
+        player.usesExternalPlaybackWhileExternalScreenIsActive = false
+
+        // Re-enable it after a short delay so AirPlay can be used again later
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            player.usesExternalPlaybackWhileExternalScreenIsActive = true
+            print("AirPlay disconnected and re-enabled for future use")
+        }
+
+        result(nil)
+    }
+
     func handleDispose(result: @escaping FlutterResult) {
         print("🗑️ [VideoPlayerMethodHandler] handleDispose called for controllerId: \(String(describing: controllerId))")
 
