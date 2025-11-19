@@ -6,10 +6,14 @@ import AVKit
 /// Manages shared AVPlayer instances across multiple platform views
 /// Keeps players alive even when platform views are disposed
 /// Note: Each platform view gets its own AVPlayerViewController, but they share the same AVPlayer
-class SharedPlayerManager {
+class SharedPlayerManager: NSObject {
     static let shared = SharedPlayerManager()
 
     private var players: [Int: AVPlayer] = [:]
+
+    /// Global AirPlay route detector
+    /// Used to monitor AirPlay availability across the entire app
+    private var globalRouteDetector: AVRouteDetector?
 
     /// Track which controller currently has automatic PiP enabled
     /// Only one controller should have automatic PiP active at a time
@@ -50,7 +54,9 @@ class SharedPlayerManager {
         let showNativeControls: Bool
     }
 
-    private init() {}
+    private override init() {
+        super.init()
+    }
 
     /// Gets or creates a player for the given controller ID
     /// Returns a tuple (AVPlayer, Bool) where the Bool indicates if the player already existed (true) or was newly created (false)
@@ -200,6 +206,84 @@ class SharedPlayerManager {
         mediaInfoCache.removeAll()
         controllerWithAutomaticPiP = nil
         controllersWithManualPiP.removeAll()
+    }
+
+    // MARK: - AirPlay Route Detection
+
+    /// Starts global AirPlay route detection
+    /// This monitors AirPlay device availability across the entire app
+    @available(iOS 11.0, *)
+    func startAirPlayRouteDetection() {
+        print("🔍 [SharedPlayerManager] Starting global AirPlay route detection")
+
+        // Clean up any existing detector
+        if let existingDetector = globalRouteDetector {
+            existingDetector.removeObserver(self, forKeyPath: "multipleRoutesDetected")
+            globalRouteDetector = nil
+        }
+
+        // Create and configure new route detector
+        globalRouteDetector = AVRouteDetector()
+        globalRouteDetector?.isRouteDetectionEnabled = true
+
+        // Observe changes to multipleRoutesDetected
+        globalRouteDetector?.addObserver(
+            self,
+            forKeyPath: "multipleRoutesDetected",
+            options: [.new, .initial],
+            context: nil
+        )
+
+        print("✅ [SharedPlayerManager] Global AirPlay route detection started, multipleRoutesDetected: \(globalRouteDetector?.multipleRoutesDetected ?? false)")
+
+        // Send initial availability state
+        if let isAvailable = globalRouteDetector?.multipleRoutesDetected {
+            sendAirPlayAvailabilityEvent(isAvailable: isAvailable)
+        }
+    }
+
+    /// Stops global AirPlay route detection
+    @available(iOS 11.0, *)
+    func stopAirPlayRouteDetection() {
+        print("🛑 [SharedPlayerManager] Stopping global AirPlay route detection")
+
+        guard let detector = globalRouteDetector else {
+            print("⚠️ [SharedPlayerManager] No global route detector to stop")
+            return
+        }
+
+        detector.removeObserver(self, forKeyPath: "multipleRoutesDetected")
+        detector.isRouteDetectionEnabled = false
+        globalRouteDetector = nil
+
+        print("✅ [SharedPlayerManager] Global AirPlay route detection stopped")
+    }
+
+    /// Sends AirPlay availability event to Flutter through all registered views
+    private func sendAirPlayAvailabilityEvent(isAvailable: Bool) {
+        // Clean up nil/deallocated views first
+        videoPlayerViews = videoPlayerViews.filter { $0.value.view != nil }
+
+        print("📡 [SharedPlayerManager] Sending AirPlay availability event to \(videoPlayerViews.count) view(s): \(isAvailable)")
+
+        // Send event through all registered views
+        for (_, wrapper) in videoPlayerViews {
+            if let view = wrapper.view {
+                view.sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
+            }
+        }
+    }
+
+    /// KVO observer for route detector changes
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        if keyPath == "multipleRoutesDetected" {
+            if #available(iOS 11.0, *) {
+                if let isAvailable = globalRouteDetector?.multipleRoutesDetected {
+                    print("🔄 [SharedPlayerManager] AirPlay availability changed: \(isAvailable)")
+                    sendAirPlayAvailabilityEvent(isAvailable: isAvailable)
+                }
+            }
+        }
     }
     
     /// Register a VideoPlayerView instance

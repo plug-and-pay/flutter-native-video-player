@@ -264,6 +264,42 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Starts AirPlay device detection (iOS only)
+  ///
+  /// Begins monitoring for available AirPlay devices. This should be called
+  /// when you want to start searching for AirPlay devices.
+  ///
+  /// Note: This is a global operation that affects the entire app.
+  Future<void> startAirPlayDetection() async {
+    try {
+      await _methodChannel.invokeMethod<void>(
+        'startAirPlayDetection',
+        <String, Object>{'viewId': primaryPlatformViewId},
+      );
+    } catch (e) {
+      debugPrint('Error calling startAirPlayDetection: $e');
+      rethrow;
+    }
+  }
+
+  /// Stops AirPlay device detection (iOS only)
+  ///
+  /// Stops monitoring for available AirPlay devices. This should be called
+  /// when you no longer need to search for AirPlay devices.
+  ///
+  /// Note: This is a global operation that affects the entire app.
+  Future<void> stopAirPlayDetection() async {
+    try {
+      await _methodChannel.invokeMethod<void>(
+        'stopAirPlayDetection',
+        <String, Object>{'viewId': primaryPlatformViewId},
+      );
+    } catch (e) {
+      debugPrint('Error calling stopAirPlayDetection: $e');
+      rethrow;
+    }
+  }
+
   /// Disposes the native player resources
   Future<void> dispose() async {
     try {

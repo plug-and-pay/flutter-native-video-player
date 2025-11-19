@@ -94,7 +94,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  better_native_video_player: ^0.3.0
+  better_native_video_player: ^0.3.7
 ```
 
 Then run:
@@ -646,6 +646,28 @@ _controller.isPipEnabledStream.listen((isPipEnabled) {
 
 AirPlay allows streaming video to Apple TV, HomePod, and other AirPlay-enabled devices.
 
+**Global AirPlay Detection:**
+
+The plugin now uses global AirPlay device detection that works across your entire app. Initialize AirPlay detection once at app startup:
+
+```dart
+// In your app initialization (e.g., main.dart or app startup)
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Create at least one controller first (required for initialization)
+  final controller = NativeVideoPlayerController(id: 1);
+  await controller.initialize();
+  
+  // Initialize global AirPlay detection
+  await AirPlayStateManager.instance.init();
+  
+  runApp(MyApp());
+}
+```
+
+**Using AirPlay in your app:**
+
 ```dart
 @override
 void initState() {
@@ -684,6 +706,12 @@ void dispose() {
   super.dispose();
 }
 ```
+
+**Benefits of Global Detection:**
+- AirPlay device availability is monitored once for the entire app (more efficient)
+- All video player controllers automatically receive AirPlay availability updates
+- Detection starts immediately at app launch for faster device discovery
+- Centralized management reduces resource usage and improves battery life
 
 #### Custom Overlay Controls
 
@@ -953,6 +981,10 @@ NativeVideoPlayer(
 - `void removeAirPlayAvailabilityListener(void Function(bool) listener)` - Remove AirPlay availability listener (iOS only)
 - `void addAirPlayConnectionListener(void Function(bool) listener)` - Listen for AirPlay connection state changes (iOS only)
 - `void removeAirPlayConnectionListener(void Function(bool) listener)` - Remove AirPlay connection listener (iOS only)
+
+**AirPlay State Manager (Global):**
+- `AirPlayStateManager.instance.init()` - Initialize global AirPlay device detection at app startup (iOS only, requires at least one controller to be created first)
+- `AirPlayStateManager.instance.dispose()` - Stop global AirPlay detection and clean up resources (iOS only)
 - `void addActivityListener(void Function(PlayerActivityEvent) listener)` - Add activity event listener
 - `void removeActivityListener(void Function(PlayerActivityEvent) listener)` - Remove activity event listener
 - `void addControlListener(void Function(PlayerControlEvent) listener)` - Add control event listener

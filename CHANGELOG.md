@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2025-11-19
+
+### Added
+- **iOS Global AirPlay Device Detection**: Enhanced AirPlay monitoring with global route detection
+  - Added `AirPlayStateManager.init()` method to start global AirPlay device detection at app startup
+  - Added `startAirPlayDetection()` and `stopAirPlayDetection()` native methods in `SharedPlayerManager`
+  - Global `AVRouteDetector` monitors AirPlay device availability across the entire app
+  - AirPlay availability events now sent from shared manager to all controllers
+  - Improved device discovery with centralized detection logic
+  - Added `setMethodChannel()` to enable event communication from shared manager
+
+### Improved
+- **iOS Audio Session Management**: Major enhancements to background audio and lock screen playback
+  - Added `prepareAudioSession()` method for centralized audio session configuration
+  - Critical fix: Audio session now activated BEFORE calling `player.play()` to ensure lock screen playback
+  - Added `handleAppDidEnterBackground()` observer to maintain audio session when screen locks
+  - Audio session stays active during screen lock to prevent iOS from pausing video
+  - Better audio session error handling with detailed logging
+  - Consolidated audio session setup in initialization and play methods
+
+- **iOS Audio Interruption Handling**: Enhanced handling of phone calls, alarms, and other audio interruptions
+  - Added auto-resume functionality when system recommends resumption after interruption
+  - Better detection of interruption end with `shouldResume` flag handling
+  - Improved Now Playing info restoration after audio session reactivation
+  - Ensures playback continues correctly after interruptions when appropriate
+
+- **Android Error Handling**: Better PiP event listener error management
+  - Improved error handling for MainActivity PiP events (non-critical errors)
+  - Fixed platform check ordering to prevent unnecessary iOS errors
+  - Added `cancelOnError: false` to prevent event stream from stopping on error
+  - Better debug logging for `MissingPluginException` cases
+
+- **AirPlayStateManager Lifecycle**: Enhanced initialization and disposal
+  - `dispose()` now stops AirPlay detection before cleaning up resources
+  - `init()` provides clear API for starting AirPlay detection at app startup
+  - Better error handling during disposal to prevent crashes
+  - Cleaner resource cleanup with proper detection stop
+
+### Fixed
+- **iOS Lock Screen Audio**: Fixed video audio stopping when screen locks
+  - Audio session now properly configured before playback starts
+  - Background audio maintained correctly during screen lock transitions
+  - Prevents iOS from automatically pausing playback when device locks
+
+### Documentation
+- Added usage examples for `AirPlayStateManager.init()` in code documentation
+- Updated `prepareAudioSession()` with detailed explanation of importance
+- Improved comments explaining critical audio session activation timing
+
 ## [0.3.6] - 2025-11-17
 
 ### Added

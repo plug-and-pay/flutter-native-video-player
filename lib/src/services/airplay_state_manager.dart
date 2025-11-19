@@ -239,11 +239,49 @@ class AirPlayStateManager {
     await channel.disconnectAirPlay();
   }
 
-  /// Disposes all stream controllers
+  /// Initializes AirPlay device detection
+  ///
+  /// Starts monitoring for available AirPlay devices. This should be called
+  /// when you want to begin searching for AirPlay devices. You typically call
+  /// this once at app startup.
+  ///
+  /// Throws [StateError] if no video player controller is available.
+  /// Create at least one video player controller before calling this method.
+  ///
+  /// Example:
+  /// ```dart
+  /// // At app startup
+  /// await AirPlayStateManager.instance.init();
+  /// ```
+  Future<void> init() async {
+    final channel = _anyMethodChannel;
+    if (channel == null) {
+      throw StateError(
+        'No video player controller available. '
+        'Create a NativeVideoPlayerController before initializing AirPlay detection.',
+      );
+    }
+    await channel.startAirPlayDetection();
+  }
+
+  /// Disposes all stream controllers and stops AirPlay device detection
+  ///
+  /// Stops monitoring for available AirPlay devices and cleans up all resources.
   ///
   /// Note: This should only be called when the app is shutting down,
   /// as this is a singleton instance.
-  void dispose() {
+  Future<void> dispose() async {
+    // Stop AirPlay detection if a channel is available
+    final channel = _anyMethodChannel;
+    if (channel != null) {
+      try {
+        await channel.stopAirPlayDetection();
+      } catch (e) {
+        // Silently handle errors during disposal
+      }
+    }
+
+    // Close stream controllers
     _isAirPlayAvailableController.close();
     _isAirPlayConnectedController.close();
     _isAirPlayConnectingController.close();

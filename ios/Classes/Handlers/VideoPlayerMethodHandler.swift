@@ -195,9 +195,8 @@ extension VideoPlayerView {
         // --- Set up periodic time observer for Now Playing elapsed time updates ---
         setupPeriodicTimeObserver()
 
-        // --- Set up audio session ---
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // --- Set up audio session for lock screen playback ---
+        prepareAudioSession()
 
         // --- Listen for end of playback ---
         NotificationCenter.default.addObserver(
@@ -277,7 +276,9 @@ extension VideoPlayerView {
 
 
     func handlePlay(result: @escaping FlutterResult) {
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // CRITICAL: Activate audio session BEFORE calling player.play()
+        // This ensures audio continues when the screen locks
+        prepareAudioSession()
 
         // ALWAYS set media item on play to ensure this player has control
         // This is critical for both normal playback and PiP mode
@@ -307,13 +308,13 @@ extension VideoPlayerView {
             print("⚠️  No media info available when playing - media controls will not work correctly")
             print("   → currentMediaInfo was nil and SharedPlayerManager has no cached info for controller \(controllerId ?? -1)")
         }
-        
+
         // Mark this view as the primary (active) view for this controller
         // This ensures automatic PiP will be enabled on THIS view, not other views
         if let controllerIdValue = controllerId {
             SharedPlayerManager.shared.setPrimaryView(viewId, for: controllerIdValue)
         }
-        
+
         // Enable automatic PiP for this controller and disable for all others
         // Only if automatic PiP was requested in creation params
         if #available(iOS 14.2, *) {
@@ -651,6 +652,24 @@ extension VideoPlayerView {
         }
 
         result(nil)
+    }
+
+    func handleStartAirPlayDetection(result: @escaping FlutterResult) {
+        if #available(iOS 11.0, *) {
+            SharedPlayerManager.shared.startAirPlayRouteDetection()
+            result(nil)
+        } else {
+            result(FlutterError(code: "NOT_SUPPORTED", message: "AirPlay detection requires iOS 11.0+", details: nil))
+        }
+    }
+
+    func handleStopAirPlayDetection(result: @escaping FlutterResult) {
+        if #available(iOS 11.0, *) {
+            SharedPlayerManager.shared.stopAirPlayRouteDetection()
+            result(nil)
+        } else {
+            result(FlutterError(code: "NOT_SUPPORTED", message: "AirPlay detection requires iOS 11.0+", details: nil))
+        }
     }
 
     func handleDispose(result: @escaping FlutterResult) {

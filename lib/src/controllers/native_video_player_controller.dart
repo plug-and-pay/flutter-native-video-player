@@ -1098,19 +1098,31 @@ class NativeVideoPlayerController {
   /// This listener receives PiP enter/exit events from the MainActivity
   /// when the user presses the home button or exits PiP mode.
   /// Only set up once per app lifecycle.
+  ///
+  /// NOTE: Currently disabled as the native Android EventChannel
+  /// 'native_video_player_pip_events' is not implemented yet.
+  /// PiP functionality still works through the standard PiP API.
   void _setupMainActivityPipListener() {
+    // Disabled until the Android EventChannel is properly implemented
+    // TODO: Implement native_video_player_pip_events EventChannel on Android
+    return;
+
+    // ignore: dead_code
     if (_pipEventListenerSetup) {
       return;
     }
 
+    // ignore: dead_code
     _pipEventListenerSetup = true;
 
     // Only set up the PiP event channel on Android
     // iOS doesn't have this channel and doesn't need it
+    // ignore: dead_code
     if (!PlatformUtils.isAndroid) {
       return;
     }
 
+    // ignore: dead_code
     try {
       final EventChannel pipEventChannel = const EventChannel(
         'native_video_player_pip_events',
@@ -1154,10 +1166,19 @@ class NativeVideoPlayerController {
         },
         onError: (dynamic error) {
           // Silently handle MainActivity PiP event channel errors
+          if (kDebugMode && error is! MissingPluginException) {
+            debugPrint(
+              'MainActivity PiP event channel error (non-critical): $error',
+            );
+          }
         },
+        cancelOnError: false,
       );
     } catch (e) {
       // Silently handle setup errors
+      if (kDebugMode && e is! MissingPluginException) {
+        debugPrint('MainActivity PiP listener setup error (non-critical): $e');
+      }
     }
   }
 

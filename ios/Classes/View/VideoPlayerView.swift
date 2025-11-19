@@ -87,6 +87,11 @@ import QuartzCore
     // Store looping setting
     var enableLooping: Bool = false
 
+    // Track if app is in background to keep audio playing on screen lock
+    var isInBackground: Bool = false
+    var lastKnownRate: Float = 0.0
+
+
     public init(
         frame: CGRect,
         viewIdentifier viewId: Int64,
@@ -233,14 +238,8 @@ import QuartzCore
             }
         }
 
-        // Background audio setup - required for automatic PiP
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
-            print("✅ AVAudioSession configured for playback")
-        } catch {
-            print("❌ Failed to configure AVAudioSession: \(error.localizedDescription)")
-        }
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // Background audio setup - required for automatic PiP and lock screen playback
+        prepareAudioSession()
 
         print("Setting up method channel: \(channelName)")
         // Set up method call handler
@@ -278,6 +277,15 @@ import QuartzCore
         )
         print("✅ Registered foreground notification observer for view \(viewId)")
 
+        // Observe app entering background (for screen lock detection)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        print("✅ Registered background notification observer for view \(viewId)")
+
         // Observe audio session interruptions
         NotificationCenter.default.addObserver(
             self,
@@ -295,6 +303,20 @@ import QuartzCore
 
     public func view() -> UIView {
         return playerViewController.view
+    }
+
+    // MARK: - Audio Session Management
+
+    /// Prepares and activates the audio session for video playback
+    /// This MUST be called before starting playback to ensure audio continues when screen locks
+    func prepareAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+            print("✅ AVAudioSession configured for movie playback and activated")
+        } catch {
+            print("❌ Audio session error: \(error.localizedDescription)")
+        }
     }
 
     public func handleMethodCall(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -350,6 +372,10 @@ import QuartzCore
             handleShowAirPlayPicker(result: result)
         case "disconnectAirPlay":
             handleDisconnectAirPlay(result: result)
+        case "startAirPlayDetection":
+            handleStartAirPlayDetection(result: result)
+        case "stopAirPlayDetection":
+            handleStopAirPlayDetection(result: result)
         case "dispose":
             handleDispose(result: result)
         default:
@@ -712,6 +738,28 @@ import QuartzCore
 
     // MARK: - App Lifecycle Handling
 
+    /// Called when app enters background (including screen lock)
+    /// Keeps audio session active to allow background playback
+    @objc func handleAppDidEnterBackground() {
+        print("📱 App entering background (screen lock) - maintaining audio session for view \(viewId)")
+
+        // CRITICAL: Ensure audio session stays active when screen locks
+        // This prevents iOS from pausing the video
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            print("   → Audio session kept active during background/lock")
+        } catch {
+            print("   ⚠️ Failed to keep audio session active: \(error.localizedDescription)")
+        }
+
+        // Verify player is still playing
+        if let player = player, player.rate > 0 {
+            print("   → Player is playing (rate: \(player.rate))")
+        } else {
+            print("   → Player is paused or stopped")
+        }
+    }
+
     /// Called when app returns to foreground
     /// Restores Now Playing info which may have been cleared by the system
     @objc func handleAppWillEnterForeground() {
@@ -776,9 +824,11 @@ import QuartzCore
 
         case .ended:
             // Check if we should resume playback
+            var shouldResume = false
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 if options.contains(.shouldResume) {
+                    shouldResume = true
                     print("   → Should resume after interruption")
                 }
             }
@@ -791,7 +841,7 @@ import QuartzCore
                 print("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
             }
 
-            // Restore Now Playing info after audio session is reactivated
+            // Restore Now Playing info and resume playback if needed
             if RemoteCommandManager.shared.isOwner(viewId) {
                 var mediaInfo = currentMediaInfo
                 if mediaInfo == nil, let controllerIdValue = controllerId {
@@ -801,8 +851,15 @@ import QuartzCore
                 if let mediaInfo = mediaInfo {
                     print("   → Restoring Now Playing info after interruption")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                        self?.setupNowPlayingInfo(mediaInfo: mediaInfo)
-                        self?.updateNowPlayingPlaybackTime()
+                        guard let self = self else { return }
+                        self.setupNowPlayingInfo(mediaInfo: mediaInfo)
+                        self.updateNowPlayingPlaybackTime()
+
+                        // Auto-resume playback if the system recommends it
+                        if shouldResume {
+                            print("   → Auto-resuming playback after interruption")
+                            self.player?.play()
+                        }
                     }
                 }
             }
