@@ -48,21 +48,14 @@ class _VideoDetailScreenFullState extends State<VideoDetailScreenFull> {
       _controller.addControlListener(_handleControlEvent);
 
       // Do after frame to ensure widget is fully built
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         // Get current state from controller immediately
         _updateStateFromController();
 
-        // If video was playing in the list, resume playback after navigation
-        // This ensures automatic PiP can work from this screen
-        final wasPlaying = _controller.activityState.isPlaying;
-        debugPrint('🎬 Detail screen loaded, video was playing: $wasPlaying');
-        if (wasPlaying) {
-          debugPrint('🎬 Resuming playback in detail screen');
-          // Wait longer for the new platform view to be fully ready
-          await Future.delayed(const Duration(milliseconds: 500));
-          await _controller.play();
-          debugPrint('🎬 Playback resumed');
-        }
+        // Don't automatically resume playback - let the shared player continue in its current state
+        // The platform view will sync with the actual player state automatically
+        // Automatic play can cause race conditions with platform view initialization
+        debugPrint('🎬 Detail screen loaded, current state: ${_controller.activityState}');
       });
     } else {
       // Create a new controller
@@ -101,7 +94,7 @@ class _VideoDetailScreenFullState extends State<VideoDetailScreenFull> {
   Future<void> _initializePlayer() async {
     _controller = NativeVideoPlayerController(
       id: widget.video.id,
-      autoPlay: false,
+      autoPlay: widget.video.autoPlay,
       mediaInfo: NativeVideoPlayerMediaInfo(
         title: widget.video.title,
         subtitle: widget.video.description,

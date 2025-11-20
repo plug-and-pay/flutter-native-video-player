@@ -252,7 +252,14 @@ extension VideoPlayerView {
 
                 // Auto play if requested
                 if autoPlay {
+                    // Prepare audio session, Now Playing info, and PiP before playback
+                    self.prepareForPlayback()
+
+                    // Start playback
+                    print("Auto-playing with speed: \(self.desiredPlaybackSpeed)")
                     self.player?.play()
+                    self.player?.rate = self.desiredPlaybackSpeed
+                    self.updateNowPlayingPlaybackTime()
                     // Play event will be sent automatically by timeControlStatus observer
                 }
 
@@ -275,7 +282,9 @@ extension VideoPlayerView {
     }
 
 
-    func handlePlay(result: @escaping FlutterResult) {
+    /// Prepares the player for playback by setting up audio session, Now Playing info, and PiP
+    /// This should be called before starting playback to ensure proper background audio and lock screen controls
+    private func prepareForPlayback() {
         // CRITICAL: Activate audio session BEFORE calling player.play()
         // This ensures audio continues when the screen locks
         prepareAudioSession()
@@ -328,6 +337,11 @@ extension VideoPlayerView {
                 }
             }
         }
+    }
+
+    func handlePlay(result: @escaping FlutterResult) {
+        // Prepare audio session, Now Playing info, and PiP before playback
+        prepareForPlayback()
 
         print("Playing with speed: \(desiredPlaybackSpeed)")
         player?.play()
@@ -957,23 +971,54 @@ extension VideoPlayerView {
         // Update Now Playing info every second
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-            guard let self = self, let player = self.player else { return }
+            guard let self = self, let player = self.player, let currentItem = player.currentItem else { return }
 
             // Update Now Playing info
             self.updateNowPlayingPlaybackTime()
 
-            // Send timeUpdate event to Flutter
+            // Get current playback position
             let currentTime = player.currentTime()
-            let duration = player.currentItem?.duration ?? CMTime.zero
+            var positionSeconds = CMTimeGetSeconds(currentTime)
+            var durationSeconds: Double = 0.0
 
-            let positionSeconds = CMTimeGetSeconds(currentTime)
-            let durationSeconds = CMTimeGetSeconds(duration)
+            // For HLS live streams (indefinite duration), use seekableTimeRanges to get duration
+            // Regular VOD content (including VOD HLS) uses the item's duration
+            if currentItem.duration.isIndefinite {
+                // Live stream - use seekable ranges
+                let seekableRanges = currentItem.seekableTimeRanges
+                if !seekableRanges.isEmpty {
+                    // HLS live stream - calculate duration from seekable range
+                    let firstRange = seekableRanges.first!.timeRangeValue
+                    let lastRange = seekableRanges.last!.timeRangeValue
+
+                    let rangeStart = firstRange.start
+                    let rangeEnd = CMTimeAdd(lastRange.start, lastRange.duration)
+
+                    // Duration is the full seekable window
+                    durationSeconds = CMTimeGetSeconds(CMTimeSubtract(rangeEnd, rangeStart))
+
+                    // Position is relative to the start of the seekable window
+                    positionSeconds = CMTimeGetSeconds(CMTimeSubtract(currentTime, rangeStart))
+
+                    // Ensure position is within valid range
+                    if positionSeconds < 0 {
+                        positionSeconds = 0
+                    } else if positionSeconds > durationSeconds {
+                        positionSeconds = durationSeconds
+                    }
+                }
+            } else {
+                // Regular VOD content (including VOD HLS) - use item duration
+                let duration = currentItem.duration
+                durationSeconds = CMTimeGetSeconds(duration)
+            }
 
             // Get buffered position
             var bufferedSeconds = 0.0
-            if let timeRanges = player.currentItem?.loadedTimeRanges, !timeRanges.isEmpty {
+            let loadedRanges = currentItem.loadedTimeRanges
+            if !loadedRanges.isEmpty {
                 // Get the most recent buffered range
-                let bufferedRange = timeRanges.last!.timeRangeValue
+                let bufferedRange = loadedRanges.last!.timeRangeValue
                 let bufferedEnd = CMTimeAdd(bufferedRange.start, bufferedRange.duration)
                 bufferedSeconds = CMTimeGetSeconds(bufferedEnd)
             }

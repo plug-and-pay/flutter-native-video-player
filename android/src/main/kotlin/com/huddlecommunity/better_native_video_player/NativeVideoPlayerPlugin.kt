@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
+import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -121,7 +122,10 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        Log.d(TAG, "NativeVideoPlayerPlugin detached")
+        Log.d(TAG, "NativeVideoPlayerPlugin detached - cleaning up all players")
+        // Clean up all shared players when the Flutter engine is detached
+        // This ensures players are properly disposed when the app is closed/terminated
+        SharedPlayerManager.clearAll(binding.applicationContext)
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {

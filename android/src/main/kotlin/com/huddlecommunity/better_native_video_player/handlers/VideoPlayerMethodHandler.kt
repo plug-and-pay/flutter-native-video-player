@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -170,11 +171,6 @@ class VideoPlayerMethodHandler(
             Log.d(TAG, "🎨 HDR enabled - allowing native HDR playback")
         }
 
-        // Set autoplay
-        if (autoPlay) {
-            player.play()
-        }
-
         // Fetch qualities asynchronously for HLS streams
         if (url.contains(".m3u8")) {
             CoroutineScope(Dispatchers.Main).launch {
@@ -211,7 +207,14 @@ class VideoPlayerMethodHandler(
 
                     // Send AirPlay availability (always false on Android)
                     checkAndSendAirPlayAvailability()
-                    
+
+                    // Auto play if requested - MUST be done after player is ready
+                    if (autoPlay) {
+                        Log.d(TAG, "Auto-playing video after ready")
+                        player.play()
+                        // Play event will be sent automatically by VideoPlayerObserver
+                    }
+
                     result.success(null)
                 }
             }

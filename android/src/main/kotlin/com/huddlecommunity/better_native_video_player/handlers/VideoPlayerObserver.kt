@@ -5,6 +5,8 @@ import android.os.Looper
 import android.util.Log
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
+import androidx.media3.common.C
 
 /**
  * Observes ExoPlayer state changes and reports them via EventHandler
@@ -33,9 +35,37 @@ class VideoPlayerObserver(
     private val handler = Handler(Looper.getMainLooper())
     private val timeUpdateRunnable = object : Runnable {
         override fun run() {
-            // Send time update event
-            val position = player.currentPosition.toInt() // milliseconds
-            val duration = player.duration.toInt() // milliseconds
+            var position: Long
+            var duration: Long
+
+            // Check if this is a live stream (not just dynamic, but actually non-seekable live)
+            val timeline = player.currentTimeline
+            val window = Timeline.Window()
+
+            val isLiveStream = !timeline.isEmpty &&
+                timeline.getWindow(player.currentMediaItemIndex, window).isDynamic &&
+                !window.isSeekable
+
+            if (isLiveStream) {
+                // For HLS live streams, use the seekable window to calculate relative position
+                // Get the window information
+                timeline.getWindow(player.currentMediaItemIndex, window)
+
+                // Duration is the seekable window size
+                duration = window.durationMs
+
+                // Position is relative to the seekable window start
+                // windowStartTimeMs gives us the absolute start time of the window
+                position = player.currentPosition - window.windowStartTimeMs
+
+                // Clamp position to valid range
+                if (position < 0) position = 0
+                if (position > duration) position = duration
+            } else {
+                // Regular VOD content - use direct position and duration
+                position = player.currentPosition
+                duration = player.duration
+            }
 
             // Get buffered position
             val bufferedPosition = player.bufferedPosition.toInt() // milliseconds
@@ -45,8 +75,8 @@ class VideoPlayerObserver(
 
             if (duration > 0) {
                 eventHandler.sendEvent("timeUpdate", mapOf(
-                    "position" to position,
-                    "duration" to duration,
+                    "position" to position.toInt(),
+                    "duration" to duration.toInt(),
                     "bufferedPosition" to bufferedPosition,
                     "isBuffering" to isBuffering
                 ))
@@ -158,10 +188,15 @@ class VideoPlayerObserver(
 
             // Restore the playback state after buffering completes
             // This tells the UI whether the video is playing or paused
-            if (player.isPlaying) {
-                eventHandler.sendEvent("play")
-            } else {
-                eventHandler.sendEvent("pause")
+            // IMPORTANT: Only send play/pause if player is not currently buffering
+            // During initial buffering, isPlaying might be true (playWhenReady=true)
+            // but the video hasn't actually started playing yet
+            if (player.playbackState != Player.STATE_BUFFERING) {
+                if (player.isPlaying) {
+                    eventHandler.sendEvent("play")
+                } else {
+                    eventHandler.sendEvent("pause")
+                }
             }
         }
     }
