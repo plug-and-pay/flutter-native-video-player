@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.10] - 2025-11-20
+
+### Improved
+- **AirPlay State Manager Initialization**: Enhanced initialization flow to support app startup initialization
+  - Added `_initRequested` flag to track initialization requests before controllers are created
+  - `AirPlayStateManager.init()` can now be safely called at app startup before creating any video player controllers
+  - Automatic AirPlay detection now starts when the first controller is created if `init()` was called earlier
+  - Removed `StateError` exception when calling `init()` without available controllers
+  - Improved developer experience by allowing flexible initialization timing
+  - Added proper cleanup of `_initRequested` flag in `dispose()` method
+
+### Documentation
+- Updated `init()` method documentation to clarify safe usage at app startup
+- Improved comments explaining automatic initialization behavior when channels become available
+
 ## [0.3.9] - 2025-11-20
 
 ### Fixed

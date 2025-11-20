@@ -40,12 +40,24 @@ class AirPlayStateManager {
   final Set<VideoPlayerMethodChannel> _registeredChannels =
       <VideoPlayerMethodChannel>{};
 
+  // Flag to track if init() was called before any channels were registered
+  bool _initRequested = false;
+
   /// Registers a method channel from a controller
   ///
   /// Controllers should call this when they're created so the manager
   /// can use them to perform AirPlay actions.
   void registerMethodChannel(VideoPlayerMethodChannel channel) {
+    final bool isFirstChannel = _registeredChannels.isEmpty;
     _registeredChannels.add(channel);
+
+    // If init() was called before any channels were available,
+    // automatically start AirPlay detection now
+    if (isFirstChannel && _initRequested && PlatformUtils.isIOS) {
+      channel.startAirPlayDetection().catchError((dynamic error) {
+        // Silently handle errors during automatic initialization
+      });
+    }
   }
 
   /// Unregisters a method channel when a controller is disposed
@@ -262,8 +274,10 @@ class AirPlayStateManager {
   ///
   /// On Android or Web, this method does nothing and returns immediately.
   ///
-  /// Throws [StateError] if no video player controller is available on iOS.
-  /// Create at least one video player controller before calling this method.
+  /// On iOS, if no video player controller is available yet, this method will
+  /// save the initialization request and automatically start detection when
+  /// the first controller is created. This allows you to safely call init()
+  /// at app startup before creating any video players.
   ///
   /// Example:
   /// ```dart
@@ -276,12 +290,13 @@ class AirPlayStateManager {
       return;
     }
 
+    _initRequested = true;
+
     final channel = _anyMethodChannel;
     if (channel == null) {
-      throw StateError(
-        'No video player controller available. '
-        'Create a NativeVideoPlayerController before initializing AirPlay detection.',
-      );
+      // No channel available yet - detection will start automatically
+      // when the first video player controller is created
+      return;
     }
     await channel.startAirPlayDetection();
   }
@@ -311,5 +326,6 @@ class AirPlayStateManager {
     _isAirPlayConnectingController.close();
     _airPlayDeviceNameController.close();
     _registeredChannels.clear();
+    _initRequested = false;
   }
 }

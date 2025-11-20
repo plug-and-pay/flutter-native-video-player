@@ -1,6 +1,6 @@
 name: better_native_video_player
 description: Native video player using AVPlayerViewController (iOS) and ExoPlayer (Android) with HLS, Picture-in-Picture, AirPlay, and fullscreen support.
-version: 0.3.9
+version: 0.3.10
 homepage: https://github.com/DaniKemper010/native-video-player
 repository: https://github.com/DaniKemper010/native-video-player.git
 issue_tracker: https://github.com/DaniKemper010/native-video-player/issues
