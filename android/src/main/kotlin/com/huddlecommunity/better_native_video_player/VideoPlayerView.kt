@@ -280,7 +280,7 @@ class VideoPlayerView(
         if (controllerId != null) {
             eventHandler.setInitialStateCallback {
                 Log.d(TAG, "Sending initial state for shared player - isPlaying: ${player.isPlaying}, playbackState: ${player.playbackState}, duration: ${player.duration}")
-                
+
                 // Send loaded event first if the player has content loaded
                 // Check duration >= 0 because C.TIME_UNSET is a large negative value
                 if (player.playbackState != ExoPlayer.STATE_IDLE && player.duration >= 0) {
@@ -288,11 +288,17 @@ class VideoPlayerView(
                         "duration" to player.duration.toInt()
                     ))
                 }
-                
-                // Then send the current playback state
-                if (player.isPlaying) {
+
+                // Send buffering event if currently buffering
+                if (player.playbackState == Player.STATE_BUFFERING) {
+                    eventHandler.sendEvent("buffering")
+                }
+                // Then send the current playback state, but only if not buffering
+                // During initial buffering, isPlaying might be true (playWhenReady=true)
+                // but the video hasn't actually started playing yet
+                else if (player.isPlaying) {
                     eventHandler.sendEvent("play")
-                } else if (player.playbackState != ExoPlayer.STATE_IDLE) {
+                } else if (player.playbackState != Player.STATE_IDLE) {
                     eventHandler.sendEvent("pause")
                 }
             }

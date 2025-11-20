@@ -188,10 +188,15 @@ class VideoPlayerObserver(
 
             // Restore the playback state after buffering completes
             // This tells the UI whether the video is playing or paused
-            if (player.isPlaying) {
-                eventHandler.sendEvent("play")
-            } else {
-                eventHandler.sendEvent("pause")
+            // IMPORTANT: Only send play/pause if player is not currently buffering
+            // During initial buffering, isPlaying might be true (playWhenReady=true)
+            // but the video hasn't actually started playing yet
+            if (player.playbackState != Player.STATE_BUFFERING) {
+                if (player.isPlaying) {
+                    eventHandler.sendEvent("play")
+                } else {
+                    eventHandler.sendEvent("pause")
+                }
             }
         }
     }
