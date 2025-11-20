@@ -236,6 +236,10 @@ extension VideoPlayerView {
                 return .commandFailed
             }
 
+            // Ensure audio session is active before resuming playback
+            // This is critical after interruptions (e.g., phone calls)
+            self.prepareAudioSession()
+
             self.player?.play()
             self.sendEvent("play")
             self.updateNowPlayingPlaybackTime()

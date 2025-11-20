@@ -743,6 +743,9 @@ import QuartzCore
     @objc func handleAppDidEnterBackground() {
         print("📱 App entering background (screen lock) - maintaining audio session for view \(viewId)")
 
+        // Store current playback rate before iOS might pause it
+        let wasPlaying = player?.rate ?? 0 > 0
+
         // CRITICAL: Ensure audio session stays active when screen locks
         // This prevents iOS from pausing the video
         do {
@@ -752,11 +755,20 @@ import QuartzCore
             print("   ⚠️ Failed to keep audio session active: \(error.localizedDescription)")
         }
 
-        // Verify player is still playing
-        if let player = player, player.rate > 0 {
-            print("   → Player is playing (rate: \(player.rate))")
+        // CRITICAL: iOS will pause AVPlayer when screen locks
+        // We need to resume playback to continue audio in background
+        if wasPlaying {
+            // Small delay to ensure background transition completes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self = self, let player = self.player else { return }
+
+                // Resume playback at the desired speed
+                player.play()
+                player.rate = self.desiredPlaybackSpeed
+                print("   → Resumed playback for background audio (rate: \(self.desiredPlaybackSpeed))")
+            }
         } else {
-            print("   → Player is paused or stopped")
+            print("   → Player was not playing, not resuming")
         }
     }
 

@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.8] - 2025-11-20
+
+### Added
+- **HLS Live Stream Support**: Full support for HLS live streams with indefinite duration
+  - iOS: Uses `seekableTimeRanges` to calculate duration and position for live content
+  - Android: Uses `Timeline.Window` to handle dynamic, non-seekable live streams
+  - Position and duration now calculated relative to the seekable window for live streams
+  - Proper detection of live vs VOD content (including VOD HLS)
+  - Accurate time updates and progress reporting for live streams
+
+### Improved
+- **iOS Autoplay Reliability**: Enhanced autoplay functionality with proper initialization
+  - Added `prepareForPlayback()` method that consolidates audio session, Now Playing info, and PiP setup
+  - Autoplay now properly prepares audio session and media controls before starting playback
+  - Ensures playback rate is set correctly during autoplay
+  - Now Playing info is properly initialized before video starts
+
+- **iOS Background Audio During Screen Lock**: Major improvements to maintain playback when screen locks
+  - Player now actively resumes playback after screen lock transition completes
+  - Added 100ms delay to ensure background transition completes before resuming
+  - Stores playback state before lock to restore correctly
+  - Sets playback rate to `desiredPlaybackSpeed` when resuming after lock
+  - Fixes issue where iOS would pause video when device locks
+
+- **iOS Audio Session Management**: Enhanced audio session preparation for remote commands
+  - Audio session is now prepared before resuming playback in Now Playing handler
+  - Critical for proper playback after interruptions (phone calls, alarms)
+  - Ensures audio session is active when handling remote control commands
+
+- **Android Autoplay Timing**: Fixed autoplay to happen after player is ready
+  - Moved `player.play()` call to execute only after `STATE_READY` is reached
+  - Prevents autoplay attempts before player has loaded media
+  - Play event is now sent automatically by `VideoPlayerObserver` after successful play
+  - More reliable autoplay behavior across different video formats
+
+### Fixed
+- **HLS Live Stream Position**: Fixed incorrect position and duration reporting for live streams
+  - Live streams no longer show indefinite or incorrect duration values
+  - Position now properly tracks within the seekable window
+  - Prevents position from going negative or exceeding duration
+
+- **iOS Screen Lock Playback**: Fixed video audio stopping when screen locks during playback
+  - Playback now continues seamlessly when device locks
+  - Audio maintains at correct playback speed after lock
+  - Resolves interruption in background audio during screen lock transitions
+
+### Technical Details
+- **iOS Implementation**: Enhanced time observer to detect indefinite duration and use seekable ranges
+- **Android Implementation**: Added Timeline and Window inspection to differentiate live from VOD content
+- **Example App**: Added CNN livestream example with autoplay enabled for testing
+
 ## [0.3.7] - 2025-11-19
 
 ### Added

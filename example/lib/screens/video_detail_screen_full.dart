@@ -101,7 +101,7 @@ class _VideoDetailScreenFullState extends State<VideoDetailScreenFull> {
   Future<void> _initializePlayer() async {
     _controller = NativeVideoPlayerController(
       id: widget.video.id,
-      autoPlay: false,
+      autoPlay: widget.video.autoPlay,
       mediaInfo: NativeVideoPlayerMediaInfo(
         title: widget.video.title,
         subtitle: widget.video.description,
