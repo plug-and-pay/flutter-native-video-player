@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.9] - 2025-11-20
+
+### Fixed
+- **Android AirPlay Method Handlers**: Fixed missing method handlers causing errors when calling AirPlay methods on Android
+  - Added `startAirPlayDetection()` method handler (no-op on Android, returns success)
+  - Added `stopAirPlayDetection()` method handler (no-op on Android, returns success)
+  - Added `disconnectAirPlay()` method handler (no-op on Android, returns success)
+  - Fixed "No video player controller available" error when calling `AirPlayStateManager.instance.init()` on Android
+
+### Improved
+- **AirPlay State Manager Platform Safety**: Enhanced platform checking for better cross-platform compatibility
+  - Added platform checks to all AirPlay methods (`init()`, `showAirPlayPicker()`, `disconnectAirPlay()`, `dispose()`)
+  - Methods now return early without error on non-iOS platforms (Android, Web)
+  - AirPlay methods are now safe to call on any platform without platform-specific guards
+  - Improved documentation to clarify iOS-only functionality with cross-platform safety
+
 ## [0.3.8] - 2025-11-20
 
 ### Added

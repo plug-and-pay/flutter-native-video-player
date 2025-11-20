@@ -55,7 +55,9 @@ class _VideoDetailScreenFullState extends State<VideoDetailScreenFull> {
         // Don't automatically resume playback - let the shared player continue in its current state
         // The platform view will sync with the actual player state automatically
         // Automatic play can cause race conditions with platform view initialization
-        debugPrint('🎬 Detail screen loaded, current state: ${_controller.activityState}');
+        debugPrint(
+          '🎬 Detail screen loaded, current state: ${_controller.activityState}',
+        );
       });
     } else {
       // Create a new controller

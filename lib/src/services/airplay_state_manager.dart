@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../platform/platform_utils.dart';
 import '../platform/video_player_method_channel.dart';
 
 /// Global singleton manager for AirPlay state across all video player instances.
@@ -194,7 +195,9 @@ class AirPlayStateManager {
   /// Opens the native iOS AirPlay picker UI that allows users to select
   /// an AirPlay device to connect to.
   ///
-  /// Throws [StateError] if no video player controller is available.
+  /// On Android or Web, this method does nothing and returns immediately.
+  ///
+  /// Throws [StateError] if no video player controller is available on iOS.
   /// Create at least one video player controller before calling this method.
   ///
   /// Example:
@@ -203,6 +206,11 @@ class AirPlayStateManager {
   /// await AirPlayStateManager.instance.showAirPlayPicker();
   /// ```
   Future<void> showAirPlayPicker() async {
+    // AirPlay is only available on iOS
+    if (!PlatformUtils.isIOS) {
+      return;
+    }
+
     final channel = _anyMethodChannel;
     if (channel == null) {
       throw StateError(
@@ -218,8 +226,10 @@ class AirPlayStateManager {
   /// Stops sending video to the AirPlay device. The user can reconnect
   /// to AirPlay later using the picker.
   ///
+  /// On Android or Web, this method does nothing and returns immediately.
+  ///
   /// Throws [StateError] if:
-  /// - No video player controller is available
+  /// - No video player controller is available on iOS
   /// - Not currently connected to AirPlay
   ///
   /// Example:
@@ -229,6 +239,11 @@ class AirPlayStateManager {
   /// }
   /// ```
   Future<void> disconnectAirPlay() async {
+    // AirPlay is only available on iOS
+    if (!PlatformUtils.isIOS) {
+      return;
+    }
+
     final channel = _anyMethodChannel;
     if (channel == null) {
       throw StateError(
@@ -239,21 +254,28 @@ class AirPlayStateManager {
     await channel.disconnectAirPlay();
   }
 
-  /// Initializes AirPlay device detection
+  /// Initializes AirPlay device detection (iOS only)
   ///
   /// Starts monitoring for available AirPlay devices. This should be called
   /// when you want to begin searching for AirPlay devices. You typically call
   /// this once at app startup.
   ///
-  /// Throws [StateError] if no video player controller is available.
+  /// On Android or Web, this method does nothing and returns immediately.
+  ///
+  /// Throws [StateError] if no video player controller is available on iOS.
   /// Create at least one video player controller before calling this method.
   ///
   /// Example:
   /// ```dart
-  /// // At app startup
+  /// // At app startup (safe to call on all platforms)
   /// await AirPlayStateManager.instance.init();
   /// ```
   Future<void> init() async {
+    // AirPlay is only available on iOS
+    if (!PlatformUtils.isIOS) {
+      return;
+    }
+
     final channel = _anyMethodChannel;
     if (channel == null) {
       throw StateError(
@@ -271,13 +293,15 @@ class AirPlayStateManager {
   /// Note: This should only be called when the app is shutting down,
   /// as this is a singleton instance.
   Future<void> dispose() async {
-    // Stop AirPlay detection if a channel is available
-    final channel = _anyMethodChannel;
-    if (channel != null) {
-      try {
-        await channel.stopAirPlayDetection();
-      } catch (e) {
-        // Silently handle errors during disposal
+    // Stop AirPlay detection if a channel is available (iOS only)
+    if (PlatformUtils.isIOS) {
+      final channel = _anyMethodChannel;
+      if (channel != null) {
+        try {
+          await channel.stopAirPlayDetection();
+        } catch (e) {
+          // Silently handle errors during disposal
+        }
       }
     }
 

@@ -69,6 +69,9 @@ class VideoPlayerMethodHandler(
             "exitFullScreen" -> handleExitFullScreen(result)
             "isAirPlayAvailable" -> handleIsAirPlayAvailable(result)
             "showAirPlayPicker" -> handleShowAirPlayPicker(result)
+            "startAirPlayDetection" -> handleStartAirPlayDetection(result)
+            "stopAirPlayDetection" -> handleStopAirPlayDetection(result)
+            "disconnectAirPlay" -> handleDisconnectAirPlay(result)
             "dispose" -> handleDispose(result)
             else -> result.notImplemented()
         }
@@ -490,6 +493,36 @@ class VideoPlayerMethodHandler(
      */
     private fun handleShowAirPlayPicker(result: MethodChannel.Result) {
         Log.d(TAG, "AirPlay picker requested but not supported on Android")
+        // Simply return success - AirPlay is not available on Android
+        result.success(null)
+    }
+
+    /**
+     * Starts AirPlay device detection (iOS only - no-op on Android)
+     * AirPlay is an Apple technology and not available on Android
+     */
+    private fun handleStartAirPlayDetection(result: MethodChannel.Result) {
+        Log.d(TAG, "AirPlay detection start requested but not supported on Android")
+        // Simply return success - AirPlay is not available on Android
+        result.success(null)
+    }
+
+    /**
+     * Stops AirPlay device detection (iOS only - no-op on Android)
+     * AirPlay is an Apple technology and not available on Android
+     */
+    private fun handleStopAirPlayDetection(result: MethodChannel.Result) {
+        Log.d(TAG, "AirPlay detection stop requested but not supported on Android")
+        // Simply return success - AirPlay is not available on Android
+        result.success(null)
+    }
+
+    /**
+     * Disconnects from AirPlay device (iOS only - no-op on Android)
+     * AirPlay is an Apple technology and not available on Android
+     */
+    private fun handleDisconnectAirPlay(result: MethodChannel.Result) {
+        Log.d(TAG, "AirPlay disconnect requested but not supported on Android")
         // Simply return success - AirPlay is not available on Android
         result.success(null)
     }
