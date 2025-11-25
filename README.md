@@ -20,6 +20,7 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 - ✅ Background playback with media notifications
 - ✅ Playback controls: play, pause, seek, volume, speed (0.25x - 2.0x)
 - ✅ Quality selection for HLS streams with real-time switching
+- ✅ **Subtitle/Closed Caption support** for HLS streams (VOD and Live) with language selection
 - ✅ **Separated event streams**: Activity events (play/pause/buffering) and Control events (quality/speed/PiP/fullscreen)
 - ✅ **Individual property streams**: Dedicated streams for position, duration, speed, state, fullscreen, PiP, AirPlay, and quality
 - ✅ Real-time playback position tracking with **buffered position indicator**
@@ -458,6 +459,82 @@ if (qualities.isNotEmpty) {
   await _controller.setQuality(qualities.first);
 }
 ```
+
+#### Subtitle/Closed Caption Support
+
+The plugin supports subtitles and closed captions for HLS streams (both VOD and Live). Subtitles must be embedded in the HLS stream manifest as text tracks.
+
+**Get Available Subtitle Tracks:**
+```dart
+// Get all available subtitle tracks
+final subtitles = await _controller.getAvailableSubtitleTracks();
+
+// Check available languages
+for (final track in subtitles) {
+  print('${track.displayName} (${track.language}) - Selected: ${track.isSelected}');
+}
+```
+
+**Select a Subtitle Track:**
+```dart
+// Select a subtitle track by passing the track object
+if (subtitles.isNotEmpty) {
+  await _controller.setSubtitleTrack(subtitles.first);
+}
+
+// Disable subtitles
+await _controller.setSubtitleTrack(NativeVideoPlayerSubtitleTrack.off());
+```
+
+**Using the Subtitle Picker Modal:**
+
+A ready-to-use subtitle picker modal is included in the example app with the following features:
+- Display all available subtitle tracks
+- Enable/disable subtitles
+- Font size control (12-32px)
+- Beautiful Material Design UI
+
+```dart
+import 'package:better_native_video_player/better_native_video_player.dart';
+
+// Show the subtitle picker modal
+showSubtitlePicker(
+  context: context,
+  controller: _controller,
+  fontSize: 16.0, // Initial font size
+  onFontSizeChanged: (newSize) {
+    // Handle font size changes
+    setState(() {
+      _subtitleFontSize = newSize;
+    });
+  },
+);
+```
+
+**Example HLS Streams with Subtitles:**
+```dart
+// Apple's example stream with multiple subtitle languages
+await _controller.load(
+  url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+);
+
+// After loading, get available subtitles
+final subtitles = await _controller.getAvailableSubtitleTracks();
+```
+
+**Important Notes:**
+- Subtitles must be embedded in the HLS stream (in the master.m3u8 manifest)
+- External subtitle files (SRT, VTT) are not currently supported
+- Subtitle tracks are automatically detected from the stream
+- Both VOD (Video on Demand) and Live streams are supported
+- Font rendering and styling are handled by the native players (AVPlayer on iOS, ExoPlayer on Android)
+
+**Platform-Specific Behavior:**
+- **iOS**: Uses AVFoundation's `AVMediaSelectionGroup` for subtitle track management
+- **Android**: Uses ExoPlayer's text track selection API
+- Both platforms support WebVTT and other standard subtitle formats embedded in HLS streams
+
+See the `subtitle_example_screen.dart` in the example app for a complete implementation including a subtitle picker modal with font size controls.
 
 #### Separated Event Handling
 

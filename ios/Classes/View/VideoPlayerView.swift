@@ -354,6 +354,10 @@ import QuartzCore
             } else {
                 result(availableQualities)
             }
+        case "getAvailableSubtitleTracks":
+            handleGetAvailableSubtitleTracks(result: result)
+        case "setSubtitleTrack":
+            handleSetSubtitleTrack(call: call, result: result)
         case "enterFullScreen":
             handleEnterFullScreen(result: result)
         case "exitFullScreen":

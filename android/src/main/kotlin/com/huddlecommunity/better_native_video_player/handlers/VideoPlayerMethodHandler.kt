@@ -65,6 +65,8 @@ class VideoPlayerMethodHandler(
             "setLooping" -> handleSetLooping(call, result)
             "setQuality" -> handleSetQuality(call, result)
             "getAvailableQualities" -> handleGetAvailableQualities(result)
+            "getAvailableSubtitleTracks" -> handleGetAvailableSubtitleTracks(result)
+            "setSubtitleTrack" -> handleSetSubtitleTrack(call, result)
             "enterFullScreen" -> handleEnterFullScreen(result)
             "exitFullScreen" -> handleExitFullScreen(result)
             "isAirPlayAvailable" -> handleIsAirPlayAvailable(result)
@@ -576,5 +578,157 @@ class VideoPlayerMethodHandler(
             return true
         }
         return false
+    }
+
+    // MARK: - Subtitle Track Handling
+
+    /**
+     * Gets available subtitle tracks from the current player
+     */
+    private fun handleGetAvailableSubtitleTracks(result: MethodChannel.Result) {
+        try {
+            val tracks = mutableListOf<Map<String, Any>>()
+
+            // Get the current tracks from the player
+            val currentTracks = player.currentTracks
+
+            // Get track selection parameters to find the selected track
+            val trackSelectionParameters = player.trackSelectionParameters
+
+            // Iterate through all track groups
+            for (groupIndex in 0 until currentTracks.groups.size) {
+                val group = currentTracks.groups[groupIndex]
+
+                // Only process text (subtitle) tracks
+                if (group.type == C.TRACK_TYPE_TEXT) {
+                    // Iterate through all tracks in this group
+                    for (trackIndex in 0 until group.length) {
+                        val format = group.getTrackFormat(trackIndex)
+                        val isSelected = group.isTrackSelected(trackIndex)
+
+                        // Get language code (e.g., "en", "es", "fr")
+                        val languageCode = format.language ?: "unknown"
+
+                        // Get display name (use label if available, otherwise language code)
+                        val displayName = format.label?.takeIf { it.isNotEmpty() }
+                            ?: languageCode.let { code ->
+                                // Try to get localized language name
+                                try {
+                                    val locale = java.util.Locale(code)
+                                    locale.getDisplayLanguage(java.util.Locale.getDefault())
+                                        .takeIf { it.isNotEmpty() } ?: code
+                                } catch (e: Exception) {
+                                    code
+                                }
+                            }
+
+                        val trackInfo = mapOf(
+                            "index" to trackIndex,
+                            "language" to languageCode,
+                            "displayName" to displayName,
+                            "isSelected" to isSelected
+                        )
+
+                        tracks.add(trackInfo)
+                        Log.d(TAG, "📝 Found subtitle track: $displayName ($languageCode) - Selected: $isSelected")
+                    }
+                }
+            }
+
+            Log.d(TAG, "📝 Total subtitle tracks found: ${tracks.size}")
+            result.success(tracks)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting subtitle tracks: ${e.message}", e)
+            result.success(emptyList<Map<String, Any>>())
+        }
+    }
+
+    /**
+     * Sets the subtitle track
+     */
+    private fun handleSetSubtitleTrack(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val args = call.arguments as? Map<*, *>
+            val trackInfo = args?.get("track") as? Map<*, *>
+            val index = trackInfo?.get("index") as? Int
+
+            if (index == null) {
+                result.error("INVALID_TRACK", "Invalid subtitle track data", null)
+                return
+            }
+
+            // Index -1 means disable subtitles
+            if (index == -1) {
+                Log.d(TAG, "📝 Disabling subtitles")
+
+                // Disable text track selection
+                val newParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+
+                player.trackSelectionParameters = newParameters
+
+                eventHandler.sendEvent("subtitleChange", mapOf(
+                    "index" to -1,
+                    "language" to "off",
+                    "displayName" to "Off",
+                    "isSelected" to false
+                ))
+
+                result.success(null)
+                return
+            }
+
+            // Enable text tracks first
+            var parametersBuilder = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+
+            // Find the track format for the requested index
+            val currentTracks = player.currentTracks
+            var trackFound = false
+            var selectedLanguage = "unknown"
+            var selectedDisplayName = "Unknown"
+
+            for (groupIndex in 0 until currentTracks.groups.size) {
+                val group = currentTracks.groups[groupIndex]
+
+                if (group.type == C.TRACK_TYPE_TEXT && index < group.length) {
+                    val format = group.getTrackFormat(index)
+                    selectedLanguage = format.language ?: "unknown"
+                    selectedDisplayName = format.label?.takeIf { it.isNotEmpty() }
+                        ?: selectedLanguage
+
+                    // Set preferred text language to the selected track's language
+                    parametersBuilder = parametersBuilder
+                        .setPreferredTextLanguage(selectedLanguage)
+
+                    trackFound = true
+                    break
+                }
+            }
+
+            if (!trackFound) {
+                result.error("INVALID_INDEX", "Invalid subtitle track index", null)
+                return
+            }
+
+            player.trackSelectionParameters = parametersBuilder.build()
+
+            Log.d(TAG, "📝 Selected subtitle track: $selectedDisplayName ($selectedLanguage)")
+
+            eventHandler.sendEvent("subtitleChange", mapOf(
+                "index" to index,
+                "language" to selectedLanguage,
+                "displayName" to selectedDisplayName,
+                "isSelected" to true
+            ))
+
+            result.success(null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting subtitle track: ${e.message}", e)
+            result.error("ERROR", "Failed to set subtitle track: ${e.message}", null)
+        }
     }
 }
