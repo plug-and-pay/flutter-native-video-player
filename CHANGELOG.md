@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-11-25
+
+### Added
+- **Subtitle/Closed Caption Support**: Comprehensive subtitle functionality for HLS streams
+  - Added `NativeVideoPlayerSubtitleTrack` model with language code and display name
+  - Added `getSubtitleTracks()` method to retrieve available subtitle tracks
+  - Added `setSubtitleTrack()` method to select a specific subtitle track or disable subtitles
+  - iOS: Uses AVFoundation's `AVMediaSelectionGroup` for native subtitle track management
+  - Android: Uses ExoPlayer's text track selection API for subtitle rendering
+  - Support for both VOD and Live HLS streams with embedded subtitles
+  - Support for WebVTT and standard HLS subtitle formats on both platforms
+  - Added `SubtitlePickerModal` widget with beautiful Material Design UI
+  - Font size control (12-32px) for subtitle customization
+  - Language selection with localized display names
+  - Enable/disable subtitles toggle
+  - Integrated subtitle picker into custom video overlay controls
+  - Added comprehensive subtitle example screen demonstrating VOD and Live HLS streams
+
+### Improved
+- **Example App**: Enhanced with subtitle examples and better UI organization
+  - Added `subtitle_example_screen.dart` with multiple subtitle examples
+  - Updated `video_list_screen_with_players.dart` with subtitle track access
+  - Cleaned up example code for better maintainability
+
+### Documentation
+- Updated README with detailed subtitle documentation and usage examples
+- Added API reference for subtitle-related methods
+- Included examples for getting available tracks and selecting subtitle languages
+
 ## [0.3.10] - 2025-11-20
 
 ### Improved

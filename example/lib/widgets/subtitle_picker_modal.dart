@@ -52,9 +52,9 @@ class _SubtitlePickerModalState extends State<SubtitlePickerModal> {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading subtitles: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading subtitles: $e')));
       }
     }
   }
@@ -80,9 +80,9 @@ class _SubtitlePickerModalState extends State<SubtitlePickerModal> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error selecting subtitle: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error selecting subtitle: $e')));
       }
     }
   }
@@ -124,10 +124,7 @@ class _SubtitlePickerModalState extends State<SubtitlePickerModal> {
                 const SizedBox(width: 12),
                 const Text(
                   'Subtitles & Captions',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
                 IconButton(
@@ -160,10 +157,7 @@ class _SubtitlePickerModalState extends State<SubtitlePickerModal> {
                     const Spacer(),
                     Text(
                       '${_currentFontSize.toInt()}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                     ),
                   ],
                 ),
@@ -209,10 +203,7 @@ class _SubtitlePickerModalState extends State<SubtitlePickerModal> {
                   const SizedBox(height: 16),
                   Text(
                     'No subtitles available',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -258,16 +249,10 @@ class _SubtitlePickerModalState extends State<SubtitlePickerModal> {
           ? null
           : Text(
               track.language.toUpperCase(),
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
       trailing: isSelected
-          ? Icon(
-              Icons.check_circle,
-              color: Theme.of(context).primaryColor,
-            )
+          ? Icon(Icons.check_circle, color: Theme.of(context).primaryColor)
           : null,
       onTap: () => _selectTrack(track),
     );

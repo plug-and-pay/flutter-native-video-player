@@ -21,7 +21,8 @@ class _SubtitleExampleScreenState extends State<SubtitleExampleScreen> {
   final video = VideoItem(
     title: 'HLS VOD with Subtitles',
     description: 'Apple\'s Big Buck Bunny with multiple subtitle tracks',
-    url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+    url:
+        'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
     id: 1,
     artworkUrl: '',
   );
@@ -36,7 +37,10 @@ class _SubtitleExampleScreenState extends State<SubtitleExampleScreen> {
     _controller = NativeVideoPlayerController(
       id: 999,
       autoPlay: true,
-      mediaInfo: NativeVideoPlayerMediaInfo(title: video.title, subtitle: video.description),
+      mediaInfo: NativeVideoPlayerMediaInfo(
+        title: video.title,
+        subtitle: video.description,
+      ),
     );
 
     _loadVideo(video.url);
@@ -55,7 +59,9 @@ class _SubtitleExampleScreenState extends State<SubtitleExampleScreen> {
       await _controller.load(url: url);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading video: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading video: $e')));
       }
     }
   }
@@ -113,7 +119,11 @@ class _SubtitleExampleScreenState extends State<SubtitleExampleScreen> {
                   ),
                   const Text(
                     'Subtitle Examples',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -124,7 +134,8 @@ class _SubtitleExampleScreenState extends State<SubtitleExampleScreen> {
               flex: 2,
               child: NativeVideoPlayer(
                 controller: _controller,
-                overlayBuilder: (context, controller) => CustomVideoOverlay(controller: controller),
+                overlayBuilder: (context, controller) =>
+                    CustomVideoOverlay(controller: controller),
               ),
             ),
 
@@ -137,18 +148,29 @@ class _SubtitleExampleScreenState extends State<SubtitleExampleScreen> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.closed_caption, color: Colors.white, size: 24),
+                      const Icon(
+                        Icons.closed_caption,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                       const SizedBox(width: 12),
                       const Text(
                         'Available Subtitles',
-                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const Spacer(),
                       if (_isLoadingSubtitles)
                         const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         ),
                     ],
                   ),
@@ -165,9 +187,18 @@ class _SubtitleExampleScreenState extends State<SubtitleExampleScreen> {
                       runSpacing: 8,
                       children: _availableSubtitles.map((track) {
                         return Chip(
-                          label: Text(track.displayName, style: const TextStyle(fontSize: 12)),
-                          backgroundColor: track.isSelected ? Colors.blue : Colors.grey[800],
-                          labelStyle: TextStyle(color: track.isSelected ? Colors.white : Colors.grey[300]),
+                          label: Text(
+                            track.displayName,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          backgroundColor: track.isSelected
+                              ? Colors.blue
+                              : Colors.grey[800],
+                          labelStyle: TextStyle(
+                            color: track.isSelected
+                                ? Colors.white
+                                : Colors.grey[300],
+                          ),
                         );
                       }).toList(),
                     ),

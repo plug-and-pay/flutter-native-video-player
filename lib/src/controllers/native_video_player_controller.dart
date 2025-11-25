@@ -1433,7 +1433,8 @@ class NativeVideoPlayerController {
   }
 
   /// Gets available subtitle tracks
-  Future<List<NativeVideoPlayerSubtitleTrack>> getAvailableSubtitleTracks() async {
+  Future<List<NativeVideoPlayerSubtitleTrack>>
+  getAvailableSubtitleTracks() async {
     final tracks = await _methodChannel?.getAvailableSubtitleTracks();
     return tracks ?? <NativeVideoPlayerSubtitleTrack>[];
   }

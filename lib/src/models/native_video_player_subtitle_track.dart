@@ -41,11 +41,11 @@ class NativeVideoPlayerSubtitleTrack {
   bool get isOff => index == -1;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
-        'index': index,
-        'language': language,
-        'displayName': displayName,
-        'isSelected': isSelected,
-      };
+    'index': index,
+    'language': language,
+    'displayName': displayName,
+    'isSelected': isSelected,
+  };
 
   NativeVideoPlayerSubtitleTrack copyWith({
     int? index,

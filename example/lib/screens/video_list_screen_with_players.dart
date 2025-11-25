@@ -27,10 +27,7 @@ class VideoListScreenWithPlayers extends StatelessWidget {
         ),
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.closed_caption,
-              color: Colors.black87,
-            ),
+            icon: const Icon(Icons.closed_caption, color: Colors.black87),
             tooltip: 'Subtitle Examples',
             onPressed: () {
               Navigator.push(
