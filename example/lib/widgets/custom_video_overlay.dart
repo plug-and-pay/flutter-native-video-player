@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:better_native_video_player/better_native_video_player.dart';
 import 'package:flutter/material.dart';
+import 'subtitle_picker_modal.dart';
 
 /// Custom video overlay with controls
 ///
@@ -29,6 +30,7 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
   List<NativeVideoPlayerQuality> _qualities = [];
   NativeVideoPlayerQuality? _currentQuality;
   double _currentSpeed = 1.0;
+  double _subtitleFontSize = 16.0;
 
   // Stream subscriptions
   StreamSubscription<List<NativeVideoPlayerQuality>>? _qualitiesSubscription;
@@ -474,6 +476,16 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
                           ),
                         ),
                       ),
+                    // Subtitle control (only in fullscreen to avoid platform view disposal)
+                    if (widget.controller.isFullScreen)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.closed_caption,
+                          color: Colors.white,
+                        ),
+                        onPressed: _showSubtitlePicker,
+                        tooltip: 'Subtitles',
+                      ),
                     // Fullscreen toggle
                     IconButton(
                       icon: Icon(
@@ -709,6 +721,22 @@ class _CustomVideoOverlayState extends State<CustomVideoOverlay> {
             ],
           ),
         );
+      },
+    );
+  }
+
+  /// Shows the subtitle picker modal
+  void _showSubtitlePicker() {
+    showSubtitlePicker(
+      context: context,
+      controller: widget.controller,
+      fontSize: _subtitleFontSize,
+      onFontSizeChanged: (newSize) {
+        if (mounted) {
+          setState(() {
+            _subtitleFontSize = newSize;
+          });
+        }
       },
     );
   }

@@ -1,5 +1,6 @@
 import '../enums/native_video_player_event.dart';
 import 'native_video_player_quality.dart';
+import 'native_video_player_subtitle_track.dart';
 
 /// Represents the state of the native video player
 class NativeVideoPlayerState {
@@ -11,6 +12,7 @@ class NativeVideoPlayerState {
     this.volume = 1.0,
     this.speed = 1.0,
     this.qualities = const <NativeVideoPlayerQuality>[],
+    this.subtitleTracks = const <NativeVideoPlayerSubtitleTrack>[],
     this.activityState = PlayerActivityState.idle,
     this.controlState = PlayerControlState.none,
     this.isPipEnabled = false,
@@ -41,6 +43,9 @@ class NativeVideoPlayerState {
 
   /// Available video qualities (HLS variants)
   final List<NativeVideoPlayerQuality> qualities;
+
+  /// Available subtitle/caption tracks
+  final List<NativeVideoPlayerSubtitleTrack> subtitleTracks;
 
   /// Current activity state (playing, paused, buffering, etc.)
   final PlayerActivityState activityState;
@@ -75,6 +80,7 @@ class NativeVideoPlayerState {
     double? volume,
     double? speed,
     List<NativeVideoPlayerQuality>? qualities,
+    List<NativeVideoPlayerSubtitleTrack>? subtitleTracks,
     PlayerActivityState? activityState,
     PlayerControlState? controlState,
     bool? isPipEnabled,
@@ -92,6 +98,7 @@ class NativeVideoPlayerState {
       volume: volume ?? this.volume,
       speed: speed ?? this.speed,
       qualities: qualities ?? this.qualities,
+      subtitleTracks: subtitleTracks ?? this.subtitleTracks,
       activityState: activityState ?? this.activityState,
       controlState: controlState ?? this.controlState,
       isPipEnabled: isPipEnabled ?? this.isPipEnabled,
@@ -115,6 +122,7 @@ class NativeVideoPlayerState {
         other.volume == volume &&
         other.speed == speed &&
         other.qualities == qualities &&
+        other.subtitleTracks == subtitleTracks &&
         other.activityState == activityState &&
         other.controlState == controlState &&
         other.isPipEnabled == isPipEnabled &&
@@ -135,6 +143,7 @@ class NativeVideoPlayerState {
       volume,
       speed,
       qualities,
+      subtitleTracks,
       activityState,
       controlState,
       isPipEnabled,

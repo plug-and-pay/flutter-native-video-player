@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/native_video_player_quality.dart';
+import '../models/native_video_player_subtitle_track.dart';
 
 /// Handles all method channel communication with the native platform
 class VideoPlayerMethodChannel {
@@ -139,6 +140,44 @@ class VideoPlayerMethodChannel {
     } catch (e) {
       debugPrint('Error fetching qualities: $e');
       return <NativeVideoPlayerQuality>[];
+    }
+  }
+
+  /// Gets available subtitle tracks
+  Future<List<NativeVideoPlayerSubtitleTrack>> getAvailableSubtitleTracks() async {
+    try {
+      final dynamic result = await _methodChannel.invokeMethod<dynamic>(
+        'getAvailableSubtitleTracks',
+        <String, Object>{'viewId': primaryPlatformViewId},
+      );
+      if (result is List) {
+        final tracks = result
+            .map(
+              (dynamic e) =>
+                  NativeVideoPlayerSubtitleTrack.fromMap(e as Map<dynamic, dynamic>),
+            )
+            .toList();
+        return tracks;
+      }
+      debugPrint('No subtitle tracks found in result');
+      return <NativeVideoPlayerSubtitleTrack>[];
+    } catch (e) {
+      debugPrint('Error fetching subtitle tracks: $e');
+      return <NativeVideoPlayerSubtitleTrack>[];
+    }
+  }
+
+  /// Sets the subtitle track
+  /// Pass a track with index -1 or use NativeVideoPlayerSubtitleTrack.off() to disable subtitles
+  Future<void> setSubtitleTrack(NativeVideoPlayerSubtitleTrack track) async {
+    try {
+      final Map<String, Object> params = <String, Object>{
+        'viewId': primaryPlatformViewId,
+        'track': track.toMap(),
+      };
+      await _methodChannel.invokeMethod<void>('setSubtitleTrack', params);
+    } catch (e) {
+      debugPrint('Error calling setSubtitleTrack: $e');
     }
   }
 

@@ -12,6 +12,7 @@ import '../fullscreen/fullscreen_video_player.dart';
 import '../models/native_video_player_media_info.dart';
 import '../models/native_video_player_quality.dart';
 import '../models/native_video_player_state.dart';
+import '../models/native_video_player_subtitle_track.dart';
 import '../platform/platform_utils.dart';
 import '../platform/video_player_method_channel.dart';
 import '../services/airplay_state_manager.dart';
@@ -1429,6 +1430,18 @@ class NativeVideoPlayerController {
   /// Sets the video quality
   Future<void> setQuality(NativeVideoPlayerQuality quality) async {
     await _methodChannel?.setQuality(quality);
+  }
+
+  /// Gets available subtitle tracks
+  Future<List<NativeVideoPlayerSubtitleTrack>> getAvailableSubtitleTracks() async {
+    final tracks = await _methodChannel?.getAvailableSubtitleTracks();
+    return tracks ?? <NativeVideoPlayerSubtitleTrack>[];
+  }
+
+  /// Sets the subtitle track
+  /// Pass a track with index -1 or use NativeVideoPlayerSubtitleTrack.off() to disable subtitles
+  Future<void> setSubtitleTrack(NativeVideoPlayerSubtitleTrack track) async {
+    await _methodChannel?.setSubtitleTrack(track);
   }
 
   /// Returns whether Picture-in-Picture is available on this device
