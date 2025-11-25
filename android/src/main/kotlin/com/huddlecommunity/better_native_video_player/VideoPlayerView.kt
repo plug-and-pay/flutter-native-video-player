@@ -266,6 +266,8 @@ class VideoPlayerView(
         if (controllerId != null) {
             SharedPlayerManager.registerView(controllerId, viewId) {
                 reconnectSurface()
+                // Emit current state after reconnecting to ensure UI stays in sync
+                emitCurrentState()
             }
         }
 

@@ -510,6 +510,18 @@ import QuartzCore
         @unknown default:
             break
         }
+
+        // Emit current PiP state
+        let isPipActive = isPipCurrentlyActive ||
+                          (controllerId.flatMap { SharedPlayerManager.shared.isPipActiveForController($0) } ?? false)
+
+        if isPipActive {
+            print("[\(channelName)] Emitting pipStart state")
+            sendEvent("pipStart", data: ["isPictureInPicture": true])
+        } else {
+            print("[\(channelName)] Emitting pipStop state")
+            sendEvent("pipStop", data: ["isPictureInPicture": false])
+        }
     }
 
     // MARK: - FlutterStreamHandler
@@ -604,6 +616,21 @@ import QuartzCore
             }
         }
 
+        // Send initial PiP state
+        // Check if PiP is currently active on this view or any view for the same controller
+        print("[\(channelName)] 🔍 Checking initial PiP state on event listener attach")
+        let isPipActive = isPipCurrentlyActive ||
+                          (controllerId.flatMap { SharedPlayerManager.shared.isPipActiveForController($0) } ?? false)
+
+        if isPipActive {
+            print("[\(channelName)] ✅ PiP is active on init")
+            sendEvent("pipStart", data: ["isPictureInPicture": true])
+        } else {
+            print("[\(channelName)] ℹ️ PiP is not active on init")
+            // Send pipStop to ensure Flutter knows PiP is not active
+            sendEvent("pipStop", data: ["isPictureInPicture": false])
+        }
+
         return nil
     }
 
@@ -619,25 +646,31 @@ import QuartzCore
         // Use the isPipCurrentlyActive flag to check if PiP is active
         let isPipActiveNow = isPipCurrentlyActive
 
+        // ALWAYS emit PiP state on disposal to ensure Flutter side is synchronized
+        // This is important for state management even if PiP is not active
         if isPipActiveNow {
             print("⚠️ View being disposed while PiP is active - sending pipStop event")
+        } else {
+            print("ℹ️ View being disposed while PiP is inactive - sending pipStop event for state sync")
+        }
 
-            // Always send pipStop event - either from this view or an alternative
-            if eventSink != nil {
-                // This view still has a listener, send from here
-                sendEvent("pipStop", data: ["isPictureInPicture": false])
-                print("✅ Sent pipStop event from disposing view \(viewId)")
-            } else if let controllerIdValue = controllerId,
-                      let alternativeView = SharedPlayerManager.shared.findAnotherViewForController(controllerIdValue, excluding: viewId),
-                      alternativeView.eventSink != nil {
-                // Send from alternative view if it exists and has a listener
-                alternativeView.sendEvent("pipStop", data: ["isPictureInPicture": false])
-                print("✅ Sent pipStop event from alternative view \(alternativeView.viewId)")
-            } else {
-                print("⚠️ No active view with listener found - pipStop event cannot be sent")
-            }
+        // Always send pipStop event - either from this view or an alternative
+        if eventSink != nil {
+            // This view still has a listener, send from here
+            sendEvent("pipStop", data: ["isPictureInPicture": false])
+            print("✅ Sent pipStop event from disposing view \(viewId)")
+        } else if let controllerIdValue = controllerId,
+                  let alternativeView = SharedPlayerManager.shared.findAnotherViewForController(controllerIdValue, excluding: viewId),
+                  alternativeView.eventSink != nil {
+            // Send from alternative view if it exists and has a listener
+            alternativeView.sendEvent("pipStop", data: ["isPictureInPicture": false])
+            print("✅ Sent pipStop event from alternative view \(alternativeView.viewId)")
+        } else {
+            print("⚠️ No active view with listener found - pipStop event cannot be sent")
+        }
 
-            // Try to stop PiP gracefully
+        // Try to stop PiP gracefully if it was active
+        if isPipActiveNow {
             if #available(iOS 14.0, *) {
                 if let pipCtrl = pipController, pipCtrl.isPictureInPictureActive {
                     pipCtrl.stopPictureInPicture()
@@ -729,6 +762,21 @@ import QuartzCore
             }
         } else {
             print("📱 Keeping media info in SharedPlayerManager (PiP is active)")
+        }
+
+        // Emit current state to all remaining views for this controller
+        // This ensures other views stay in sync when one view is disposed
+        if let controllerIdValue = controllerId {
+            let remainingViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
+            if !remainingViews.isEmpty {
+                print("📤 Emitting current state to \(remainingViews.count) remaining view(s) for controller \(controllerIdValue)")
+                for view in remainingViews {
+                    // Skip the view being disposed (just in case it's still in the list)
+                    if view.viewId != viewId {
+                        view.emitCurrentState()
+                    }
+                }
+            }
         }
 
         // Note: player and playerViewController are NOT disposed here
