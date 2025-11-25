@@ -452,6 +452,101 @@ class NativeVideoPlayerController {
     }
   }
 
+  /// Emits the current state to all listeners
+  ///
+  /// This method broadcasts the current player state to all registered listeners:
+  /// - All stream controllers (position, duration, buffered position, etc.)
+  /// - Activity event handlers
+  /// - Control event handlers
+  /// - AirPlay availability handlers
+  /// - AirPlay connection handlers
+  /// - Overlay lock state listeners
+  ///
+  /// This is useful when you need to ensure all listeners are updated with
+  /// the current state, for example after dynamically adding new listeners
+  /// or when synchronizing external UI components.
+  ///
+  /// **Usage:**
+  /// ```dart
+  /// // Ensure all listeners receive the current state
+  /// controller.emitCurrentStateToAllListeners();
+  /// ```
+  void emitCurrentStateToAllListeners() {
+    if (_isDisposed) {
+      return;
+    }
+
+    // Emit to all stream controllers
+    _emitCurrentState();
+
+    // Emit to activity event handlers
+    if (_activityEventHandlers.isNotEmpty) {
+      final activityEvent = PlayerActivityEvent(
+        state: _state.activityState,
+        data: null,
+      );
+      for (final handler in _activityEventHandlers) {
+        handler(activityEvent);
+      }
+    }
+
+    // Emit to control event handlers with time update event
+    if (_controlEventHandlers.isNotEmpty) {
+      final controlEvent = PlayerControlEvent(
+        state: PlayerControlState.timeUpdated,
+        data: {
+          'position': _state.currentPosition.inMilliseconds,
+          'duration': _state.duration.inMilliseconds,
+          'bufferedPosition': _state.bufferedPosition.inMilliseconds,
+          'isBuffering': _state.activityState == PlayerActivityState.buffering,
+        },
+      );
+      for (final handler in _controlEventHandlers) {
+        handler(controlEvent);
+      }
+
+      // Also emit quality information if available
+      if (_state.qualities.isNotEmpty) {
+        final qualityEvent = PlayerControlEvent(
+          state: PlayerControlState.qualityChanged,
+          data: {
+            'qualities': _state.qualities.map((q) => q.toMap()).toList(),
+            'quality': _state.qualities.first.toMap(),
+          },
+        );
+        for (final handler in _controlEventHandlers) {
+          handler(qualityEvent);
+        }
+      }
+
+      // Emit current control state if not none
+      if (_state.controlState != PlayerControlState.none) {
+        final currentStateEvent = PlayerControlEvent(
+          state: _state.controlState,
+          data: null,
+        );
+        for (final handler in _controlEventHandlers) {
+          handler(currentStateEvent);
+        }
+      }
+    }
+
+    // Emit to AirPlay availability handlers
+    for (final handler in _airPlayAvailabilityHandlers) {
+      handler(_state.isAirplayAvailable);
+    }
+
+    // Emit to AirPlay connection handlers
+    for (final handler in _airPlayConnectionHandlers) {
+      handler(_state.isAirplayConnected);
+    }
+
+    // Emit to overlay lock state listeners
+    if (!_isOverlayLockedController.isClosed) {
+      _isOverlayLockedController.add(_isOverlayLocked);
+    }
+  }
+
   /// Refreshes availability flags and qualities from the native player
   ///
   /// Called when reconnecting after releaseResources() to ensure
