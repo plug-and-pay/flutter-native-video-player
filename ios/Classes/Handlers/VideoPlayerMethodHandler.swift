@@ -960,6 +960,68 @@ extension VideoPlayerView {
         }
     }
 
+    func handleEnableAutomaticInlinePip(result: @escaping FlutterResult) {
+        if #available(iOS 14.2, *) {
+            // Check if video is loaded and playing
+            guard let player = player, let currentItem = player.currentItem else {
+                print("❌ Cannot enable automatic PiP: No video loaded")
+                result(FlutterError(code: "NO_VIDEO", message: "No video loaded.", details: nil))
+                return
+            }
+
+            guard currentItem.status == .readyToPlay else {
+                print("❌ Cannot enable automatic PiP: Video not ready")
+                result(FlutterError(code: "NOT_READY", message: "Video is not ready to play.", details: nil))
+                return
+            }
+
+            // Check if PiP is supported on device
+            guard AVPictureInPictureController.isPictureInPictureSupported() else {
+                print("❌ Cannot enable automatic PiP: PiP not supported on this device")
+                result(FlutterError(code: "NOT_SUPPORTED", message: "Picture-in-Picture is not supported on this device.", details: nil))
+                return
+            }
+
+            print("🎬 Enabling automatic inline PiP")
+
+            // Enable automatic PiP on this view controller
+            playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
+
+            // Also update the stored setting if this is a shared player
+            if let controllerIdValue = controllerId {
+                SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
+                print("✅ Automatic inline PiP enabled for controller \(controllerIdValue)")
+            } else {
+                print("✅ Automatic inline PiP enabled for non-shared player")
+            }
+
+            result(true)
+        } else {
+            result(FlutterError(code: "NOT_SUPPORTED", message: "Automatic inline PiP requires iOS 14.2+", details: nil))
+        }
+    }
+
+    func handleDisableAutomaticInlinePip(result: @escaping FlutterResult) {
+        if #available(iOS 14.2, *) {
+            print("🎬 Disabling automatic inline PiP")
+
+            // Disable automatic PiP on this view controller
+            playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
+
+            // Also update the stored setting if this is a shared player
+            if let controllerIdValue = controllerId {
+                SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: false)
+                print("✅ Automatic inline PiP disabled for controller \(controllerIdValue)")
+            } else {
+                print("✅ Automatic inline PiP disabled for non-shared player")
+            }
+
+            result(true)
+        } else {
+            result(FlutterError(code: "NOT_SUPPORTED", message: "Automatic inline PiP requires iOS 14.2+", details: nil))
+        }
+    }
+
     /// Sets up periodic time observer to update Now Playing elapsed time
     func setupPeriodicTimeObserver() {
         // Remove existing observer if any

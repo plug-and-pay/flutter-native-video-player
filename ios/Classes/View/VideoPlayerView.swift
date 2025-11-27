@@ -368,6 +368,10 @@ import QuartzCore
             handleEnterPictureInPicture(result: result)
         case "exitPictureInPicture":
             handleExitPictureInPicture(result: result)
+        case "enableAutomaticInlinePip":
+            handleEnableAutomaticInlinePip(result: result)
+        case "disableAutomaticInlinePip":
+            handleDisableAutomaticInlinePip(result: result)
         case "setShowNativeControls":
             handleSetShowNativeControls(call: call, result: result)
         case "isAirPlayAvailable":

@@ -1674,6 +1674,94 @@ class NativeVideoPlayerController {
     return successfully;
   }
 
+  /// Enables automatic inline Picture-in-Picture mode
+  ///
+  /// When enabled, PiP will automatically start when the app goes to background
+  /// (iOS 14.2+) or when the user presses the home button (Android 8+).
+  ///
+  /// **Platform Support:**
+  /// - iOS: Requires iOS 14.2+ and video must be playing
+  /// - Android: Requires Android 8+ and video must be in fullscreen
+  ///
+  /// **Returns:**
+  /// A Future that completes with true if automatic PiP was successfully enabled
+  ///
+  /// **Usage:**
+  /// ```dart
+  /// // Enable automatic inline PiP
+  /// final success = await controller.enableAutomaticInlinePip();
+  /// if (success) {
+  ///   print('Automatic PiP enabled');
+  /// }
+  /// ```
+  Future<bool> enableAutomaticInlinePip() async {
+    if (_methodChannel == null) {
+      return false;
+    }
+
+    try {
+      // Android: enable through floating package
+      if (!kIsWeb && Platform.isAndroid) {
+        // Only enable if in fullscreen
+        if (!_state.isFullScreen) {
+          debugPrint(
+            'Cannot enable automatic PiP on Android: video must be in fullscreen',
+          );
+          return false;
+        }
+        await _enableAutomaticPiP();
+        return true;
+      }
+
+      // iOS: enable through method channel
+      return await _methodChannel!.enableAutomaticInlinePip();
+    } catch (e) {
+      debugPrint('Error enabling automatic inline PiP: $e');
+      return false;
+    }
+  }
+
+  /// Disables automatic inline Picture-in-Picture mode
+  ///
+  /// When disabled, PiP will NOT automatically start when the app goes to background.
+  /// Manual PiP through [enterPictureInPicture] will still work.
+  ///
+  /// **Platform Support:**
+  /// - iOS: Requires iOS 14.2+
+  /// - Android: Requires Android 8+
+  ///
+  /// **Returns:**
+  /// A Future that completes with true if automatic PiP was successfully disabled
+  ///
+  /// **Usage:**
+  /// ```dart
+  /// // Disable automatic inline PiP
+  /// final success = await controller.disableAutomaticInlinePip();
+  /// if (success) {
+  ///   print('Automatic PiP disabled');
+  /// }
+  /// ```
+  Future<bool> disableAutomaticInlinePip() async {
+    if (_methodChannel == null) {
+      return false;
+    }
+
+    try {
+      // Android: disable through floating package
+      if (!kIsWeb && Platform.isAndroid) {
+        _floating.cancelOnLeavePiP();
+        debugPrint('Automatic PiP disabled (Android)');
+        return true;
+      }
+
+      // iOS: disable through method channel
+      return await _methodChannel!.disableAutomaticInlinePip();
+    } catch (e) {
+      debugPrint('Error disabling automatic inline PiP: $e');
+      return false;
+    }
+  }
+
   /// Toggles Picture-in-Picture mode
   /// Only works on iOS 14+ and Android 8+
   /// Returns true if the operation was successful

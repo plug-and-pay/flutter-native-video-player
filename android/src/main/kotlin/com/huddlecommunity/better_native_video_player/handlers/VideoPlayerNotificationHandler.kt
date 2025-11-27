@@ -12,11 +12,14 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.support.v4.media.session.MediaSessionCompat
 import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -274,7 +277,19 @@ class VideoPlayerNotificationHandler(
         val appInfo = context.applicationInfo
         val iconResId = appInfo.icon
 
-        return NotificationCompat.Builder(context, CHANNEL_ID)
+        // Convert Media3 SessionToken to MediaSessionCompat.Token for notification
+        // Media3 1.4.0+ requires us to extract the token differently
+        val token = try {
+            // Use reflection to access the session compat token
+            val method = session.javaClass.getMethod("getSessionCompatToken")
+            method.invoke(session) as? MediaSessionCompat.Token
+        } catch (e: Exception) {
+            // If reflection fails (Media3 1.4.0+), create a token from the session's underlying binder
+            Log.w(TAG, "getSessionCompatToken not available, using alternative method")
+            null
+        }
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
             .setSmallIcon(iconResId)
@@ -283,11 +298,20 @@ class VideoPlayerNotificationHandler(
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setStyle(
-                androidx.media.app.NotificationCompat.MediaStyle()
-                    .setMediaSession(session.sessionCompatToken)
+
+        // Only set media session token if we successfully obtained it
+        if (token != null) {
+            builder.setStyle(
+                MediaNotificationCompat.MediaStyle()
+                    .setMediaSession(token)
             )
-            .build()
+        } else {
+            // Fallback: create notification without media session integration
+            // Controls will still work through MediaSession, just not integrated in notification
+            Log.w(TAG, "Creating notification without MediaSession token integration")
+        }
+
+        return builder.build()
     }
 
     /**

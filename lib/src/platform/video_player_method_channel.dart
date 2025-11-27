@@ -225,6 +225,34 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Enables automatic inline Picture-in-Picture mode (iOS 14.2+)
+  Future<bool> enableAutomaticInlinePip() async {
+    try {
+      final dynamic result = await _methodChannel.invokeMethod<dynamic>(
+        'enableAutomaticInlinePip',
+        <String, Object>{'viewId': primaryPlatformViewId},
+      );
+      return result == true;
+    } catch (e) {
+      debugPrint('Error calling enableAutomaticInlinePip: $e');
+      return false;
+    }
+  }
+
+  /// Disables automatic inline Picture-in-Picture mode (iOS 14.2+)
+  Future<bool> disableAutomaticInlinePip() async {
+    try {
+      final dynamic result = await _methodChannel.invokeMethod<dynamic>(
+        'disableAutomaticInlinePip',
+        <String, Object>{'viewId': primaryPlatformViewId},
+      );
+      return result == true;
+    } catch (e) {
+      debugPrint('Error calling disableAutomaticInlinePip: $e');
+      return false;
+    }
+  }
+
   /// Enters fullscreen mode
   Future<void> enterFullScreen() async {
     try {

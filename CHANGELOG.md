@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2025-11-27
+
+### Added
+- **Automatic Inline Picture-in-Picture**: New methods to enable/disable automatic PiP when app goes to background
+  - Added `enableAutomaticInlinePip()` method to automatically start PiP when app goes to background
+  - Added `disableAutomaticInlinePip()` method to turn off automatic PiP behavior
+  - iOS: Uses `canStartPictureInPictureAutomaticallyFromInline` (requires iOS 14.2+)
+  - Android: Integrates with the existing floating package for automatic PiP on home button press (requires Android 8+)
+  - Automatic PiP settings persist across view recreations for shared players
+  - Comprehensive platform checks and error handling with descriptive messages
+  - Manual PiP controls via `enterPictureInPicture()` remain fully functional
+
+### Improved
+- **iOS Automatic PiP State Management**: Enhanced SharedPlayerManager to store automatic PiP settings
+  - Added `setAutomaticPiPEnabled()` method to persist automatic PiP preference per controller
+  - Settings are maintained when views are recreated with shared controllers
+  - Better logging for debugging automatic PiP activation
+
 ## [0.4.1] - 2025-11-25
 
 ### Changed
