@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2025-12-29
+
+### Fixed
+- **iOS Background Playback**: Fixed video playback stopping when device goes to background or screen locks
+  - Added `audiovisualBackgroundPlaybackPolicy` configuration to allow playback to continue in background (iOS 15.0+)
+  - Configured both shared players and standalone players for background playback
+  - Video now continues playing when device is locked or app goes to background
+  - Ensures seamless playback experience during background transitions
+
 ## [0.4.2] - 2025-11-27
 
 ### Added
