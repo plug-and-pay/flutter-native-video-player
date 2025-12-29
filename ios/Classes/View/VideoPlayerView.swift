@@ -128,6 +128,12 @@ import QuartzCore
             // Fallback: create new instances if no controller ID provided
             print("No controller ID provided, creating new player")
             player = AVPlayer()
+
+            // Configure for background playback
+            if #available(iOS 15.0, *) {
+                player?.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+                print("✅ Set audiovisualBackgroundPlaybackPolicy for non-shared player")
+            }
         }
 
         super.init()
