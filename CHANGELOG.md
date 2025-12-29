@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2025-12-29
+
+### Improved
+- **Code Quality and Formatting**: Enhanced code formatting and consistency across the controller
+  - Improved line formatting and spacing throughout `NativeVideoPlayerController`
+  - Better code readability with consistent formatting patterns
+  - Removed unnecessary line breaks for cleaner code structure
+  - Improved import organization
+
+### Fixed
+- **Initialization Check**: Fixed initialization check in `load()` method to use `_isInitialized` flag instead of state check
+  - More reliable initialization validation before loading video
+  - Prevents potential issues when checking controller readiness
+
 ## [0.4.3] - 2025-12-29
 
 ### Fixed

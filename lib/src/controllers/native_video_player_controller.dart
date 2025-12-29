@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:floating/floating.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:floating/floating.dart';
 
 import '../enums/native_video_player_event.dart';
 import '../fullscreen/fullscreen_manager.dart';
@@ -1383,7 +1383,7 @@ class NativeVideoPlayerController {
       return;
     }
 
-    if (!_state.activityState.isInitialized) {
+    if (!_isInitialized) {
       throw Exception('Controller not initialized. Call initialize() first.');
     }
 
