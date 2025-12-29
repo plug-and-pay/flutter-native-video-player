@@ -404,7 +404,9 @@ import QuartzCore
                 new
             }
         }
-        eventSink?(event)
+        DispatchQueue.main.async {
+            self.eventSink?(event)
+        }
     }
 
     /// Cleans up remote command ownership, attempting to transfer to another view if possible

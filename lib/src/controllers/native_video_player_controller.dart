@@ -51,6 +51,7 @@ class NativeVideoPlayerController {
     this.lockToLandscape = true,
     this.enableHDR = true,
     this.enableLooping = false,
+    this.showNativeControls = true,
     List<DeviceOrientation>? preferredOrientations,
   }) {
     // Set preferred orientations if provided
@@ -133,6 +134,10 @@ class NativeVideoPlayerController {
   /// Whether to enable video looping (default: false)
   /// When set to true, the video will automatically restart from the beginning when it reaches the end
   final bool enableLooping;
+
+  /// Whether to show native player controls (default: true)
+  /// When set to false, native controls are hidden. Custom overlays automatically hide native controls regardless of this setting.
+  final bool showNativeControls;
 
   /// BuildContext getter for showing Dart fullscreen dialog
   /// Returns a mounted context from any registered platform view
@@ -793,8 +798,9 @@ class NativeVideoPlayerController {
     'allowsPictureInPicture': allowsPictureInPicture,
     'canStartPictureInPictureAutomatically':
         canStartPictureInPictureAutomatically,
-    'showNativeControls':
-        !_hasCustomOverlay, // Hide native controls if we have custom overlay
+    'showNativeControls': _hasCustomOverlay
+        ? false
+        : showNativeControls, // Hide native controls if we have custom overlay, otherwise use parameter
     'isFullScreen': _state.isFullScreen,
     'enableHDR': enableHDR,
     'enableLooping': enableLooping,
@@ -1338,6 +1344,36 @@ class NativeVideoPlayerController {
     }
   }
 
+  /// Safely cancels a stream subscription, handling MissingPluginException gracefully
+  ///
+  /// When the native side has already disposed the EventChannel StreamHandler,
+  /// cancelling the subscription will throw a MissingPluginException. This is harmless
+  /// and indicates the native side has already cleaned up, so we ignore it.
+  ///
+  /// **Parameters:**
+  /// - subscription: The subscription to cancel, may be null
+  ///
+  /// **Returns:**
+  /// A Future that completes when the cancellation is attempted (or immediately if subscription is null)
+  Future<void> _safeCancelSubscription(
+    StreamSubscription<dynamic>? subscription,
+  ) async {
+    if (subscription == null) {
+      return;
+    }
+    try {
+      await subscription.cancel();
+    } on MissingPluginException {
+      // Native side has already disposed the EventChannel StreamHandler
+      // This is harmless and safe to ignore
+    } catch (e) {
+      // Log other exceptions in debug mode for debugging purposes
+      if (kDebugMode) {
+        debugPrint('Error cancelling subscription: $e');
+      }
+    }
+  }
+
   /// Called when a platform view is disposed
   ///
   /// Unregisters the platform view from this controller.
@@ -1350,9 +1386,7 @@ class NativeVideoPlayerController {
     _platformViewContexts.remove(platformViewId);
 
     // Cancel the event channel subscription for this platform view
-    unawaited(
-      _eventSubscriptions[platformViewId]?.cancel() ?? Future<void>.value(),
-    );
+    unawaited(_safeCancelSubscription(_eventSubscriptions[platformViewId]));
     _eventSubscriptions.remove(platformViewId);
 
     // If the disposed view was the primary view, switch to another active view
@@ -2014,12 +2048,12 @@ class NativeVideoPlayerController {
     // Cancel all event channel subscriptions
     for (final StreamSubscription<dynamic> subscription
         in _eventSubscriptions.values) {
-      await subscription.cancel();
+      await _safeCancelSubscription(subscription);
     }
     _eventSubscriptions.clear();
 
     // Cancel PiP event subscription (Android only)
-    await _pipEventSubscription?.cancel();
+    await _safeCancelSubscription(_pipEventSubscription);
     _pipEventSubscription = null;
 
     // Cancel buffering debounce timer
@@ -2092,12 +2126,12 @@ class NativeVideoPlayerController {
     // This prevents new events from coming in while we're closing
     for (final StreamSubscription<dynamic> subscription
         in _eventSubscriptions.values) {
-      await subscription.cancel();
+      await _safeCancelSubscription(subscription);
     }
     _eventSubscriptions.clear();
 
     // Cancel PiP event subscription (Android only)
-    await _pipEventSubscription?.cancel();
+    await _safeCancelSubscription(_pipEventSubscription);
     _pipEventSubscription = null;
 
     // Cancel buffering debounce timer

@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2025-12-29
+
+### Fixed
+- **Event Thread Safety**: Fixed event sending to ensure thread safety on both platforms
+  - Android: Events now sent on main thread using `Handler(Looper.getMainLooper())`
+  - iOS: Events now sent on main queue using `DispatchQueue.main.async`
+  - Prevents potential crashes or race conditions when events are sent from background threads
+  - Ensures UI updates happen on the correct thread for better stability
+
+- **Subscription Cancellation Safety**: Fixed potential exceptions during controller disposal
+  - Added `_safeCancelSubscription()` method to gracefully handle `MissingPluginException` during disposal
+  - Prevents errors when native side has already disposed EventChannel StreamHandler
+  - Improves reliability of controller cleanup and resource management
+
+## [0.4.5] - 2025-12-29
+
+### Added
+- **Native Controls Visibility Control**: Added `showNativeControls` parameter to `NativeVideoPlayerController` constructor
+  - Defaults to `true` to maintain backward compatibility
+  - When set to `false`, native controls are hidden
+  - Custom overlays automatically hide native controls regardless of this setting
+  - Provides fine-grained control over native control visibility
+
+### Improved
+- **Code Quality and Formatting**: Enhanced code formatting and consistency across the controller
+  - Improved line formatting and spacing throughout `NativeVideoPlayerController`
+  - Better code readability with consistent formatting patterns
+  - Removed unnecessary line breaks for cleaner code structure
+
+### Fixed
+- **Event Thread Safety**: Fixed event sending to ensure thread safety on both platforms
+  - Android: Events now sent on main thread using `Handler(Looper.getMainLooper())`
+  - iOS: Events now sent on main queue using `DispatchQueue.main.async`
+  - Prevents potential crashes or race conditions when events are sent from background threads
+  - Ensures UI updates happen on the correct thread for better stability
+
 ## [0.4.4] - 2025-12-29
 
 ### Improved

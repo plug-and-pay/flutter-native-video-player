@@ -1,5 +1,7 @@
 package com.huddlecommunity.better_native_video_player.handlers
 
+import android.os.Handler
+import android.os.Looper
 import io.flutter.plugin.common.EventChannel
 
 /**
@@ -42,6 +44,8 @@ class VideoPlayerEventHandler(private val isSharedPlayer: Boolean = false) : Eve
     fun sendEvent(name: String, data: Map<String, Any>? = null) {
         val event = mutableMapOf<String, Any>("event" to name)
         data?.let { event.putAll(it) }
-        eventSink?.success(event)
+        Handler(Looper.getMainLooper()).post {
+            eventSink?.success(event)
+        }
     }
 }
