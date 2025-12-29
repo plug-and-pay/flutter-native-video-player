@@ -58,6 +58,17 @@ class SharedPlayerManager: NSObject {
         super.init()
     }
 
+    /// Configures an AVPlayer for background playback when device is locked
+    /// This sets the audiovisualBackgroundPlaybackPolicy to allow playback to continue
+    private func configurePlayerForBackgroundPlayback(_ player: AVPlayer) {
+        if #available(iOS 15.0, *) {
+            player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+            print("✅ [SharedPlayerManager] Set audiovisualBackgroundPlaybackPolicy to continuesIfPossible")
+        } else {
+            print("ℹ️ [SharedPlayerManager] audiovisualBackgroundPlaybackPolicy not available (iOS < 15.0)")
+        }
+    }
+
     /// Gets or creates a player for the given controller ID
     /// Returns a tuple (AVPlayer, Bool) where the Bool indicates if the player already existed (true) or was newly created (false)
     func getOrCreatePlayer(for controllerId: Int) -> (AVPlayer, Bool) {
@@ -66,6 +77,7 @@ class SharedPlayerManager: NSObject {
         }
 
         let newPlayer = AVPlayer()
+        configurePlayerForBackgroundPlayback(newPlayer)
         players[controllerId] = newPlayer
         return (newPlayer, false)
     }
