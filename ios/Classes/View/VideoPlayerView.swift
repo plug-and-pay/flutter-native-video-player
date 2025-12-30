@@ -106,27 +106,30 @@ import QuartzCore
             binaryMessenger: messenger
         )
 
-        // Always create a new AVPlayerViewController for each platform view
-        playerViewController = AVPlayerViewController()
-
-        // Extract controller ID from args to get shared player
+        // Extract controller ID from args to get shared player and view controller
         if let args = args as? [String: Any],
            let controllerIdValue = args["controllerId"] as? Int {
             controllerId = controllerIdValue
 
-            // Get or create shared player (but new view controller each time)
-            let (sharedPlayer, alreadyExisted) = SharedPlayerManager.shared.getOrCreatePlayer(for: controllerIdValue)
+            // Get or create shared player AND view controller
+            // This ensures the view controller persists across platform view disposal
+            // so PiP delegate callbacks continue to work even when navigating away
+            let (sharedPlayer, sharedViewController, alreadyExisted) =
+                SharedPlayerManager.shared.getOrCreatePlayerAndViewController(for: controllerIdValue)
+
             player = sharedPlayer
+            playerViewController = sharedViewController
             isSharedPlayer = alreadyExisted
 
             if alreadyExisted {
-                print("Using existing shared player for controller ID: \(controllerIdValue)")
+                print("✅ Using existing shared player AND view controller for controller ID: \(controllerIdValue)")
             } else {
-                print("Creating new shared player for controller ID: \(controllerIdValue)")
+                print("✅ Created new shared player AND view controller for controller ID: \(controllerIdValue)")
             }
         } else {
             // Fallback: create new instances if no controller ID provided
-            print("No controller ID provided, creating new player")
+            print("No controller ID provided, creating new player and view controller")
+            playerViewController = AVPlayerViewController()
             player = AVPlayer()
 
             // Configure for background playback
@@ -134,12 +137,12 @@ import QuartzCore
                 player?.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
                 print("✅ Set audiovisualBackgroundPlaybackPolicy for non-shared player")
             }
+
+            // Assign player to view controller
+            playerViewController.player = player
         }
 
         super.init()
-
-        // Assign the shared player to this new view controller
-        playerViewController.player = player
 
         // Configure playback controls
         let showControls = (args as? [String: Any])?["showNativeControls"] as? Bool ?? true
@@ -799,9 +802,15 @@ import QuartzCore
             }
         }
 
-        // Note: player and playerViewController are NOT disposed here
-        // They remain in SharedPlayerManager for reuse
-        print("Platform view disposed but player kept alive for controller ID: \(String(describing: controllerId))")
+        // CRITICAL: For shared controllers, player and playerViewController are NOT disposed here
+        // They're managed by SharedPlayerManager and persist across platform view disposal
+        // This ensures PiP delegate callbacks continue to work when navigating between screens
+        // Resources will be disposed when controller.dispose() is called from Dart
+        if controllerId != nil {
+            print("✅ Platform view disposed but player AND view controller kept alive for controller ID: \(String(describing: controllerId))")
+        } else {
+            print("Platform view disposed for non-shared player")
+        }
     }
 
     // MARK: - App Lifecycle Handling

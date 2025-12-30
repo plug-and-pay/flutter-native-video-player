@@ -12,6 +12,10 @@ class SharedPlayerManager: NSObject {
 
     private var players: [Int: AVPlayer] = [:]
 
+    /// Shared AVPlayerViewController instances (persist across view disposal)
+    /// Keeps view controllers alive so PiP delegate callbacks can fire even when platform views are disposed
+    private var playerViewControllers: [Int: AVPlayerViewController] = [:]
+
     /// Global AirPlay route detector
     /// Used to monitor AirPlay availability across the entire app
     private var globalRouteDetector: AVRouteDetector?
@@ -85,6 +89,30 @@ class SharedPlayerManager: NSObject {
         configurePlayerForBackgroundPlayback(newPlayer)
         players[controllerId] = newPlayer
         return (newPlayer, false)
+    }
+
+    /// Gets or creates BOTH a player and view controller for the given controller ID
+    /// Returns a tuple (AVPlayer, AVPlayerViewController, Bool) where the Bool indicates if they already existed
+    /// This ensures the view controller persists across platform view disposal so PiP delegate callbacks continue to work
+    func getOrCreatePlayerAndViewController(for controllerId: Int) -> (AVPlayer, AVPlayerViewController, Bool) {
+        if let existingPlayer = players[controllerId],
+           let existingViewController = playerViewControllers[controllerId] {
+            print("♻️ [SharedPlayerManager] Reusing existing player AND view controller for controller ID: \(controllerId)")
+            return (existingPlayer, existingViewController, true)
+        }
+
+        // Create new player
+        let newPlayer = AVPlayer()
+        configurePlayerForBackgroundPlayback(newPlayer)
+        players[controllerId] = newPlayer
+
+        // Create new view controller
+        let newViewController = AVPlayerViewController()
+        newViewController.player = newPlayer
+        playerViewControllers[controllerId] = newViewController
+
+        print("✅ [SharedPlayerManager] Created new player AND view controller for controller ID: \(controllerId)")
+        return (newPlayer, newViewController, false)
     }
 
     /// Sets PiP settings for a controller
@@ -241,6 +269,13 @@ class SharedPlayerManager: NSObject {
         players.removeValue(forKey: controllerId)
         print("✅ [SharedPlayerManager] Player removed. New players count: \(players.count), players: \(players.keys.sorted())")
 
+        // Remove and dispose view controller
+        if let viewController = playerViewControllers.removeValue(forKey: controllerId) {
+            viewController.player = nil
+            viewController.delegate = nil
+            print("🗑️ [SharedPlayerManager] Disposed AVPlayerViewController for controller \(controllerId)")
+        }
+
         // Remove all views for this controller
         let viewCountBefore = videoPlayerViews.count
         videoPlayerViews = videoPlayerViews.filter { $0.value.view?.controllerId != controllerId }
@@ -273,6 +308,13 @@ class SharedPlayerManager: NSObject {
 
     /// Clears all players (e.g., on logout)
     func clearAll() {
+        // Dispose all view controllers
+        for (_, viewController) in playerViewControllers {
+            viewController.player = nil
+            viewController.delegate = nil
+        }
+        playerViewControllers.removeAll()
+
         players.removeAll()
         videoPlayerViews.removeAll()
         primaryViewIdForController.removeAll()
