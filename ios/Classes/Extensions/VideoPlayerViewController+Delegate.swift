@@ -46,7 +46,17 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
             print("⚠️ No media info available for PiP - media controls may not work")
         }
 
+        // Send through per-view event channel (legacy)
         sendEvent("pipStart", data: ["isPictureInPicture": true])
+
+        // Send through controller-level event channel (persists when views disposed)
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.sendControllerEvent(
+                "pipStart",
+                data: ["isPictureInPicture": true],
+                for: controllerIdValue
+            )
+        }
     }
 
     public func playerViewControllerDidStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
@@ -66,22 +76,34 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
 
         // Send pipStop event BEFORE PiP actually stops
         // This gives Flutter time to react before the native PiP window closes
+
+        // Send through per-view event channel (legacy)
         if eventSink != nil {
-            print("✅ View \(viewId) is active - sending pipStop event (before stop)")
+            print("✅ View \(viewId) is active - sending pipStop event to per-view channel (before stop)")
             sendEvent("pipStop", data: ["isPictureInPicture": false])
         } else if let controllerIdValue = controllerId {
             // Try any view for this controller
             let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
             var eventSent = false
             for view in allViews where view.eventSink != nil {
-                print("✅ Sending pipStop event to view \(view.viewId) (before stop)")
+                print("✅ Sending pipStop event to per-view channel on view \(view.viewId) (before stop)")
                 view.sendEvent("pipStop", data: ["isPictureInPicture": false])
                 eventSent = true
                 break
             }
             if !eventSent {
-                print("⚠️ No active view with listener found - pipStop event cannot be sent")
+                print("ℹ️ No active view with listener found - pipStop sent only through controller channel")
             }
+        }
+
+        // Send through controller-level event channel (persists when views disposed)
+        if let controllerIdValue = controllerId {
+            print("✅ Sending pipStop event to controller-level channel for controller \(controllerIdValue)")
+            SharedPlayerManager.shared.sendControllerEvent(
+                "pipStop",
+                data: ["isPictureInPicture": false],
+                for: controllerIdValue
+            )
         }
     }
 
@@ -239,9 +261,19 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             print("⚠️ No media info available for custom PiP - media controls may not work")
         }
 
+        // Send through per-view event channel (legacy)
         sendEvent("pipStart", data: ["isPictureInPicture": true])
+
+        // Send through controller-level event channel (persists when views disposed)
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.sendControllerEvent(
+                "pipStart",
+                data: ["isPictureInPicture": true],
+                for: controllerIdValue
+            )
+        }
     }
-    
+
     public func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         print("🎬 Custom PiP controller did start")
         
@@ -260,25 +292,37 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
 
         // Send pipStop event BEFORE PiP actually stops
         // This gives Flutter time to react before the native PiP window closes
+
+        // Send through per-view event channel (legacy)
         if eventSink != nil {
-            print("✅ View \(viewId) is active - sending pipStop event (before stop)")
+            print("✅ View \(viewId) is active - sending pipStop event to per-view channel (before stop)")
             sendEvent("pipStop", data: ["isPictureInPicture": false])
         } else if let controllerIdValue = controllerId {
             // Try any view for this controller
             let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
             var eventSent = false
             for view in allViews where view.eventSink != nil {
-                print("✅ Sending pipStop event to view \(view.viewId) (before stop)")
+                print("✅ Sending pipStop event to per-view channel on view \(view.viewId) (before stop)")
                 view.sendEvent("pipStop", data: ["isPictureInPicture": false])
                 eventSent = true
                 break
             }
             if !eventSent {
-                print("⚠️ No active view with listener found - pipStop event cannot be sent")
+                print("ℹ️ No active view with listener found - pipStop sent only through controller channel")
             }
         }
+
+        // Send through controller-level event channel (persists when views disposed)
+        if let controllerIdValue = controllerId {
+            print("✅ Sending pipStop event to controller-level channel for controller \(controllerIdValue)")
+            SharedPlayerManager.shared.sendControllerEvent(
+                "pipStop",
+                data: ["isPictureInPicture": false],
+                for: controllerIdValue
+            )
+        }
     }
-    
+
     public func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         print("🎬 Custom PiP controller did stop on view \(viewId)")
 

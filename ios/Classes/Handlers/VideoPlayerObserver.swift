@@ -196,7 +196,18 @@ extension VideoPlayerView {
                     if let deviceName = deviceName {
                         eventData["deviceName"] = deviceName
                     }
+
+                    // Send through per-view event channel (legacy)
                     sendEvent("airPlayConnectionChanged", data: eventData)
+
+                    // Send through controller-level event channel (persists when views disposed)
+                    if let controllerIdValue = controllerId {
+                        SharedPlayerManager.shared.sendControllerEvent(
+                            "airPlayConnectionChanged",
+                            data: eventData,
+                            for: controllerIdValue
+                        )
+                    }
 
                     // If device name is nil, retry multiple times with increasing delays
                     if deviceName == nil {
@@ -207,7 +218,18 @@ extension VideoPlayerView {
                     // Disconnected from AirPlay
                     print("🎯 AVPlayer externalPlaybackActive changed to: \(isActive)")
                     var eventData: [String: Any] = ["isConnected": false, "isConnecting": false]
+
+                    // Send through per-view event channel (legacy)
                     sendEvent("airPlayConnectionChanged", data: eventData)
+
+                    // Send through controller-level event channel (persists when views disposed)
+                    if let controllerIdValue = controllerId {
+                        SharedPlayerManager.shared.sendControllerEvent(
+                            "airPlayConnectionChanged",
+                            data: eventData,
+                            for: controllerIdValue
+                        )
+                    }
                 }
             default: break
             }
@@ -220,7 +242,19 @@ extension VideoPlayerView {
                 case "multipleRoutesDetected":
                     let isAvailable = routeDetector?.multipleRoutesDetected ?? false
                     print("AVRouteDetector multipleRoutesDetected changed to: \(isAvailable)")
-                    sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
+                    let eventData: [String: Any] = ["isAvailable": isAvailable]
+
+                    // Send through per-view event channel (legacy)
+                    sendEvent("airPlayAvailabilityChanged", data: eventData)
+
+                    // Send through controller-level event channel (persists when views disposed)
+                    if let controllerIdValue = controllerId {
+                        SharedPlayerManager.shared.sendControllerEvent(
+                            "airPlayAvailabilityChanged",
+                            data: eventData,
+                            for: controllerIdValue
+                        )
+                    }
                 default: break
                 }
             }
@@ -353,7 +387,18 @@ extension VideoPlayerView {
                 print("✅ Device name found on attempt \(attempt): \(deviceName)")
                 var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
                 eventData["deviceName"] = deviceName
+
+                // Send through per-view event channel (legacy)
                 self.sendEvent("airPlayConnectionChanged", data: eventData)
+
+                // Send through controller-level event channel (persists when views disposed)
+                if let controllerIdValue = self.controllerId {
+                    SharedPlayerManager.shared.sendControllerEvent(
+                        "airPlayConnectionChanged",
+                        data: eventData,
+                        for: controllerIdValue
+                    )
+                }
             } else if attempt < maxAttempts {
                 // Try again
                 self.retryGetAirPlayDeviceName(attempt: attempt + 1, maxAttempts: maxAttempts)
@@ -362,7 +407,18 @@ extension VideoPlayerView {
                 print("⚠️ Device name still not available after \(maxAttempts) attempts")
                 // Send event without device name - the Dart caching layer will handle it
                 var eventData: [String: Any] = ["isConnected": true, "isConnecting": false]
+
+                // Send through per-view event channel (legacy)
                 self.sendEvent("airPlayConnectionChanged", data: eventData)
+
+                // Send through controller-level event channel (persists when views disposed)
+                if let controllerIdValue = self.controllerId {
+                    SharedPlayerManager.shared.sendControllerEvent(
+                        "airPlayConnectionChanged",
+                        data: eventData,
+                        for: controllerIdValue
+                    )
+                }
             }
         }
     }
@@ -419,7 +475,18 @@ extension VideoPlayerView {
             if let deviceName = deviceName {
                 eventData["deviceName"] = deviceName
             }
+
+            // Send through per-view event channel (legacy)
             sendEvent("airPlayConnectionChanged", data: eventData)
+
+            // Send through controller-level event channel (persists when views disposed)
+            if let controllerIdValue = controllerId {
+                SharedPlayerManager.shared.sendControllerEvent(
+                    "airPlayConnectionChanged",
+                    data: eventData,
+                    for: controllerIdValue
+                )
+            }
         } else {
             print("   - No AirPlay-related changes (device=nil, playerActive=false)")
         }

@@ -3,8 +3,11 @@ import UIKit
 
 @objc public class NativeVideoPlayerPlugin: NSObject, FlutterPlugin {
     private static var registeredViews: [Int64: VideoPlayerView] = [:]
-    
+    private static var controllerEventHandlers: [Int: ControllerEventChannelHandler] = [:]
+    private static var messenger: FlutterBinaryMessenger?
+
     public static func register(with registrar: FlutterPluginRegistrar) {
+        messenger = registrar.messenger()
         print("Registering NativeVideoPlayerPlugin")
         let factory = VideoPlayerViewFactory(messenger: registrar.messenger())
         registrar.register(factory, withId: "native_video_player")
@@ -14,6 +17,20 @@ import UIKit
         let channel = FlutterMethodChannel(name: "native_video_player", binaryMessenger: registrar.messenger())
         channel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
             print("Plugin received method call: \(call.method)")
+
+            // Handle controller-level methods
+            if call.method == "teardownControllerEventChannel" {
+                if let args = call.arguments as? [String: Any],
+                   let controllerId = args["controllerId"] as? Int {
+                    NativeVideoPlayerPlugin.teardownControllerEventChannel(for: controllerId)
+                    result(nil)
+                } else {
+                    result(FlutterError(code: "INVALID_ARGUMENT", message: "Controller ID is required", details: nil))
+                }
+                return
+            }
+
+            // Forward view-level methods to the appropriate view
             if let args = call.arguments as? [String: Any],
                let viewId = args["viewId"] as? Int64,
                let view = registeredViews[viewId] {
@@ -54,6 +71,35 @@ import UIKit
     public static func unregisterView(withId viewId: Int64) {
         print("Unregistering view with id: \(viewId)")
         registeredViews.removeValue(forKey: viewId)
+    }
+
+    public static func setupControllerEventChannel(for controllerId: Int) {
+        // Don't set up if already exists
+        guard controllerEventHandlers[controllerId] == nil else {
+            print("Controller event channel for controller \(controllerId) already exists")
+            return
+        }
+
+        guard let messenger = messenger else {
+            print("⚠️ Cannot setup controller event channel - messenger is nil")
+            return
+        }
+
+        print("✅ Setting up controller event channel for controller \(controllerId)")
+        let handler = ControllerEventChannelHandler(controllerId: controllerId)
+        let channel = FlutterEventChannel(
+            name: "native_video_player_controller_\(controllerId)",
+            binaryMessenger: messenger
+        )
+        channel.setStreamHandler(handler)
+        controllerEventHandlers[controllerId] = handler
+    }
+
+    public static func teardownControllerEventChannel(for controllerId: Int) {
+        if let handler = controllerEventHandlers[controllerId] {
+            print("🗑️ Tearing down controller event channel for controller \(controllerId)")
+            controllerEventHandlers.removeValue(forKey: controllerId)
+        }
     }
 }
 

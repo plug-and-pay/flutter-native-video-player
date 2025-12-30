@@ -217,6 +217,10 @@ import QuartzCore
             SharedPlayerManager.shared.registerVideoPlayerView(self, viewId: viewId)
             print("✅ Registered VideoPlayerView for controller \(controllerIdValue), viewId: \(viewId)")
 
+            // Setup controller-level event channel (if not already set up)
+            // This enables persistent event delivery for PiP and AirPlay
+            NativeVideoPlayerPlugin.setupControllerEventChannel(for: controllerIdValue)
+
             // If this controller is currently the one with automatic PiP enabled OR if the player is playing,
             // this new view should become the primary view and get automatic PiP
             // BUT ONLY if manual PiP is not active

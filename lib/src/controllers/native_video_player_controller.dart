@@ -2272,6 +2272,14 @@ class NativeVideoPlayerController {
       AirPlayStateManager.instance.unregisterMethodChannel(_methodChannel!);
     }
 
+    // Teardown controller-level event channel on native side
+    try {
+      const MethodChannel('native_video_player')
+          .invokeMethod<void>('teardownControllerEventChannel', {'controllerId': id});
+    } catch (e) {
+      debugPrint('Failed to teardown controller event channel: $e');
+    }
+
     // Dispose native player resources (removes shared player from manager)
     await _methodChannel?.dispose();
 
