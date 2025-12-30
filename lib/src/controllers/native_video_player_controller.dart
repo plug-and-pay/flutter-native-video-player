@@ -63,6 +63,9 @@ class NativeVideoPlayerController {
     if (!kIsWeb && Platform.isAndroid) {
       WidgetsBinding.instance.addObserver(_AppLifecycleObserver(this));
     }
+
+    // Set up controller-level event channel for persistent events (PiP, AirPlay)
+    _setupControllerEventChannel();
   }
 
   /// Initialize the controller and wait for the platform view to be created
@@ -240,6 +243,12 @@ class NativeVideoPlayerController {
   /// MainActivity PiP event channel subscription (Android only)
   StreamSubscription<dynamic>? get pipEventSubscription =>
       _pipEventSubscription;
+
+  /// Controller-level event channel (persistent, independent of platform views)
+  EventChannel? _controllerEventChannel;
+
+  /// Controller-level event subscription (for PiP and AirPlay events)
+  StreamSubscription<dynamic>? _controllerEventSubscription;
 
   /// Whether the MainActivity PiP event listener has been set up
   static bool _pipEventListenerSetup = false;
@@ -919,26 +928,10 @@ class NativeVideoPlayerController {
         final map = eventMap as Map<dynamic, dynamic>;
         final String eventName = map['event'] as String;
 
-        // Handle AirPlay availability change event
-        if (eventName == 'airPlayAvailabilityChanged') {
-          final bool isAvailable = map['isAvailable'] as bool? ?? false;
+        // NOTE: PiP and AirPlay events are now handled by the controller-level
+        // event channel (_handleControllerEvent) to persist when views are disposed
 
-          // Only update global state if the value is actually different
-          // This ensures one source of truth and prevents redundant stream emissions
-          final globalManager = AirPlayStateManager.instance;
-          if (globalManager.isAirPlayAvailable != isAvailable) {
-            globalManager.updateAvailability(isAvailable);
-          }
-
-          // Also update local state for backward compatibility
-          _updateState(_state.copyWith(isAirplayAvailable: isAvailable));
-          for (final handler in _airPlayAvailabilityHandlers) {
-            handler(isAvailable);
-          }
-          return;
-        }
-
-        // Handle AirPlay connection change event
+        // Handle AirPlay connection change event (for backward compatibility)
         if (eventName == 'airPlayConnectionChanged') {
           final bool isConnected = map['isConnected'] as bool? ?? false;
           final bool isConnecting = map['isConnecting'] as bool? ?? false;
@@ -1281,6 +1274,128 @@ class NativeVideoPlayerController {
       if (kDebugMode && e is! MissingPluginException) {
         debugPrint('MainActivity PiP listener setup error (non-critical): $e');
       }
+    }
+  }
+
+  /// Sets up the controller-level event channel for persistent events
+  ///
+  /// This channel receives PiP and AirPlay events independently of platform views.
+  /// It persists even when all platform views are disposed, allowing events to
+  /// flow after calling releaseResources(). Only disposed when controller.dispose() is called.
+  void _setupControllerEventChannel() {
+    _controllerEventChannel = EventChannel('native_video_player_controller_$id');
+    _controllerEventSubscription = _controllerEventChannel!
+        .receiveBroadcastStream()
+        .listen(
+          _handleControllerEvent,
+          onError: (dynamic error) {
+            debugPrint('Controller event channel error: $error');
+          },
+          cancelOnError: false,
+        );
+  }
+
+  /// Handles events from the controller-level event channel
+  ///
+  /// Processes PiP and AirPlay events that persist independently of platform views.
+  void _handleControllerEvent(dynamic eventMap) {
+    if (_isDisposed) {
+      return;
+    }
+
+    final map = eventMap as Map<dynamic, dynamic>;
+    final String eventName = map['event'] as String;
+
+    // Handle PiP events
+    if (eventName == 'pipStart' || eventName == 'pipStop') {
+      final bool isPipEnabled = eventName == 'pipStart';
+
+      debugPrint(
+        'Controller-level event: $eventName (isPipEnabled=$isPipEnabled)',
+      );
+
+      // When exiting PiP, restore the custom overlay if it was hidden
+      if (!isPipEnabled && _hideOverlayForPip) {
+        _hideOverlayForPip = false;
+
+        // Restore custom overlay controls by hiding native controls
+        if (_overlayBuilder != null) {
+          unawaited(setShowNativeControls(false));
+        }
+      }
+
+      // Update state
+      _updateState(_state.copyWith(isPipEnabled: isPipEnabled));
+
+      // Notify control listeners
+      final controlEvent = PlayerControlEvent(
+        state: isPipEnabled
+            ? PlayerControlState.pipStarted
+            : PlayerControlState.pipStopped,
+        data: Map<String, dynamic>.from(map),
+      );
+      for (final handler in _controlEventHandlers) {
+        handler(controlEvent);
+      }
+      return;
+    }
+
+    // Handle AirPlay availability
+    if (eventName == 'airPlayAvailabilityChanged') {
+      final bool isAvailable = map['isAvailable'] as bool? ?? false;
+
+      debugPrint(
+        'Controller-level event: airPlayAvailabilityChanged (isAvailable=$isAvailable)',
+      );
+
+      // Update global AirPlay state manager
+      final globalManager = AirPlayStateManager.instance;
+      if (globalManager.isAirPlayAvailable != isAvailable) {
+        globalManager.updateAvailability(isAvailable);
+      }
+
+      // Also update local state for backward compatibility
+      _updateState(_state.copyWith(isAirplayAvailable: isAvailable));
+
+      // Notify local listeners
+      for (final handler in _airPlayAvailabilityHandlers) {
+        handler(isAvailable);
+      }
+      return;
+    }
+
+    // Handle AirPlay connection
+    if (eventName == 'airPlayConnectionChanged') {
+      final bool isConnected = map['isConnected'] as bool? ?? false;
+      final bool isConnecting = map['isConnecting'] as bool? ?? false;
+      final String? deviceName = map['deviceName'] as String?;
+
+      debugPrint(
+        'Controller-level event: airPlayConnectionChanged (isConnected=$isConnected, isConnecting=$isConnecting, deviceName=$deviceName)',
+      );
+
+      // Update global AirPlay state manager
+      final globalManager = AirPlayStateManager.instance;
+      globalManager.updateConnection(
+        isConnected,
+        isConnecting: isConnecting,
+        deviceName: deviceName,
+      );
+
+      // Also update local state for backward compatibility
+      _updateState(
+        _state.copyWith(
+          isAirplayConnected: isConnected,
+          isAirplayConnecting: isConnecting,
+          airPlayDeviceName: deviceName,
+        ),
+      );
+
+      // Notify local listeners
+      for (final handler in _airPlayConnectionHandlers) {
+        handler(isConnected);
+      }
+      return;
     }
   }
 
@@ -2056,6 +2171,10 @@ class NativeVideoPlayerController {
     await _safeCancelSubscription(_pipEventSubscription);
     _pipEventSubscription = null;
 
+    // NOTE: Do NOT cancel _controllerEventSubscription here
+    // The controller-level event channel persists to receive PiP/AirPlay events
+    // even when all platform views are disposed. It's only cancelled in dispose().
+
     // Cancel buffering debounce timer
     _bufferingDebounceTimer?.cancel();
     _bufferingDebounceTimer = null;
@@ -2133,6 +2252,10 @@ class NativeVideoPlayerController {
     // Cancel PiP event subscription (Android only)
     await _safeCancelSubscription(_pipEventSubscription);
     _pipEventSubscription = null;
+
+    // Cancel controller-level event subscription
+    await _safeCancelSubscription(_controllerEventSubscription);
+    _controllerEventSubscription = null;
 
     // Cancel buffering debounce timer
     _bufferingDebounceTimer?.cancel();

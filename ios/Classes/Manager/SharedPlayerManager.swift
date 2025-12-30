@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import Flutter
 
 // MARK: - Shared Player Manager
 
@@ -47,6 +48,10 @@ class SharedPlayerManager: NSObject {
     /// Store media info for each controller
     /// This ensures media info persists across view recreations and during PiP transitions
     private var mediaInfoCache: [Int: [String: Any]] = [:]
+
+    /// Controller-level event sinks (persistent, independent of platform views)
+    /// These persist to send PiP and AirPlay events even when all views are disposed
+    private var controllerEventSinks: [Int: FlutterEventSink] = [:]
 
     struct PipSettings {
         let allowsPictureInPicture: Bool
@@ -134,6 +139,65 @@ class SharedPlayerManager: NSObject {
     /// Returns nil if no media info has been stored for this controller
     func getMediaInfo(for controllerId: Int) -> [String: Any]? {
         return mediaInfoCache[controllerId]
+    }
+
+    // MARK: - Controller Event Channel Methods
+
+    /// Registers a controller-level event sink for persistent events
+    /// This sink receives PiP and AirPlay events independently of platform views
+    func registerControllerEventSink(_ eventSink: @escaping FlutterEventSink, for controllerId: Int) {
+        controllerEventSinks[controllerId] = eventSink
+        print("✅ [SharedPlayerManager] Registered controller event sink for controller \(controllerId)")
+
+        // Send initial controller state
+        sendInitialControllerState(for: controllerId, to: eventSink)
+    }
+
+    /// Unregisters a controller-level event sink
+    func unregisterControllerEventSink(for controllerId: Int) {
+        controllerEventSinks.removeValue(forKey: controllerId)
+        print("🗑️ [SharedPlayerManager] Unregistered controller event sink for controller \(controllerId)")
+    }
+
+    /// Sends an event through the controller-level event channel
+    func sendControllerEvent(_ eventName: String, data: [String: Any], for controllerId: Int) {
+        guard let eventSink = controllerEventSinks[controllerId] else {
+            // No event sink registered - this is normal during initialization or after disposal
+            return
+        }
+
+        var event = data
+        event["event"] = eventName
+
+        DispatchQueue.main.async {
+            eventSink(event)
+        }
+    }
+
+    /// Sends initial controller state when event sink is registered
+    private func sendInitialControllerState(for controllerId: Int, to eventSink: @escaping FlutterEventSink) {
+        // Send initial PiP availability (always true on iOS for devices that support it)
+        let pipAvailabilityEvent: [String: Any] = [
+            "event": "pipAvailabilityChanged",
+            "isAvailable": AVPictureInPictureController.isPictureInPictureSupported()
+        ]
+        DispatchQueue.main.async {
+            eventSink(pipAvailabilityEvent)
+        }
+
+        // Send initial AirPlay availability from global route detector
+        if let detector = globalRouteDetector {
+            let airplayAvailabilityEvent: [String: Any] = [
+                "event": "airPlayAvailabilityChanged",
+                "isAvailable": detector.isRouteDetectionEnabled && detector.multipleRoutesDetected
+            ]
+            DispatchQueue.main.async {
+                eventSink(airplayAvailabilityEvent)
+            }
+        }
+
+        // Note: Initial PiP state and AirPlay connection state will be sent
+        // when views are created and report their current state
     }
 
     /// Stops and clears player from all views using this controller
