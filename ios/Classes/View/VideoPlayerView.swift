@@ -90,6 +90,9 @@ import QuartzCore
     // Track if app is in background to keep audio playing on screen lock
     var isInBackground: Bool = false
     var lastKnownRate: Float = 0.0
+    
+    // DRM handler for protected content
+    var drmHandler: VideoPlayerDrmHandler?
 
 
     public init(
@@ -766,6 +769,10 @@ import QuartzCore
 
         NotificationCenter.default.removeObserver(self)
         methodChannel.setMethodCallHandler(nil)
+
+        // Clean up DRM handler
+        drmHandler?.cleanup()
+        drmHandler = nil
 
         // Clear current media info from this view
         // BUT do NOT clear from SharedPlayerManager if PiP is active

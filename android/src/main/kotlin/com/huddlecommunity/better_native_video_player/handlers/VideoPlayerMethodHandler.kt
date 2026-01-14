@@ -94,6 +94,7 @@ class VideoPlayerMethodHandler(
         val autoPlay = args["autoPlay"] as? Boolean ?: false
         val headers = args["headers"] as? Map<String, String>
         val mediaInfo = args["mediaInfo"] as? Map<String, Any>
+        val drmConfig = args["drmConfig"] as? Map<*, *>
 
         // Store media info in the VideoPlayerView
         updateMediaInfo?.invoke(mediaInfo)
@@ -135,6 +136,36 @@ class VideoPlayerMethodHandler(
             (mediaInfo["subtitle"] as? String)?.let { metadataBuilder.setArtist(it) }
             (mediaInfo["album"] as? String)?.let { metadataBuilder.setAlbumTitle(it) }
             mediaItemBuilder.setMediaMetadata(metadataBuilder.build())
+        }
+
+        // Configure DRM if provided
+        if (drmConfig != null) {
+            val drmType = drmConfig["type"] as? String
+            val licenseUrl = drmConfig["licenseUrl"] as? String
+            val drmHeaders = drmConfig["headers"] as? Map<String, String>
+
+            if (licenseUrl != null) {
+                val uuid = when (drmType?.lowercase()) {
+                    "widevine" -> C.WIDEVINE_UUID
+                    "clearkey", "aes-128" -> C.CLEARKEY_UUID
+                    else -> {
+                        Log.w(TAG, "Unknown DRM type: $drmType, defaulting to Widevine")
+                        C.WIDEVINE_UUID
+                    }
+                }
+
+                val drmBuilder = MediaItem.DrmConfiguration.Builder(uuid)
+                    .setLicenseUri(android.net.Uri.parse(licenseUrl))
+
+                if (drmHeaders != null) {
+                    drmBuilder.setLicenseRequestHeaders(drmHeaders)
+                }
+
+                mediaItemBuilder.setDrmConfiguration(drmBuilder.build())
+                Log.d(TAG, "DRM configured - Type: $drmType, License URL: $licenseUrl")
+            } else {
+                Log.w(TAG, "DRM config provided but licenseUrl is missing")
+            }
         }
 
         val mediaItem = mediaItemBuilder.build()

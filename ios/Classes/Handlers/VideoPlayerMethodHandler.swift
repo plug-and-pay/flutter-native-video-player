@@ -21,6 +21,7 @@ extension VideoPlayerView {
         let autoPlay = arguments["autoPlay"] as? Bool ?? false
         let headers = arguments["headers"] as? [String: String]
         let mediaInfo = arguments["mediaInfo"] as? [String: Any]
+        let drmConfig = arguments["drmConfig"] as? [String: Any]
 
         // Store media info for Now Playing
         if let mediaInfo = mediaInfo {
@@ -98,13 +99,36 @@ extension VideoPlayerView {
 
         // --- Build player item ---
         let playerItem: AVPlayerItem
+        let asset: AVURLAsset
+        
+        // Create asset with headers if provided
         if let headers = headers {
-            let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
-            playerItem = AVPlayerItem(asset: asset)
+            asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         } else {
-            let asset = AVURLAsset(url: url)
-            playerItem = AVPlayerItem(asset: asset)
+            asset = AVURLAsset(url: url)
         }
+        
+        // Setup DRM if configured
+        if let drmConfig = drmConfig {
+            // Clean up existing DRM handler if any
+            self.drmHandler?.cleanup()
+            
+            let drmHandler = VideoPlayerDrmHandler(drmConfig: drmConfig)
+            self.drmHandler = drmHandler
+            
+            // Setup DRM asynchronously
+            drmHandler.setupDRM(asset: asset) { [weak self] success, error in
+                if let error = error {
+                    print("🔐 DRM: Setup failed: \(error.localizedDescription)")
+                    // Continue with playback even if DRM setup fails
+                    // The player will attempt to play and may fail later
+                } else {
+                    print("🔐 DRM: Setup completed successfully")
+                }
+            }
+        }
+        
+        playerItem = AVPlayerItem(asset: asset)
 
         // Replace current item immediately - don't wait for HDR configuration
         // This allows the video to start loading right away
@@ -692,6 +716,10 @@ extension VideoPlayerView {
         // Pause the player first
         player?.pause()
         print("⏸️ [VideoPlayerMethodHandler] Player paused")
+
+        // Clean up DRM handler
+        drmHandler?.cleanup()
+        drmHandler = nil
 
         // Clean up remote command ownership (transfer to another view if possible)
         cleanupRemoteCommandOwnership()

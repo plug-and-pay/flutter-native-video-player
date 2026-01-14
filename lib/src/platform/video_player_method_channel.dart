@@ -18,6 +18,7 @@ class VideoPlayerMethodChannel {
     required bool autoPlay,
     Map<String, String>? headers,
     Map<String, dynamic>? mediaInfo,
+    Map<String, dynamic>? drmConfig,
   }) async {
     final Map<String, Object> params = <String, Object>{
       'url': url,
@@ -31,6 +32,10 @@ class VideoPlayerMethodChannel {
 
     if (mediaInfo != null) {
       params['mediaInfo'] = mediaInfo;
+    }
+
+    if (drmConfig != null) {
+      params['drmConfig'] = drmConfig;
     }
 
     await _methodChannel.invokeMethod<void>('load', params);

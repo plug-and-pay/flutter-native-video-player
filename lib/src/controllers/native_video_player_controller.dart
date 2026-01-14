@@ -1283,7 +1283,9 @@ class NativeVideoPlayerController {
   /// It persists even when all platform views are disposed, allowing events to
   /// flow after calling releaseResources(). Only disposed when controller.dispose() is called.
   void _setupControllerEventChannel() {
-    _controllerEventChannel = EventChannel('native_video_player_controller_$id');
+    _controllerEventChannel = EventChannel(
+      'native_video_player_controller_$id',
+    );
     _controllerEventSubscription = _controllerEventChannel!
         .receiveBroadcastStream()
         .listen(
@@ -1522,12 +1524,21 @@ class NativeVideoPlayerController {
   /// **Parameters:**
   /// - url: Video URL to play (supports HLS, MP4, and local file:// URIs)
   /// - headers: Optional HTTP headers to include with the video request (e.g., {"Referer": "domain"})
+  /// - drmConfig: Optional DRM configuration for protected content
+  ///   - type: DRM type ('widevine', 'fairplay', 'clearKey', or 'aes-128')
+  ///   - licenseUrl: License server URL
+  ///   - certificateUrl: Certificate URL (iOS FairPlay only)
+  ///   - headers: HTTP headers for license requests
   ///
   /// **Returns:**
   /// A Future that completes when the video is loaded
   ///
   /// **Note:** For better clarity, consider using [loadUrl] for remote videos or [loadFile] for local files.
-  Future<void> load({required String url, Map<String, String>? headers}) async {
+  Future<void> load({
+    required String url,
+    Map<String, String>? headers,
+    Map<String, dynamic>? drmConfig,
+  }) async {
     if (_state.activityState.isLoaded) {
       return;
     }
@@ -1550,6 +1561,7 @@ class NativeVideoPlayerController {
         autoPlay: autoPlay,
         headers: headers,
         mediaInfo: mediaInfo?.toMap(),
+        drmConfig: drmConfig,
       );
 
       // Fetch available qualities after loading
@@ -1589,6 +1601,11 @@ class NativeVideoPlayerController {
   /// **Parameters:**
   /// - url: Remote video URL (e.g., "https://example.com/video.mp4")
   /// - headers: Optional HTTP headers to include with the video request
+  /// - drmConfig: Optional DRM configuration for protected content
+  ///   - type: DRM type ('widevine', 'fairplay', 'clearKey', or 'aes-128')
+  ///   - licenseUrl: License server URL
+  ///   - certificateUrl: Certificate URL (iOS FairPlay only)
+  ///   - headers: HTTP headers for license requests
   ///
   /// **Example:**
   /// ```dart
@@ -1602,12 +1619,26 @@ class NativeVideoPlayerController {
   ///   url: 'https://example.com/video.mp4',
   ///   headers: {'Referer': 'https://example.com'},
   /// );
+  ///
+  /// // Load with DRM (FairPlay on iOS)
+  /// await controller.loadUrl(
+  ///   url: 'https://example.com/stream.m3u8',
+  ///   drmConfig: {
+  ///     'type': 'fairplay',
+  ///     'licenseUrl': 'https://license.server.com/get',
+  ///     'certificateUrl': 'https://cert.server.com/cert.der',
+  ///     'headers': {
+  ///       'Authorization': 'Bearer <token>'
+  ///     }
+  ///   }
+  /// );
   /// ```
   Future<void> loadUrl({
     required String url,
     Map<String, String>? headers,
+    Map<String, dynamic>? drmConfig,
   }) async {
-    return load(url: url, headers: headers);
+    return load(url: url, headers: headers, drmConfig: drmConfig);
   }
 
   /// Loads a local video file into the player
@@ -2161,8 +2192,9 @@ class NativeVideoPlayerController {
     }
 
     // Cancel all event channel subscriptions
-    for (final StreamSubscription<dynamic> subscription
-        in _eventSubscriptions.values) {
+    // Create a snapshot to avoid concurrent modification during iteration
+    final subscriptions = _eventSubscriptions.values.toList();
+    for (final StreamSubscription<dynamic> subscription in subscriptions) {
       await _safeCancelSubscription(subscription);
     }
     _eventSubscriptions.clear();
@@ -2243,8 +2275,9 @@ class NativeVideoPlayerController {
 
     // Cancel all event channel subscriptions BEFORE closing stream controllers
     // This prevents new events from coming in while we're closing
-    for (final StreamSubscription<dynamic> subscription
-        in _eventSubscriptions.values) {
+    // Create a snapshot to avoid concurrent modification during iteration
+    final subscriptions = _eventSubscriptions.values.toList();
+    for (final StreamSubscription<dynamic> subscription in subscriptions) {
       await _safeCancelSubscription(subscription);
     }
     _eventSubscriptions.clear();
@@ -2274,8 +2307,10 @@ class NativeVideoPlayerController {
 
     // Teardown controller-level event channel on native side
     try {
-      const MethodChannel('native_video_player')
-          .invokeMethod<void>('teardownControllerEventChannel', {'controllerId': id});
+      const MethodChannel('native_video_player').invokeMethod<void>(
+        'teardownControllerEventChannel',
+        {'controllerId': id},
+      );
     } catch (e) {
       debugPrint('Failed to teardown controller event channel: $e');
     }

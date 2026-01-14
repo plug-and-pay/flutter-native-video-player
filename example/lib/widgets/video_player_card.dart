@@ -32,6 +32,7 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
   Duration _currentPosition = Duration.zero;
   Duration _duration = Duration.zero;
   bool _shouldCreatePlayer = false;
+  StreamSubscription<bool>? _pipStreamSubscription;
 
   Future<void> _ensureControllerCreated() async {
     if (_controller == null) {
@@ -52,6 +53,23 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
 
       _controller!.addActivityListener(_handleActivityEvent);
       _controller!.addControlListener(_handleControlEvent);
+
+      // Listen to PiP state changes and show snackbar
+      _pipStreamSubscription = _controller!.isPipEnabledStream.listen((
+        isPipEnabled,
+      ) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isPipEnabled ? '📺 PiP Enabled' : '📺 PiP Disabled',
+              ),
+              backgroundColor: isPipEnabled ? Colors.green : Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      });
 
       // Set initial status
       setState(() {
@@ -215,6 +233,9 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
 
   @override
   void dispose() {
+    // Cancel PiP stream subscription
+    _pipStreamSubscription?.cancel();
+
     if (_controller != null) {
       _controller!.removeActivityListener(_handleActivityEvent);
       _controller!.removeControlListener(_handleControlEvent);

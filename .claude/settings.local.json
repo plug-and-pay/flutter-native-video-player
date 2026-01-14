@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed:*)",
+      "Bash(flutter run:*)",
+      "WebSearch",
+      "Bash(adb logcat:*)",
+      "Bash(find:*)",
+      "mcp__dart__pub_dev_search",
+      "WebFetch(domain:pub.dev)",
+      "mcp__dart__add_roots",
+      "mcp__dart__pub",
+      "mcp__dart__dart_format",
+      "mcp__dart__analyze_files",
+      "mcp__dart__run_tests",
+      "Bash(dart format:*)",
+      "WebFetch(domain:api.flutter.dev)",
+      "Bash(flutter build:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "dart"
+  ]
+}
