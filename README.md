@@ -25,6 +25,7 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 - ✅ **Individual property streams**: Dedicated streams for position, duration, speed, state, fullscreen, PiP, AirPlay, and quality
 - ✅ Real-time playback position tracking with **buffered position indicator**
 - ✅ Custom HTTP headers support for video requests
+- ✅ **DRM (Digital Rights Management) support** for protected content (FairPlay on iOS, Widevine on Android, AES-128, ClearKey)
 - ✅ Multiple controller instances support with shared player management
 - ✅ **WASM compatible** - Package works with Web Assembly runtime
 
@@ -88,6 +89,163 @@ await controller.load(url: 'file:///path/to/video.mp4');
 ```
 
 **Note**: Quality selection and adaptive streaming are only available for HLS streams. Other formats play at their native quality.
+
+## DRM Support
+
+The plugin supports Digital Rights Management (DRM) for protected content playback on both iOS and Android platforms.
+
+### Supported DRM Types
+
+| Platform | DRM Type | Description |
+|----------|----------|-------------|
+| iOS | **FairPlay Streaming** | Apple's DRM solution for HLS content |
+| iOS | **AES-128** | Standard HLS encryption (no license server required) |
+| Android | **Widevine** | Google's DRM solution for protected content |
+| Android | **AES-128** | Standard HLS encryption (no license server required) |
+| Both | **ClearKey** | Unencrypted key system for testing and development |
+
+### DRM Configuration
+
+DRM is configured via the `drmConfig` parameter in the `load()`, `loadUrl()`, and `loadFile()` methods:
+
+```dart
+await controller.loadUrl(
+  url: 'https://example.com/protected-stream.m3u8',
+  drmConfig: {
+    'type': 'fairplay', // or 'widevine', 'aes-128', 'clearKey'
+    'licenseUrl': 'https://license.server.com/get',
+    'certificateUrl': 'https://cert.server.com/cert.der', // iOS FairPlay only
+    'headers': {
+      'Authorization': 'Bearer <token>',
+      'X-Custom-Header': 'value',
+    },
+  },
+);
+```
+
+### DRM Configuration Parameters
+
+| Parameter | Type | Required | Platform | Description |
+|-----------|------|----------|----------|-------------|
+| `type` | `String` | Yes | Both | DRM type: `'fairplay'`, `'widevine'`, `'aes-128'`, or `'clearKey'` |
+| `licenseUrl` | `String` | Yes* | Both | License server URL for key requests (*not required for AES-128) |
+| `certificateUrl` | `String` | Yes (FairPlay) | iOS | Certificate URL for FairPlay DRM |
+| `headers` | `Map<String, String>` | No | Both | HTTP headers for license requests (authentication, etc.) |
+
+### Platform-Specific Examples
+
+#### iOS - FairPlay Streaming
+
+```dart
+await controller.loadUrl(
+  url: 'https://example.com/fairplay-stream.m3u8',
+  drmConfig: {
+    'type': 'fairplay',
+    'licenseUrl': 'https://license.server.com/fairplay',
+    'certificateUrl': 'https://cert.server.com/fairplay.der',
+    'headers': {
+      'Authorization': 'Bearer your-token-here',
+    },
+  },
+);
+```
+
+**FairPlay Requirements:**
+- Certificate URL must be provided
+- Certificate is automatically fetched and used for license requests
+- License server must implement FairPlay Streaming protocol
+- Works with HLS streams only
+
+#### Android - Widevine
+
+```dart
+await controller.loadUrl(
+  url: 'https://example.com/widevine-stream.m3u8',
+  drmConfig: {
+    'type': 'widevine',
+    'licenseUrl': 'https://license.server.com/widevine',
+    'headers': {
+      'Authorization': 'Bearer your-token-here',
+      'Content-Type': 'application/octet-stream',
+    },
+  },
+);
+```
+
+**Widevine Requirements:**
+- License server URL is required
+- License server must implement Widevine protocol
+- Supports both HLS and DASH streams
+- Works with ExoPlayer's DRM framework
+
+#### AES-128 (Standard HLS Encryption)
+
+AES-128 is standard HLS encryption that doesn't require a license server. The encryption keys are embedded in the HLS manifest:
+
+```dart
+await controller.loadUrl(
+  url: 'https://example.com/aes128-stream.m3u8',
+  drmConfig: {
+    'type': 'aes-128',
+    // No licenseUrl or certificateUrl needed
+    // Keys are automatically extracted from the HLS manifest
+  },
+);
+```
+
+**AES-128 Notes:**
+- No license server required
+- Keys are automatically extracted from the HLS manifest
+- Works on both iOS and Android
+- Most common encryption for HLS streams
+
+#### ClearKey (Testing/Development)
+
+ClearKey is an unencrypted key system useful for testing and development:
+
+```dart
+await controller.loadUrl(
+  url: 'https://example.com/clearkey-stream.m3u8',
+  drmConfig: {
+    'type': 'clearKey',
+    'licenseUrl': 'https://license.server.com/clearkey',
+  },
+);
+```
+
+**ClearKey Notes:**
+- Primarily for testing and development
+- Not recommended for production use
+- Useful for debugging DRM integration
+
+### DRM Best Practices
+
+1. **Secure License Requests**: Always use HTTPS for license URLs and include authentication headers
+2. **Error Handling**: Implement proper error handling for DRM failures (license denied, network errors, etc.)
+3. **Certificate Management**: For FairPlay, ensure your certificate URL is accessible and returns valid DER-encoded certificates
+4. **Testing**: Test DRM playback on physical devices (simulators may have limitations)
+5. **Platform Differences**: Be aware that FairPlay (iOS) and Widevine (Android) have different license request formats
+
+### DRM Error Handling
+
+DRM errors are reported through the standard player event system:
+
+```dart
+_controller.addActivityListener((event) {
+  if (event.state == PlayerActivityState.error) {
+    final errorMessage = event.data?['message'] as String?;
+    print('DRM Error: $errorMessage');
+    // Handle DRM-specific errors
+  }
+});
+```
+
+Common DRM errors:
+- License server unavailable
+- Invalid certificate (FairPlay)
+- License denied by server
+- Network errors during license request
+- Unsupported DRM type for platform
 
 ## Installation
 
@@ -210,6 +368,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // Option 4: Generic load method (also supported)
     // await _controller.load(
     //   url: 'https://example.com/video.m3u8',
+    // );
+
+    // Option 5: Load with DRM (protected content)
+    // await _controller.loadUrl(
+    //   url: 'https://example.com/protected-stream.m3u8',
+    //   drmConfig: {
+    //     'type': 'fairplay', // or 'widevine' for Android
+    //     'licenseUrl': 'https://license.server.com/get',
+    //     'certificateUrl': 'https://cert.server.com/cert.der', // iOS FairPlay only
+    //     'headers': {
+    //       'Authorization': 'Bearer <token>',
+    //     },
+    //   },
     // );
   }
 
@@ -1031,9 +1202,15 @@ NativeVideoPlayer(
 - `Future<void> initialize()` - Initialize the controller
 
 **Loading Videos:**
-- `Future<void> load({required String url, Map<String, String>? headers})` - Load video URL or file (generic method, backward compatible)
-- `Future<void> loadUrl({required String url, Map<String, String>? headers})` - Load remote video URL with optional HTTP headers
+- `Future<void> load({required String url, Map<String, String>? headers, Map<String, dynamic>? drmConfig})` - Load video URL or file (generic method, backward compatible). Supports optional DRM configuration for protected content.
+- `Future<void> loadUrl({required String url, Map<String, String>? headers, Map<String, dynamic>? drmConfig})` - Load remote video URL with optional HTTP headers and DRM configuration
 - `Future<void> loadFile({required String path})` - Load local video file from device storage
+
+**DRM Configuration (`drmConfig` parameter):**
+- `type` (String, required): DRM type - `'fairplay'` (iOS), `'widevine'` (Android), `'aes-128'` (both), or `'clearKey'` (both)
+- `licenseUrl` (String, required*): License server URL for key requests (*not required for AES-128)
+- `certificateUrl` (String, required for FairPlay): Certificate URL for FairPlay DRM (iOS only)
+- `headers` (Map<String, String>, optional): HTTP headers for license requests (authentication tokens, etc.)
 
 **Playback Control:**
 - `Future<void> play()` - Start playback
