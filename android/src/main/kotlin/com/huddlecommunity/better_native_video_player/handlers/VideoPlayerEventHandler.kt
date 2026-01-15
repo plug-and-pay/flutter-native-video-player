@@ -26,6 +26,13 @@ class VideoPlayerEventHandler(private val isSharedPlayer: Boolean = false) : Eve
         if (!isSharedPlayer) {
             Log.d(TAG, "Sending isInitialized event for new player")
             sendEvent("isInitialized")
+            // For new players, also send idle state if player is idle
+            // This will be handled by the VideoPlayerView's initial state callback
+            // which should be set up before onListen is called
+            if (initialStateCallback != null) {
+                Log.d(TAG, "Invoking initial state callback for new player")
+                initialStateCallback?.invoke()
+            }
             hasSentInitialState = true
         } else {
             // For shared players, send the current state once the listener is attached

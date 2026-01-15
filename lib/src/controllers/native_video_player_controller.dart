@@ -1098,6 +1098,7 @@ class NativeVideoPlayerController {
       case 'completed':
       case 'stopped':
       case 'error':
+      case 'idle':
         return true;
       default:
         return false;
