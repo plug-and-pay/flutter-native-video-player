@@ -183,8 +183,8 @@ class VideoPlayerObserver(
             // Reset buffering flag when loading finishes
             hasReportedBuffering = false
 
-            // Send loading event when player becomes ready after loading
-            eventHandler.sendEvent("loading")
+            // Note: "loaded" event is already sent by onPlaybackStateChanged when STATE_READY is reached
+            // No need to send it again here
 
             // Restore the playback state after buffering completes
             // This tells the UI whether the video is playing or paused
