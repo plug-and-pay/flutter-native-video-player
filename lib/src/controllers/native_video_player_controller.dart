@@ -1177,12 +1177,17 @@ class NativeVideoPlayerController {
               final activityEvent = PlayerActivityEvent.fromMap(map);
 
               // Complete initialization when we receive the isInitialized event
-              if (!_state.activityState.isInitialized &&
-                  activityEvent.state == PlayerActivityState.initialized &&
-                  _initializeCompleter != null &&
-                  !_initializeCompleter!.isCompleted) {
+              // OR if method channel exists and we have platform views
+              if ((!_state.activityState.isInitialized &&
+                      activityEvent.state == PlayerActivityState.initialized &&
+                      _initializeCompleter != null &&
+                      !_initializeCompleter!.isCompleted) ||
+                  (_methodChannel != null && _platformViewIds.isNotEmpty && !_isInitialized)) {
                 _isInitialized = true;
-                _initializeCompleter!.complete();
+                if (_initializeCompleter != null && !_initializeCompleter!.isCompleted) {
+                  _initializeCompleter!.complete();
+                }
+                _isInitializing = false;
               }
 
               // Update the last non-buffering state when we receive play/pause events
@@ -1465,7 +1470,9 @@ class NativeVideoPlayerController {
       return;
     }
 
-    if (!_isInitialized) {
+    // Check if initialized - if method channel exists and platform view is created,
+    // consider it initialized even if _isInitialized flag hasn't been set yet
+    if (!_isInitialized && (_methodChannel == null || _platformViewIds.isEmpty)) {
       throw Exception('Controller not initialized. Call initialize() first.');
     }
 
