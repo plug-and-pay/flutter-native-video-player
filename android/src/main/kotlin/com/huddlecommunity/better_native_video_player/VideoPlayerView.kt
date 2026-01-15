@@ -302,6 +302,9 @@ class VideoPlayerView(
                     eventHandler.sendEvent("play")
                 } else if (player.playbackState != Player.STATE_IDLE) {
                     eventHandler.sendEvent("pause")
+                } else {
+                    // Player is in IDLE state - send idle event to ensure UI shows correct state
+                    eventHandler.sendEvent("idle")
                 }
             }
         }

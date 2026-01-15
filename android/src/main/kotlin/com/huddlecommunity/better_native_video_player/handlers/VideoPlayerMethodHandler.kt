@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
@@ -105,7 +106,15 @@ class VideoPlayerMethodHandler(
 
         Log.d(TAG, "Loading video: $url (autoPlay: $autoPlay)")
 
-        eventHandler.sendEvent("loading")
+        // Only send "loading" event if player is actually starting to load new media
+        // Don't send if player is already in IDLE state with no media (duration < 0)
+        // This prevents incorrect "loading" state when player is already idle
+        val isPlayerIdleWithNoMedia = player.playbackState == Player.STATE_IDLE && player.duration < 0
+        if (!isPlayerIdleWithNoMedia) {
+            eventHandler.sendEvent("loading")
+        } else {
+            Log.d(TAG, "Player is already idle with no media, skipping loading event")
+        }
 
         // Determine if this is a local file or remote URL
         val isLocalFile = url.startsWith("file://") || url.startsWith("/")
