@@ -83,7 +83,9 @@ class NativeVideoPlayerController {
     // If platform view is already created and method channel exists, mark as initialized immediately
     if (_methodChannel != null && _platformViewIds.isNotEmpty) {
       _isInitialized = true;
-      _updateState(_state.copyWith(activityState: PlayerActivityState.initialized));
+      _updateState(
+        _state.copyWith(activityState: PlayerActivityState.initialized),
+      );
       return;
     }
 
@@ -91,7 +93,9 @@ class NativeVideoPlayerController {
     _isInitializing = true;
 
     // Set state to initializing immediately
-    _updateState(_state.copyWith(activityState: PlayerActivityState.initializing));
+    _updateState(
+      _state.copyWith(activityState: PlayerActivityState.initializing),
+    );
 
     // Create a completer that will be completed when the platform view is created
     _initializeCompleter = Completer<void>();
@@ -103,7 +107,9 @@ class NativeVideoPlayerController {
     _isInitialized = true;
     _isInitializing = false;
 
-    _updateState(_state.copyWith(activityState: PlayerActivityState.initialized));
+    _updateState(
+      _state.copyWith(activityState: PlayerActivityState.initialized),
+    );
   }
 
   /// Unique identifier for this video player instance
@@ -175,7 +181,8 @@ class NativeVideoPlayerController {
   bool get isOverlayLocked => _isOverlayLocked;
 
   /// Stream controller for overlay lock state changes
-  final StreamController<bool> _isOverlayLockedController = StreamController<bool>.broadcast();
+  final StreamController<bool> _isOverlayLockedController =
+      StreamController<bool>.broadcast();
 
   /// Stream of overlay lock state changes
   Stream<bool> get isOverlayLockedStream => _isOverlayLockedController.stream;
@@ -206,7 +213,9 @@ class NativeVideoPlayerController {
     }
 
     _primaryPlatformViewId = platformViewId;
-    _methodChannel = VideoPlayerMethodChannel(primaryPlatformViewId: platformViewId);
+    _methodChannel = VideoPlayerMethodChannel(
+      primaryPlatformViewId: platformViewId,
+    );
 
     // Register new method channel with AirPlay manager
     AirPlayStateManager.instance.registerMethodChannel(_methodChannel!);
@@ -225,13 +234,15 @@ class NativeVideoPlayerController {
   bool _isDisposed = false;
 
   /// Event channel subscriptions for each platform view
-  final Map<int, StreamSubscription<dynamic>> _eventSubscriptions = <int, StreamSubscription<dynamic>>{};
+  final Map<int, StreamSubscription<dynamic>> _eventSubscriptions =
+      <int, StreamSubscription<dynamic>>{};
 
   /// MainActivity PiP event channel subscription (Android only)
   StreamSubscription<dynamic>? _pipEventSubscription;
 
   /// MainActivity PiP event channel subscription (Android only)
-  StreamSubscription<dynamic>? get pipEventSubscription => _pipEventSubscription;
+  StreamSubscription<dynamic>? get pipEventSubscription =>
+      _pipEventSubscription;
 
   /// Controller-level event channel (persistent, independent of platform views)
   EventChannel? _controllerEventChannel;
@@ -252,21 +263,30 @@ class NativeVideoPlayerController {
   PlayerActivityState? _lastNonBufferingState;
 
   /// Activity event handlers (play, pause, buffering, etc.)
-  final List<void Function(PlayerActivityEvent)> _activityEventHandlers = <void Function(PlayerActivityEvent)>[];
+  final List<void Function(PlayerActivityEvent)> _activityEventHandlers =
+      <void Function(PlayerActivityEvent)>[];
 
   /// Control event handlers (quality, speed, pip, fullscreen, etc.)
-  final List<void Function(PlayerControlEvent)> _controlEventHandlers = <void Function(PlayerControlEvent)>[];
+  final List<void Function(PlayerControlEvent)> _controlEventHandlers =
+      <void Function(PlayerControlEvent)>[];
 
   /// Stream controllers for individual property streams
-  final StreamController<Duration> _bufferedPositionController = StreamController<Duration>.broadcast();
-  final StreamController<Duration> _durationController = StreamController<Duration>.broadcast();
+  final StreamController<Duration> _bufferedPositionController =
+      StreamController<Duration>.broadcast();
+  final StreamController<Duration> _durationController =
+      StreamController<Duration>.broadcast();
   final StreamController<PlayerActivityState> _playerStateController =
       StreamController<PlayerActivityState>.broadcast();
-  final StreamController<Duration> _positionController = StreamController<Duration>.broadcast();
-  final StreamController<double> _speedController = StreamController<double>.broadcast();
-  final StreamController<bool> _isPipEnabledController = StreamController<bool>.broadcast();
-  final StreamController<bool> _isPipAvailableController = StreamController<bool>.broadcast();
-  final StreamController<bool> _isFullscreenController = StreamController<bool>.broadcast();
+  final StreamController<Duration> _positionController =
+      StreamController<Duration>.broadcast();
+  final StreamController<double> _speedController =
+      StreamController<double>.broadcast();
+  final StreamController<bool> _isPipEnabledController =
+      StreamController<bool>.broadcast();
+  final StreamController<bool> _isPipAvailableController =
+      StreamController<bool>.broadcast();
+  final StreamController<bool> _isFullscreenController =
+      StreamController<bool>.broadcast();
   final StreamController<NativeVideoPlayerQuality> _qualityChangedController =
       StreamController<NativeVideoPlayerQuality>.broadcast();
   final StreamController<List<NativeVideoPlayerQuality>> _qualitiesController =
@@ -295,7 +315,8 @@ class NativeVideoPlayerController {
 
       // When duration changes from 0 to non-zero, notify all listeners with current state
       // This ensures listeners added before duration was available receive the state
-      if (oldState.duration == Duration.zero && newState.duration != Duration.zero) {
+      if (oldState.duration == Duration.zero &&
+          newState.duration != Duration.zero) {
         // Notify all control listeners with time update event
         if (_controlEventHandlers.isNotEmpty) {
           final currentControlEvent = PlayerControlEvent(
@@ -304,7 +325,8 @@ class NativeVideoPlayerController {
               'position': newState.currentPosition.inMilliseconds,
               'duration': newState.duration.inMilliseconds,
               'bufferedPosition': newState.bufferedPosition.inMilliseconds,
-              'isBuffering': newState.activityState == PlayerActivityState.buffering,
+              'isBuffering':
+                  newState.activityState == PlayerActivityState.buffering,
             },
           );
           for (final handler in _controlEventHandlers) {
@@ -314,7 +336,10 @@ class NativeVideoPlayerController {
 
         // Also notify activity listeners
         if (_activityEventHandlers.isNotEmpty) {
-          final currentActivityEvent = PlayerActivityEvent(state: newState.activityState, data: null);
+          final currentActivityEvent = PlayerActivityEvent(
+            state: newState.activityState,
+            data: null,
+          );
           for (final handler in _activityEventHandlers) {
             handler(currentActivityEvent);
           }
@@ -380,9 +405,12 @@ class NativeVideoPlayerController {
       // Start a 400ms timer - only emit buffering state if still buffering after 400ms
       _bufferingDebounceTimer = Timer(const Duration(milliseconds: 400), () {
         // Check if we're still buffering after 400ms
-        if (_isCurrentlyBuffering && _state.activityState != PlayerActivityState.buffering) {
+        if (_isCurrentlyBuffering &&
+            _state.activityState != PlayerActivityState.buffering) {
           // Update to buffering state
-          _updateState(_state.copyWith(activityState: PlayerActivityState.buffering));
+          _updateState(
+            _state.copyWith(activityState: PlayerActivityState.buffering),
+          );
         }
       });
     } else {
@@ -392,7 +420,8 @@ class NativeVideoPlayerController {
       // If we were showing buffering state, restore the previous state
       if (_state.activityState == PlayerActivityState.buffering) {
         // Restore the last non-buffering state
-        final restoredState = _lastNonBufferingState ?? PlayerActivityState.playing;
+        final restoredState =
+            _lastNonBufferingState ?? PlayerActivityState.playing;
         _updateState(_state.copyWith(activityState: restoredState));
       }
     }
@@ -466,7 +495,10 @@ class NativeVideoPlayerController {
 
     // Emit to activity event handlers
     if (_activityEventHandlers.isNotEmpty) {
-      final activityEvent = PlayerActivityEvent(state: _state.activityState, data: null);
+      final activityEvent = PlayerActivityEvent(
+        state: _state.activityState,
+        data: null,
+      );
       for (final handler in _activityEventHandlers) {
         handler(activityEvent);
       }
@@ -503,7 +535,10 @@ class NativeVideoPlayerController {
 
       // Emit current control state if not none
       if (_state.controlState != PlayerControlState.none) {
-        final currentStateEvent = PlayerControlEvent(state: _state.controlState, data: null);
+        final currentStateEvent = PlayerControlEvent(
+          state: _state.controlState,
+          data: null,
+        );
         for (final handler in _controlEventHandlers) {
           handler(currentStateEvent);
         }
@@ -585,14 +620,18 @@ class NativeVideoPlayerController {
       // This ensures listeners added after initialization receive the current state
       // We check if we have valid state rather than just _isInitialized
       if (!_isDisposed && _state.duration != Duration.zero) {
-        final currentActivityEvent = PlayerActivityEvent(state: _state.activityState, data: null);
+        final currentActivityEvent = PlayerActivityEvent(
+          state: _state.activityState,
+          data: null,
+        );
         listener(currentActivityEvent);
       }
     }
   }
 
   /// Removes a listener for activity events
-  void removeActivityListener(void Function(PlayerActivityEvent) listener) => _activityEventHandlers.remove(listener);
+  void removeActivityListener(void Function(PlayerActivityEvent) listener) =>
+      _activityEventHandlers.remove(listener);
 
   /// Adds a listener for control events (quality, speed, pip, fullscreen, etc.)
   void addControlListener(void Function(PlayerControlEvent) listener) {
@@ -610,7 +649,8 @@ class NativeVideoPlayerController {
             'position': _state.currentPosition.inMilliseconds,
             'duration': _state.duration.inMilliseconds,
             'bufferedPosition': _state.bufferedPosition.inMilliseconds,
-            'isBuffering': _state.activityState == PlayerActivityState.buffering,
+            'isBuffering':
+                _state.activityState == PlayerActivityState.buffering,
           },
         );
         listener(currentControlEvent);
@@ -631,7 +671,8 @@ class NativeVideoPlayerController {
   }
 
   /// Removes a listener for control events
-  void removeControlListener(void Function(PlayerControlEvent) listener) => _controlEventHandlers.remove(listener);
+  void removeControlListener(void Function(PlayerControlEvent) listener) =>
+      _controlEventHandlers.remove(listener);
 
   /// Video URL to play (supports HLS .m3u8 and direct video URLs)
   /// Returns null if load() has not been called yet
@@ -679,31 +720,37 @@ class NativeVideoPlayerController {
   /// Returns whether AirPlay is available on the device
   ///
   /// This is a global state - if AirPlay is available, it's available for all controllers
-  bool get isAirplayAvailable => AirPlayStateManager.instance.isAirPlayAvailable;
+  bool get isAirplayAvailable =>
+      AirPlayStateManager.instance.isAirPlayAvailable;
 
   /// Returns whether the video is currently connected to an AirPlay/Cast device
   ///
   /// This is a global state - when the app is connected to AirPlay, all controllers are connected
-  bool get isAirplayConnected => AirPlayStateManager.instance.isAirPlayConnected;
+  bool get isAirplayConnected =>
+      AirPlayStateManager.instance.isAirPlayConnected;
 
   /// Returns whether the video is currently connecting to an AirPlay device
   ///
   /// This is a global state - indicates a connection attempt is in progress
-  bool get isAirplayConnecting => AirPlayStateManager.instance.isAirPlayConnecting;
+  bool get isAirplayConnecting =>
+      AirPlayStateManager.instance.isAirPlayConnecting;
 
   /// Returns the name of the currently connected AirPlay device
   ///
   /// Returns null if not connected to any AirPlay device
-  String? get airPlayDeviceName => AirPlayStateManager.instance.airPlayDeviceName;
+  String? get airPlayDeviceName =>
+      AirPlayStateManager.instance.airPlayDeviceName;
 
   /// Stream of buffered position changes
-  Stream<Duration> get bufferedPositionStream => _bufferedPositionController.stream;
+  Stream<Duration> get bufferedPositionStream =>
+      _bufferedPositionController.stream;
 
   /// Stream of duration changes
   Stream<Duration> get durationStream => _durationController.stream;
 
   /// Stream of player state changes (playing, paused, buffering, etc.)
-  Stream<PlayerActivityState> get playerStateStream => _playerStateController.stream;
+  Stream<PlayerActivityState> get playerStateStream =>
+      _playerStateController.stream;
 
   /// Stream of position changes
   Stream<Duration> get positionStream => _positionController.stream;
@@ -720,31 +767,37 @@ class NativeVideoPlayerController {
   /// Stream of AirPlay availability changes
   ///
   /// This is a global stream - all controllers receive the same AirPlay availability state
-  Stream<bool> get isAirplayAvailableStream => AirPlayStateManager.instance.isAirPlayAvailableStream;
+  Stream<bool> get isAirplayAvailableStream =>
+      AirPlayStateManager.instance.isAirPlayAvailableStream;
 
   /// Stream of AirPlay connection state changes
   ///
   /// This is a global stream - all controllers receive the same AirPlay connection state
-  Stream<bool> get isAirplayConnectedStream => AirPlayStateManager.instance.isAirPlayConnectedStream;
+  Stream<bool> get isAirplayConnectedStream =>
+      AirPlayStateManager.instance.isAirPlayConnectedStream;
 
   /// Stream of AirPlay connecting state changes
   ///
   /// This is a global stream - emits true when connecting to AirPlay, false when connection completes or fails
-  Stream<bool> get isAirplayConnectingStream => AirPlayStateManager.instance.isAirPlayConnectingStream;
+  Stream<bool> get isAirplayConnectingStream =>
+      AirPlayStateManager.instance.isAirPlayConnectingStream;
 
   /// Stream of AirPlay device name changes
   ///
   /// Emits the device name when connected to an AirPlay device, or null when disconnected
-  Stream<String?> get airPlayDeviceNameStream => AirPlayStateManager.instance.airPlayDeviceNameStream;
+  Stream<String?> get airPlayDeviceNameStream =>
+      AirPlayStateManager.instance.airPlayDeviceNameStream;
 
   /// Stream of fullscreen state changes
   Stream<bool> get isFullscreenStream => _isFullscreenController.stream;
 
   /// Stream of quality changes
-  Stream<NativeVideoPlayerQuality> get qualityChangedStream => _qualityChangedController.stream;
+  Stream<NativeVideoPlayerQuality> get qualityChangedStream =>
+      _qualityChangedController.stream;
 
   /// Stream of available qualities list changes
-  Stream<List<NativeVideoPlayerQuality>> get qualitiesStream => _qualitiesController.stream;
+  Stream<List<NativeVideoPlayerQuality>> get qualitiesStream =>
+      _qualitiesController.stream;
 
   /// Parameters passed to native side when creating the platform view
   /// Includes controller ID, autoPlay, PiP settings, media info, and fullscreen state
@@ -752,7 +805,8 @@ class NativeVideoPlayerController {
     'controllerId': id,
     'autoPlay': autoPlay,
     'allowsPictureInPicture': allowsPictureInPicture,
-    'canStartPictureInPictureAutomatically': canStartPictureInPictureAutomatically,
+    'canStartPictureInPictureAutomatically':
+        canStartPictureInPictureAutomatically,
     'showNativeControls': _hasCustomOverlay
         ? false
         : showNativeControls, // Hide native controls if we have custom overlay, otherwise use parameter
@@ -766,7 +820,9 @@ class NativeVideoPlayerController {
   ///
   /// This is typically called by NativeVideoPlayer widget to pass the overlay builder.
   /// When an overlay is set, native controls are automatically hidden and Dart fullscreen is used.
-  void setOverlayBuilder(Widget Function(BuildContext, NativeVideoPlayerController)? builder) {
+  void setOverlayBuilder(
+    Widget Function(BuildContext, NativeVideoPlayerController)? builder,
+  ) {
     _overlayBuilder = builder;
 
     // If we have a method channel, hide native controls when overlay is set
@@ -789,7 +845,10 @@ class NativeVideoPlayerController {
   ///
   /// **Parameters:**
   /// - platformViewId: The unique ID assigned by Flutter to the platform view
-  Future<void> onPlatformViewCreated(int platformViewId, BuildContext context) async {
+  Future<void> onPlatformViewCreated(
+    int platformViewId,
+    BuildContext context,
+  ) async {
     // Check if we're reconnecting BEFORE adding the new view ID
     final bool wasDisconnected = _platformViewIds.isEmpty;
 
@@ -836,15 +895,22 @@ class NativeVideoPlayerController {
 
     // Notify activity event listeners with the current activity state
     if (_activityEventHandlers.isNotEmpty) {
-      final currentActivityEvent = PlayerActivityEvent(state: _state.activityState, data: null);
+      final currentActivityEvent = PlayerActivityEvent(
+        state: _state.activityState,
+        data: null,
+      );
       for (final handler in _activityEventHandlers) {
         handler(currentActivityEvent);
       }
     }
 
     // Notify control event listeners if there's a current control state
-    if (_controlEventHandlers.isNotEmpty && _state.controlState != PlayerControlState.none) {
-      final currentControlEvent = PlayerControlEvent(state: _state.controlState, data: null);
+    if (_controlEventHandlers.isNotEmpty &&
+        _state.controlState != PlayerControlState.none) {
+      final currentControlEvent = PlayerControlEvent(
+        state: _state.controlState,
+        data: null,
+      );
       for (final handler in _controlEventHandlers) {
         handler(currentControlEvent);
       }
@@ -890,13 +956,16 @@ class NativeVideoPlayerController {
 
     // ignore: dead_code
     try {
-      final EventChannel pipEventChannel = const EventChannel('native_video_player_pip_events');
+      final EventChannel pipEventChannel = const EventChannel(
+        'native_video_player_pip_events',
+      );
 
       _pipEventSubscription = pipEventChannel.receiveBroadcastStream().listen(
         (dynamic eventMap) {
           final map = eventMap as Map<dynamic, dynamic>;
           final String eventName = map['event'] as String;
-          final bool isInPipMode = map['isInPictureInPictureMode'] as bool? ?? false;
+          final bool isInPipMode =
+              map['isInPictureInPictureMode'] as bool? ?? false;
 
           // Create a control event based on the MainActivity event
           final PlayerControlState state;
@@ -910,12 +979,17 @@ class NativeVideoPlayerController {
 
           final controlEvent = PlayerControlEvent(
             state: state,
-            data: <String, dynamic>{'isPictureInPicture': isInPipMode, 'fromMainActivity': true},
+            data: <String, dynamic>{
+              'isPictureInPicture': isInPipMode,
+              'fromMainActivity': true,
+            },
           );
 
           // Update controller state
           final bool isPipEnabled = state == PlayerControlState.pipStarted;
-          _updateState(_state.copyWith(controlState: state, isPipEnabled: isPipEnabled));
+          _updateState(
+            _state.copyWith(controlState: state, isPipEnabled: isPipEnabled),
+          );
 
           // Notify all control listeners
           for (final handler in _controlEventHandlers) {
@@ -925,7 +999,9 @@ class NativeVideoPlayerController {
         onError: (dynamic error) {
           // Silently handle MainActivity PiP event channel errors
           if (kDebugMode && error is! MissingPluginException) {
-            debugPrint('MainActivity PiP event channel error (non-critical): $error');
+            debugPrint(
+              'MainActivity PiP event channel error (non-critical): $error',
+            );
           }
         },
         cancelOnError: false,
@@ -944,14 +1020,18 @@ class NativeVideoPlayerController {
   /// It persists even when all platform views are disposed, allowing events to
   /// flow after calling releaseResources(). Only disposed when controller.dispose() is called.
   void _setupControllerEventChannel() {
-    _controllerEventChannel = EventChannel('native_video_player_controller_$id');
-    _controllerEventSubscription = _controllerEventChannel!.receiveBroadcastStream().listen(
-      _handleControllerEvent,
-      onError: (dynamic error) {
-        debugPrint('Controller event channel error: $error');
-      },
-      cancelOnError: false,
+    _controllerEventChannel = EventChannel(
+      'native_video_player_controller_$id',
     );
+    _controllerEventSubscription = _controllerEventChannel!
+        .receiveBroadcastStream()
+        .listen(
+          _handleControllerEvent,
+          onError: (dynamic error) {
+            debugPrint('Controller event channel error: $error');
+          },
+          cancelOnError: false,
+        );
   }
 
   /// Handles events from the controller-level event channel
@@ -969,7 +1049,9 @@ class NativeVideoPlayerController {
     if (eventName == 'pipStart' || eventName == 'pipStop') {
       final bool isPipEnabled = eventName == 'pipStart';
 
-      debugPrint('Controller-level event: $eventName (isPipEnabled=$isPipEnabled)');
+      debugPrint(
+        'Controller-level event: $eventName (isPipEnabled=$isPipEnabled)',
+      );
 
       // When exiting PiP, restore the custom overlay if it was hidden
       if (!isPipEnabled && _hideOverlayForPip) {
@@ -986,7 +1068,9 @@ class NativeVideoPlayerController {
 
       // Notify control listeners
       final controlEvent = PlayerControlEvent(
-        state: isPipEnabled ? PlayerControlState.pipStarted : PlayerControlState.pipStopped,
+        state: isPipEnabled
+            ? PlayerControlState.pipStarted
+            : PlayerControlState.pipStopped,
         data: Map<String, dynamic>.from(map),
       );
       for (final handler in _controlEventHandlers) {
@@ -999,7 +1083,9 @@ class NativeVideoPlayerController {
     if (eventName == 'airPlayAvailabilityChanged') {
       final bool isAvailable = map['isAvailable'] as bool? ?? false;
 
-      debugPrint('Controller-level event: airPlayAvailabilityChanged (isAvailable=$isAvailable)');
+      debugPrint(
+        'Controller-level event: airPlayAvailabilityChanged (isAvailable=$isAvailable)',
+      );
 
       // Update global AirPlay state manager
       final globalManager = AirPlayStateManager.instance;
@@ -1029,7 +1115,11 @@ class NativeVideoPlayerController {
 
       // Update global AirPlay state manager
       final globalManager = AirPlayStateManager.instance;
-      globalManager.updateConnection(isConnected, isConnecting: isConnecting, deviceName: deviceName);
+      globalManager.updateConnection(
+        isConnected,
+        isConnecting: isConnecting,
+        deviceName: deviceName,
+      );
 
       // Also update local state for backward compatibility
       _updateState(
@@ -1049,10 +1139,12 @@ class NativeVideoPlayerController {
   }
 
   /// Callback for AirPlay availability changes
-  final List<void Function(bool isAvailable)> _airPlayAvailabilityHandlers = <void Function(bool)>[];
+  final List<void Function(bool isAvailable)> _airPlayAvailabilityHandlers =
+      <void Function(bool)>[];
 
   /// Callback for AirPlay connection changes
-  final List<void Function(bool isConnected)> _airPlayConnectionHandlers = <void Function(bool)>[];
+  final List<void Function(bool isConnected)> _airPlayConnectionHandlers =
+      <void Function(bool)>[];
 
   /// Adds a listener for AirPlay availability changes
   void addAirPlayAvailabilityListener(void Function(bool) listener) {
@@ -1068,7 +1160,8 @@ class NativeVideoPlayerController {
   }
 
   /// Removes a listener for AirPlay availability changes
-  void removeAirPlayAvailabilityListener(void Function(bool) listener) => _airPlayAvailabilityHandlers.remove(listener);
+  void removeAirPlayAvailabilityListener(void Function(bool) listener) =>
+      _airPlayAvailabilityHandlers.remove(listener);
 
   /// Adds a listener for AirPlay connection changes (when video connects/disconnects to AirPlay)
   void addAirPlayConnectionListener(void Function(bool) listener) {
@@ -1084,7 +1177,8 @@ class NativeVideoPlayerController {
   }
 
   /// Removes a listener for AirPlay connection changes
-  void removeAirPlayConnectionListener(void Function(bool) listener) => _airPlayConnectionHandlers.remove(listener);
+  void removeAirPlayConnectionListener(void Function(bool) listener) =>
+      _airPlayConnectionHandlers.remove(listener);
 
   /// Determines if an event name is an activity event
   bool _isActivityEvent(String eventName) {
@@ -1115,9 +1209,17 @@ class NativeVideoPlayerController {
   /// - platformViewId: The ID of the platform view to subscribe to
   Future<void> _subscribeToEventChannelWithRetry(int platformViewId) async {
     const int maxRetries = 5;
-    const List<int> delays = [50, 100, 200, 400, 800]; // Exponential backoff in milliseconds
+    const List<int> delays = [
+      50,
+      100,
+      200,
+      400,
+      800,
+    ]; // Exponential backoff in milliseconds
 
-    final EventChannel eventChannel = EventChannel('native_video_player_$platformViewId');
+    final EventChannel eventChannel = EventChannel(
+      'native_video_player_$platformViewId',
+    );
 
     // Add a small initial delay to give native side more time to initialize
     // This reduces the chance of hitting the race condition
@@ -1153,7 +1255,11 @@ class NativeVideoPlayerController {
 
               if (shouldUpdate) {
                 // Update global AirPlay state with connecting state and device name
-                globalManager.updateConnection(isConnected, isConnecting: isConnecting, deviceName: deviceName);
+                globalManager.updateConnection(
+                  isConnected,
+                  isConnecting: isConnecting,
+                  deviceName: deviceName,
+                );
               }
 
               // Also update local state for backward compatibility
@@ -1182,9 +1288,12 @@ class NativeVideoPlayerController {
                       activityEvent.state == PlayerActivityState.initialized &&
                       _initializeCompleter != null &&
                       !_initializeCompleter!.isCompleted) ||
-                  (_methodChannel != null && _platformViewIds.isNotEmpty && !_isInitialized)) {
+                  (_methodChannel != null &&
+                      _platformViewIds.isNotEmpty &&
+                      !_isInitialized)) {
                 _isInitialized = true;
-                if (_initializeCompleter != null && !_initializeCompleter!.isCompleted) {
+                if (_initializeCompleter != null &&
+                    !_initializeCompleter!.isCompleted) {
                   _initializeCompleter!.complete();
                 }
                 _isInitializing = false;
@@ -1203,8 +1312,11 @@ class NativeVideoPlayerController {
               // Handle loaded events to get initial duration
               if (activityEvent.state == PlayerActivityState.loaded) {
                 if (activityEvent.data != null) {
-                  final int duration = (activityEvent.data!['duration'] as num?)?.toInt() ?? 0;
-                  _updateState(_state.copyWith(duration: Duration(milliseconds: duration)));
+                  final int duration =
+                      (activityEvent.data!['duration'] as num?)?.toInt() ?? 0;
+                  _updateState(
+                    _state.copyWith(duration: Duration(milliseconds: duration)),
+                  );
                 }
               }
 
@@ -1225,7 +1337,8 @@ class NativeVideoPlayerController {
                 // Check if this event is coming from Android for PiP preparation
                 // Android sends fullscreenChange event before entering PiP to hide app bar/FAB
                 final bool isFromAndroidPipPreparation =
-                    PlatformUtils.isAndroid && controlEvent.data?['fromAndroidPipPreparation'] == true;
+                    PlatformUtils.isAndroid &&
+                    controlEvent.data?['fromAndroidPipPreparation'] == true;
 
                 if (isFromAndroidPipPreparation) {
                   // Android is preparing for PiP - enter fullscreen
@@ -1254,16 +1367,27 @@ class NativeVideoPlayerController {
                 }
 
                 // Always update state for fullscreen changes
-                _updateState(_state.copyWith(isFullScreen: isFullscreen, controlState: controlEvent.state));
+                _updateState(
+                  _state.copyWith(
+                    isFullScreen: isFullscreen,
+                    controlState: controlEvent.state,
+                  ),
+                );
               }
 
               // Handle time update events
               if (controlEvent.state == PlayerControlState.timeUpdated) {
                 if (controlEvent.data != null) {
-                  final int position = (controlEvent.data!['position'] as num?)?.toInt() ?? 0;
-                  final int duration = (controlEvent.data!['duration'] as num?)?.toInt() ?? 0;
-                  final int bufferedPosition = (controlEvent.data!['bufferedPosition'] as num?)?.toInt() ?? 0;
-                  final bool isBuffering = (controlEvent.data!['isBuffering'] as bool?) ?? false;
+                  final int position =
+                      (controlEvent.data!['position'] as num?)?.toInt() ?? 0;
+                  final int duration =
+                      (controlEvent.data!['duration'] as num?)?.toInt() ?? 0;
+                  final int bufferedPosition =
+                      (controlEvent.data!['bufferedPosition'] as num?)
+                          ?.toInt() ??
+                      0;
+                  final bool isBuffering =
+                      (controlEvent.data!['isBuffering'] as bool?) ?? false;
 
                   // Handle buffering state with 400ms debounce
                   _handleBufferingStateChange(isBuffering);
@@ -1272,7 +1396,9 @@ class NativeVideoPlayerController {
                   // If we have a valid duration stored and the new duration is 0, keep the old duration
                   final Duration newDuration = duration > 0
                       ? Duration(milliseconds: duration)
-                      : (_state.duration != Duration.zero ? _state.duration : Duration.zero);
+                      : (_state.duration != Duration.zero
+                            ? _state.duration
+                            : Duration.zero);
 
                   // Update position, duration, and buffered position
                   // Don't update activityState here - it's handled by the debounced buffering logic
@@ -1280,7 +1406,9 @@ class NativeVideoPlayerController {
                     _state.copyWith(
                       currentPosition: Duration(milliseconds: position),
                       duration: newDuration,
-                      bufferedPosition: Duration(milliseconds: bufferedPosition),
+                      bufferedPosition: Duration(
+                        milliseconds: bufferedPosition,
+                      ),
                       controlState: controlEvent.state,
                     ),
                   );
@@ -1289,7 +1417,8 @@ class NativeVideoPlayerController {
 
               // Handle quality change events
               if (controlEvent.state == PlayerControlState.qualityChanged) {
-                if (controlEvent.data != null && controlEvent.data!['quality'] != null) {
+                if (controlEvent.data != null &&
+                    controlEvent.data!['quality'] != null) {
                   final qualityMap = controlEvent.data!['quality'] as Map;
                   final quality = NativeVideoPlayerQuality.fromMap(qualityMap);
                   if (!_qualityChangedController.isClosed) {
@@ -1300,8 +1429,10 @@ class NativeVideoPlayerController {
 
               // Handle speed change events
               if (controlEvent.state == PlayerControlState.speedChanged) {
-                if (controlEvent.data != null && controlEvent.data!['speed'] != null) {
-                  final double speed = (controlEvent.data!['speed'] as num).toDouble();
+                if (controlEvent.data != null &&
+                    controlEvent.data!['speed'] != null) {
+                  final double speed = (controlEvent.data!['speed'] as num)
+                      .toDouble();
                   _updateState(_state.copyWith(speed: speed));
                 }
               }
@@ -1309,7 +1440,8 @@ class NativeVideoPlayerController {
               // Handle PiP state events
               if (controlEvent.state == PlayerControlState.pipStarted ||
                   controlEvent.state == PlayerControlState.pipStopped) {
-                final bool isPipEnabled = controlEvent.state == PlayerControlState.pipStarted;
+                final bool isPipEnabled =
+                    controlEvent.state == PlayerControlState.pipStarted;
 
                 // When exiting PiP, restore the custom overlay if it was hidden
                 if (!isPipEnabled && _hideOverlayForPip) {
@@ -1325,17 +1457,22 @@ class NativeVideoPlayerController {
               }
 
               // Handle PiP availability change events
-              if (controlEvent.state == PlayerControlState.pipAvailabilityChanged) {
-                if (controlEvent.data != null && controlEvent.data!['isAvailable'] != null) {
-                  final bool isAvailable = controlEvent.data!['isAvailable'] as bool;
+              if (controlEvent.state ==
+                  PlayerControlState.pipAvailabilityChanged) {
+                if (controlEvent.data != null &&
+                    controlEvent.data!['isAvailable'] != null) {
+                  final bool isAvailable =
+                      controlEvent.data!['isAvailable'] as bool;
                   _updateState(_state.copyWith(isPipAvailable: isAvailable));
                 }
               }
 
               // Handle AirPlay connection state events
               if (controlEvent.state == PlayerControlState.airPlayConnected ||
-                  controlEvent.state == PlayerControlState.airPlayDisconnected) {
-                final bool isConnected = controlEvent.state == PlayerControlState.airPlayConnected;
+                  controlEvent.state ==
+                      PlayerControlState.airPlayDisconnected) {
+                final bool isConnected =
+                    controlEvent.state == PlayerControlState.airPlayConnected;
                 _updateState(_state.copyWith(isAirplayConnected: isConnected));
 
                 // When AirPlay connects, the native player might reset duration temporarily
@@ -1381,7 +1518,9 @@ class NativeVideoPlayerController {
         } else {
           // All retries exhausted, log warning but don't crash
           if (kDebugMode) {
-            debugPrint('EventChannel subscription failed after $maxRetries attempts. Some events may be lost.');
+            debugPrint(
+              'EventChannel subscription failed after $maxRetries attempts. Some events may be lost.',
+            );
           }
           // Still allow the controller to function, just without event stream
         }
@@ -1406,7 +1545,9 @@ class NativeVideoPlayerController {
   ///
   /// **Returns:**
   /// A Future that completes when the cancellation is attempted (or immediately if subscription is null)
-  Future<void> _safeCancelSubscription(StreamSubscription<dynamic>? subscription) async {
+  Future<void> _safeCancelSubscription(
+    StreamSubscription<dynamic>? subscription,
+  ) async {
     if (subscription == null) {
       return;
     }
@@ -1439,7 +1580,8 @@ class NativeVideoPlayerController {
     _eventSubscriptions.remove(platformViewId);
 
     // If the disposed view was the primary view, switch to another active view
-    if (_primaryPlatformViewId == platformViewId && _platformViewIds.isNotEmpty) {
+    if (_primaryPlatformViewId == platformViewId &&
+        _platformViewIds.isNotEmpty) {
       // Use the most recent remaining view
       final newPrimaryViewId = _platformViewIds.last;
       _updateMethodChannel(newPrimaryViewId);
@@ -1465,19 +1607,26 @@ class NativeVideoPlayerController {
   /// A Future that completes when the video is loaded
   ///
   /// **Note:** For better clarity, consider using [loadUrl] for remote videos or [loadFile] for local files.
-  Future<void> load({required String url, Map<String, String>? headers, Map<String, dynamic>? drmConfig}) async {
+  Future<void> load({
+    required String url,
+    Map<String, String>? headers,
+    Map<String, dynamic>? drmConfig,
+  }) async {
     if (_state.activityState.isLoaded) {
       return;
     }
 
     // Check if initialized - if method channel exists and platform view is created,
     // consider it initialized even if _isInitialized flag hasn't been set yet
-    if (!_isInitialized && (_methodChannel == null || _platformViewIds.isEmpty)) {
+    if (!_isInitialized &&
+        (_methodChannel == null || _platformViewIds.isEmpty)) {
       throw Exception('Controller not initialized. Call initialize() first.');
     }
 
     if (_methodChannel == null) {
-      throw Exception('Method channel not initialized. Platform view not created.');
+      throw Exception(
+        'Method channel not initialized. Platform view not created.',
+      );
     }
 
     _url = url;
@@ -1494,7 +1643,12 @@ class NativeVideoPlayerController {
       // Fetch available qualities after loading
       final qualities = await _methodChannel!.getAvailableQualities();
 
-      _updateState(_state.copyWith(qualities: qualities, activityState: PlayerActivityState.loaded));
+      _updateState(
+        _state.copyWith(
+          qualities: qualities,
+          activityState: PlayerActivityState.loaded,
+        ),
+      );
 
       // Notify control listeners about available qualities
       if (qualities.isNotEmpty) {
@@ -1555,7 +1709,11 @@ class NativeVideoPlayerController {
   ///   }
   /// );
   /// ```
-  Future<void> loadUrl({required String url, Map<String, String>? headers, Map<String, dynamic>? drmConfig}) async {
+  Future<void> loadUrl({
+    required String url,
+    Map<String, String>? headers,
+    Map<String, dynamic>? drmConfig,
+  }) async {
     return load(url: url, headers: headers, drmConfig: drmConfig);
   }
 
@@ -1626,7 +1784,8 @@ class NativeVideoPlayerController {
   }
 
   /// Gets available subtitle tracks
-  Future<List<NativeVideoPlayerSubtitleTrack>> getAvailableSubtitleTracks() async {
+  Future<List<NativeVideoPlayerSubtitleTrack>>
+  getAvailableSubtitleTracks() async {
     final tracks = await _methodChannel?.getAvailableSubtitleTracks();
     return tracks ?? <NativeVideoPlayerSubtitleTrack>[];
   }
@@ -1674,7 +1833,9 @@ class NativeVideoPlayerController {
         if (quality.width != null && quality.height != null) {
           final width = quality.width!;
           final height = quality.height!;
-          debugPrint('Using video aspect ratio for PiP: $width:$height (${width / height})');
+          debugPrint(
+            'Using video aspect ratio for PiP: $width:$height (${width / height})',
+          );
           return Rational(width, height);
         }
       }
@@ -1688,7 +1849,10 @@ class NativeVideoPlayerController {
   /// Enables automatic PiP on Android when app goes to background
   /// Only enabled when video is in fullscreen
   Future<void> _enableAutomaticPiP() async {
-    if (!kIsWeb && Platform.isAndroid && canStartPictureInPictureAutomatically && _state.isFullScreen) {
+    if (!kIsWeb &&
+        Platform.isAndroid &&
+        canStartPictureInPictureAutomatically &&
+        _state.isFullScreen) {
       try {
         await _floating.enable(OnLeavePiP(aspectRatio: _getPiPAspectRatio()));
         debugPrint('Automatic PiP enabled (fullscreen mode)');
@@ -1717,7 +1881,9 @@ class NativeVideoPlayerController {
         // Give overlay time to hide
         await Future.delayed(const Duration(milliseconds: 200));
 
-        final status = await _floating.enable(ImmediatePiP(aspectRatio: _getPiPAspectRatio()));
+        final status = await _floating.enable(
+          ImmediatePiP(aspectRatio: _getPiPAspectRatio()),
+        );
         return status == PiPStatus.enabled;
       } catch (e) {
         debugPrint('Error entering PiP: $e');
@@ -1794,7 +1960,9 @@ class NativeVideoPlayerController {
       if (!kIsWeb && Platform.isAndroid) {
         // Only enable if in fullscreen
         if (!_state.isFullScreen) {
-          debugPrint('Cannot enable automatic PiP on Android: video must be in fullscreen');
+          debugPrint(
+            'Cannot enable automatic PiP on Android: video must be in fullscreen',
+          );
           return false;
         }
         await _enableAutomaticPiP();
@@ -1943,7 +2111,10 @@ class NativeVideoPlayerController {
     await FullscreenManager.showFullscreenDialog(
       context: context,
       builder: (dialogContext) {
-        return FullscreenVideoPlayer(controller: this, overlayBuilder: _overlayBuilder);
+        return FullscreenVideoPlayer(
+          controller: this,
+          overlayBuilder: _overlayBuilder,
+        );
       },
       lockToLandscape: lockToLandscape,
       onExit: () {
@@ -2212,9 +2383,10 @@ class NativeVideoPlayerController {
 
     // Teardown controller-level event channel on native side
     try {
-      const MethodChannel(
-        'native_video_player',
-      ).invokeMethod<void>('teardownControllerEventChannel', {'controllerId': id});
+      const MethodChannel('native_video_player').invokeMethod<void>(
+        'teardownControllerEventChannel',
+        {'controllerId': id},
+      );
     } catch (e) {
       debugPrint('Failed to teardown controller event channel: $e');
     }
@@ -2253,7 +2425,10 @@ class NativeVideoPlayerController {
 
   /// Internal method to emit pipStarted event (hides overlay before PiP)
   void _emitPipStartedEvent() {
-    final controlEvent = PlayerControlEvent(state: PlayerControlState.pipStarted, data: <String, dynamic>{});
+    final controlEvent = PlayerControlEvent(
+      state: PlayerControlState.pipStarted,
+      data: <String, dynamic>{},
+    );
     for (final handler in _controlEventHandlers) {
       handler(controlEvent);
     }

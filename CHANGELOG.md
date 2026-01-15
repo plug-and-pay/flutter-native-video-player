@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2026-01-15
+
+### Improved
+- **Initialization Logic Enhancement**: Enhanced initialization logic in NativeVideoPlayerController
+  - Updated the initialization check to consider the presence of the method channel and platform view IDs, allowing for a more flexible initialization process
+  - Improved the completion handling of the initialization completer to ensure it is only completed if not already done, preventing potential issues during the initialization phase
+
 ## [0.4.8] - 2026-01-15
 
 ### Improved
