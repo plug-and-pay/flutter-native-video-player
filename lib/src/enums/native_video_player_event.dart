@@ -67,6 +67,8 @@ class PlayerActivityEvent {
         return PlayerActivityState.stopped;
       case 'error':
         return PlayerActivityState.error;
+      case 'idle':
+        return PlayerActivityState.idle;
       default:
         return PlayerActivityState.idle;
     }

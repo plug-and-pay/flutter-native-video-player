@@ -286,25 +286,31 @@ class VideoPlayerView(
                 // Send loaded event first if the player has content loaded
                 // Check duration >= 0 because C.TIME_UNSET is a large negative value
                 if (player.playbackState != ExoPlayer.STATE_IDLE && player.duration >= 0) {
+                    Log.d(TAG, "Sending loaded event with duration: ${player.duration}")
                     eventHandler.sendEvent("loaded", mapOf(
                         "duration" to player.duration.toInt()
-                    ))
+                    ), synchronous = true)
                 }
 
                 // Send buffering event if currently buffering
                 if (player.playbackState == Player.STATE_BUFFERING) {
-                    eventHandler.sendEvent("buffering")
+                    Log.d(TAG, "Sending buffering event")
+                    eventHandler.sendEvent("buffering", synchronous = true)
                 }
                 // Then send the current playback state, but only if not buffering
                 // During initial buffering, isPlaying might be true (playWhenReady=true)
                 // but the video hasn't actually started playing yet
                 else if (player.isPlaying) {
-                    eventHandler.sendEvent("play")
+                    Log.d(TAG, "Sending play event")
+                    eventHandler.sendEvent("play", synchronous = true)
                 } else if (player.playbackState != Player.STATE_IDLE) {
-                    eventHandler.sendEvent("pause")
+                    Log.d(TAG, "Sending pause event")
+                    eventHandler.sendEvent("pause", synchronous = true)
                 } else {
                     // Player is in IDLE state - send idle event to ensure UI shows correct state
-                    eventHandler.sendEvent("idle")
+                    // Use synchronous=true to ensure this is the first event received
+                    Log.d(TAG, "Player is in IDLE state, sending idle event (synchronous)")
+                    eventHandler.sendEvent("idle", synchronous = true)
                 }
             }
         }
