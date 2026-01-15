@@ -64,6 +64,19 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         channel.setMethodCallHandler { call, result ->
             Log.d(TAG, "Plugin received method call: ${call.method}")
 
+            // Handle controller-level methods that don't require a viewId
+            when (call.method) {
+                "teardownControllerEventChannel" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val controllerId = args?.get("controllerId") as? Int
+                    Log.d(TAG, "teardownControllerEventChannel called for controller: $controllerId")
+                    // On Android, controller-level EventChannels are managed by Flutter
+                    // This is a no-op on Android, but we handle it to prevent errors
+                    result.success(null)
+                    return@setMethodCallHandler
+                }
+            }
+
             val args = call.arguments as? Map<*, *>
             val viewId = args?.get("viewId") as? Number
             val view = viewId?.toLong()?.let { registeredViews[it] }

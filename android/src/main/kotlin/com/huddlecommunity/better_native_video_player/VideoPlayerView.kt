@@ -710,6 +710,14 @@ class VideoPlayerView(
         observer.release()
 
         // Clean up channels
+        // First call onCancel to properly clean up the event sink
+        // This prevents MissingPluginException when Flutter tries to cancel the subscription
+        try {
+            eventHandler.onCancel(null)
+        } catch (e: Exception) {
+            Log.w(TAG, "Error calling onCancel on event handler: ${e.message}")
+        }
+        // Then set the stream handler to null
         eventChannel.setStreamHandler(null)
 
         // Clear media info
