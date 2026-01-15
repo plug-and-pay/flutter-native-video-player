@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2026-01-15
+
+### Improved
+- **Android VideoPlayerObserver Refactoring**: Refactored VideoPlayerObserver to avoid redundant loading events
+  - Updated comments to clarify that the "loaded" event is already sent by `onPlaybackStateChanged` when the player reaches `STATE_READY`
+  - Eliminates duplicate event emissions for better event handling efficiency
+  - Improved code clarity and documentation
+
 ## [0.4.7] - 2026-01-14
 
 ### Added
