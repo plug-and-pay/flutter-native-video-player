@@ -1118,10 +1118,16 @@ class NativeVideoPlayerController {
 
     final EventChannel eventChannel = EventChannel('native_video_player_$platformViewId');
 
+    // Add a small initial delay to give native side more time to initialize
+    // This reduces the chance of hitting the race condition
+    await Future.delayed(const Duration(milliseconds: 10));
+
     for (int attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        // Try to subscribe to the event channel
-        _eventSubscriptions[platformViewId] = eventChannel.receiveBroadcastStream().listen(
+        // Try to create the stream and subscribe to the event channel
+        // The exception can be thrown during receiveBroadcastStream() call
+        final stream = eventChannel.receiveBroadcastStream();
+        _eventSubscriptions[platformViewId] = stream.listen(
           (dynamic eventMap) async {
             final map = eventMap as Map<dynamic, dynamic>;
             final String eventName = map['event'] as String;

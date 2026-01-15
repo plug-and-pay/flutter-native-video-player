@@ -107,13 +107,15 @@ class VideoPlayerMethodHandler(
         Log.d(TAG, "Loading video: $url (autoPlay: $autoPlay)")
 
         // Only send "loading" event if player is actually starting to load new media
-        // Don't send if player is already in IDLE state with no media (duration < 0)
+        // Don't send if player is already in IDLE state with no media loaded
         // This prevents incorrect "loading" state when player is already idle
+        // Check: STATE_IDLE means no media is loaded, and duration < 0 means C.TIME_UNSET (no duration)
         val isPlayerIdleWithNoMedia = player.playbackState == Player.STATE_IDLE && player.duration < 0
-        if (!isPlayerIdleWithNoMedia) {
-            eventHandler.sendEvent("loading")
+        if (isPlayerIdleWithNoMedia) {
+            Log.d(TAG, "Player is already idle with no media (playbackState=${player.playbackState}, duration=${player.duration}), skipping loading event")
         } else {
-            Log.d(TAG, "Player is already idle with no media, skipping loading event")
+            // Player has media or is in a different state, send loading event
+            eventHandler.sendEvent("loading")
         }
 
         // Determine if this is a local file or remote URL
