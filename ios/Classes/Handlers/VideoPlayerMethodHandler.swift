@@ -766,6 +766,8 @@ extension VideoPlayerView {
         
         // Dismiss the fullscreen player view controller if it exists
         if let fullscreenVC = fullscreenPlayerViewController {
+            // Release the video layer from the fullscreen VC before dismiss so the embedded view can show it again
+            fullscreenVC.player = nil
             fullscreenVC.dismiss(animated: true) {
                 // Clear the reference
                 self.fullscreenPlayerViewController = nil
@@ -773,6 +775,12 @@ extension VideoPlayerView {
                 // Resume playback if it was playing before
                 if wasPlaying {
                     self.player?.play()
+                }
+
+                // Re-bind the player to the embedded view on the next run loop after the transition has fully finished
+                DispatchQueue.main.async {
+                    self.playerViewController.player = nil
+                    self.playerViewController.player = self.player
                 }
 
                 self.sendEvent("fullscreenChange", data: ["isFullscreen": false])

@@ -27,6 +27,7 @@ class NativeVideoPlayer extends StatefulWidget {
     required this.controller,
     this.overlayBuilder,
     this.overlayFadeDuration = const Duration(milliseconds: 300),
+    this.isFullscreenContext = false,
     super.key,
   });
 
@@ -44,6 +45,11 @@ class NativeVideoPlayer extends StatefulWidget {
   /// Duration for overlay fade in/out animations.
   /// Defaults to 300ms.
   final Duration overlayFadeDuration;
+
+  /// When true, this instance is the fullscreen host (Dart fullscreen dialog).
+  /// Passed to the platform view as [isDartFullscreen] so iOS can use a dedicated
+  /// AVPlayerViewController and avoid moving the shared view away from the inline slot.
+  final bool isFullscreenContext;
 
   @override
   State<NativeVideoPlayer> createState() => _NativeVideoPlayerState();
@@ -203,14 +209,24 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     await widget.controller.onPlatformViewCreated(id, context);
   }
 
+  Map<String, dynamic> _getCreationParams() {
+    final Map<String, dynamic> params =
+        Map<String, dynamic>.from(widget.controller.creationParams);
+    if (widget.isFullscreenContext) {
+      params['isDartFullscreen'] = true;
+    }
+    return params;
+  }
+
   Widget _buildPlatformView() {
     const String viewType = 'native_video_player';
+    final Map<String, dynamic> creationParams = _getCreationParams();
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return UiKitView(
         viewType: viewType,
         onPlatformViewCreated: _onPlatformViewCreated,
-        creationParams: widget.controller.creationParams,
+        creationParams: creationParams,
         creationParamsCodec: const StandardMessageCodec(),
         gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
           Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
@@ -238,7 +254,7 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
                 id: params.id,
                 viewType: viewType,
                 layoutDirection: TextDirection.ltr,
-                creationParams: widget.controller.creationParams,
+                creationParams: creationParams,
                 creationParamsCodec: const StandardMessageCodec(),
                 onFocus: () {
                   params.onFocusChanged(true);

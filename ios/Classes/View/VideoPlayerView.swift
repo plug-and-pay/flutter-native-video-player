@@ -68,6 +68,10 @@ import QuartzCore
     // Separate player view controller for fullscreen (prevents removing embedded view)
     var fullscreenPlayerViewController: AVPlayerViewController?
 
+    // When true, this platform view is the Dart fullscreen host and uses its own AVPlayerViewController
+    // (same AVPlayer) so the inline view never loses its shared view. Cleared in deinit.
+    var isDartFullscreenView: Bool = false
+
     // Store media info for Now Playing
     var currentMediaInfo: [String: Any]?
     var timeObserver: Any?
@@ -110,7 +114,10 @@ import QuartzCore
         )
 
         // Extract controller ID from args to get shared player and view controller
-        if let args = args as? [String: Any],
+        let argsDict = args as? [String: Any]
+        let isDartFullscreen = argsDict?["isDartFullscreen"] as? Bool ?? false
+
+        if let args = argsDict,
            let controllerIdValue = args["controllerId"] as? Int {
             controllerId = controllerIdValue
 
@@ -121,13 +128,23 @@ import QuartzCore
                 SharedPlayerManager.shared.getOrCreatePlayerAndViewController(for: controllerIdValue)
 
             player = sharedPlayer
-            playerViewController = sharedViewController
             isSharedPlayer = alreadyExisted
 
-            if alreadyExisted {
-                print("✅ Using existing shared player AND view controller for controller ID: \(controllerIdValue)")
+            if isDartFullscreen {
+                // Dart fullscreen host: use a dedicated AVPlayerViewController (same player) so the inline
+                // view never loses its shared view when this platform view is created or disposed.
+                let dedicatedVC = AVPlayerViewController()
+                dedicatedVC.player = sharedPlayer
+                playerViewController = dedicatedVC
+                isDartFullscreenView = true
+                print("✅ Created dedicated AVPlayerViewController for Dart fullscreen (controller ID: \(controllerIdValue))")
             } else {
-                print("✅ Created new shared player AND view controller for controller ID: \(controllerIdValue)")
+                playerViewController = sharedViewController
+                if alreadyExisted {
+                    print("✅ Using existing shared player AND view controller for controller ID: \(controllerIdValue)")
+                } else {
+                    print("✅ Created new shared player AND view controller for controller ID: \(controllerIdValue)")
+                }
             }
         } else {
             // Fallback: create new instances if no controller ID provided
@@ -806,12 +823,21 @@ import QuartzCore
             }
         }
 
+        // For Dart fullscreen platform view, release the dedicated VC's player so it tears down.
+        // The shared player and shared VC (inline view) are left untouched.
+        if isDartFullscreenView {
+            playerViewController.player = nil
+            print("✅ Dart fullscreen platform view disposed - released dedicated AVPlayerViewController")
+        }
+
         // CRITICAL: For shared controllers, player and playerViewController are NOT disposed here
         // They're managed by SharedPlayerManager and persist across platform view disposal
         // This ensures PiP delegate callbacks continue to work when navigating between screens
         // Resources will be disposed when controller.dispose() is called from Dart
-        if controllerId != nil {
+        if controllerId != nil && !isDartFullscreenView {
             print("✅ Platform view disposed but player AND view controller kept alive for controller ID: \(String(describing: controllerId))")
+        } else if controllerId != nil && isDartFullscreenView {
+            print("✅ Dart fullscreen platform view disposed - shared player/VC kept alive for controller ID: \(String(describing: controllerId))")
         } else {
             print("Platform view disposed for non-shared player")
         }

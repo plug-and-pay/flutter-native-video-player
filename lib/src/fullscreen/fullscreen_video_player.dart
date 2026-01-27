@@ -68,6 +68,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
         child: NativeVideoPlayer(
           controller: widget.controller,
           overlayBuilder: widget.overlayBuilder,
+          isFullscreenContext: true,
         ),
       ),
     );

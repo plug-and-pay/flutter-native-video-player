@@ -205,11 +205,19 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
         coordinator.animate(alongsideTransition: nil) { _ in
             // Check if this is the fullscreen view controller we're tracking
             if playerViewController == self.fullscreenPlayerViewController {
+                // Release the video layer from the fullscreen VC as the presentation is ending
+                playerViewController.player = nil
                 self.fullscreenPlayerViewController = nil
                 
                 // Resume playback if it was playing before
                 if wasPlaying {
                     self.player?.play()
+                }
+
+                // Re-bind the player to the embedded view on the next run loop after the transition has fully finished
+                DispatchQueue.main.async {
+                    self.playerViewController.player = nil
+                    self.playerViewController.player = self.player
                 }
                 
                 self.sendEvent("fullscreenChange", data: ["isFullscreen": false])
