@@ -210,8 +210,9 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
   }
 
   Map<String, dynamic> _getCreationParams() {
-    final Map<String, dynamic> params =
-        Map<String, dynamic>.from(widget.controller.creationParams);
+    final Map<String, dynamic> params = Map<String, dynamic>.from(
+      widget.controller.creationParams,
+    );
     if (widget.isFullscreenContext) {
       params['isDartFullscreen'] = true;
     }
