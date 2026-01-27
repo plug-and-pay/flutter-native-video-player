@@ -1,3 +1,4 @@
+import 'package:dismissible_page/dismissible_page.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/native_video_player_controller.dart';
@@ -62,7 +63,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final content = Scaffold(
       backgroundColor: widget.backgroundColor,
       body: Center(
         child: NativeVideoPlayer(
@@ -72,5 +73,15 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
         ),
       ),
     );
+    if (widget.overlayBuilder != null) {
+      return DismissiblePage(
+        onDismissed: _closeFullscreen,
+        direction: DismissiblePageDismissDirection.down,
+        backgroundColor: widget.backgroundColor,
+        isFullScreen: true,
+        child: content,
+      );
+    }
+    return content;
   }
 }
