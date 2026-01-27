@@ -253,7 +253,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  better_native_video_player: ^0.3.7
+  better_native_video_player: ^0.4.10
 ```
 
 Then run:
