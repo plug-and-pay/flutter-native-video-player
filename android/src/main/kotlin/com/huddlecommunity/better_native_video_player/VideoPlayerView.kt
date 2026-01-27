@@ -194,6 +194,18 @@ class VideoPlayerView(
             ))
         }
 
+        // For shared players, also reconnect when this view is attached to a window.
+        // Surface may not be ready in init; attaching ensures we rebind once the view is in the hierarchy.
+        if (isSharedPlayer) {
+            containerView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) {
+                    containerView.removeOnAttachStateChangeListener(this)
+                    reconnectSurface()
+                }
+                override fun onViewDetachedFromWindow(v: View) {}
+            })
+        }
+
         // Set up fullscreen button listener after PlayerView is configured
         playerView.post {
             playerView.setFullscreenButtonClickListener { enteringFullScreen ->
@@ -335,6 +347,11 @@ class VideoPlayerView(
             "setShowNativeControls" -> {
                 val show = call.argument<Boolean>("show") ?: true
                 playerView.useController = show
+                result.success(null)
+            }
+            "ensureSurfaceConnected" -> {
+                // Called when reconnecting after all platform views were disposed (list→detail→back).
+                reconnectSurface()
                 result.success(null)
             }
             else -> {

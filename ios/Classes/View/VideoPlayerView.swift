@@ -139,10 +139,17 @@ import QuartzCore
                 isDartFullscreenView = true
                 print("✅ Created dedicated AVPlayerViewController for Dart fullscreen (controller ID: \(controllerIdValue))")
             } else {
-                playerViewController = sharedViewController
                 if alreadyExisted {
-                    print("✅ Using existing shared player AND view controller for controller ID: \(controllerIdValue)")
+                    // Second or later platform view for this controller (e.g. detail screen).
+                    // Use a dedicated AVPlayerViewController with the shared player so this
+                    // view has its own layer; the shared VC stays in SharedPlayerManager for PiP.
+                    // This avoids black screen when navigating list↔detail (one UIView per slot).
+                    let displayVC = AVPlayerViewController()
+                    displayVC.player = sharedPlayer
+                    playerViewController = displayVC
+                    print("✅ Created dedicated AVPlayerViewController for shared controller (controller ID: \(controllerIdValue)) - avoids black screen when navigating list↔detail")
                 } else {
+                    playerViewController = sharedViewController
                     print("✅ Created new shared player AND view controller for controller ID: \(controllerIdValue)")
                 }
             }
@@ -404,6 +411,9 @@ import QuartzCore
             handleDisableAutomaticInlinePip(result: result)
         case "setShowNativeControls":
             handleSetShowNativeControls(call: call, result: result)
+        case "ensureSurfaceConnected":
+            // No-op on iOS; each platform view uses its own AVPlayerViewController when shared.
+            result(nil)
         case "isAirPlayAvailable":
             handleIsAirPlayAvailable(result: result)
         case "showAirPlayPicker":

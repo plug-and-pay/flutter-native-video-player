@@ -535,6 +535,8 @@ void dispose() {
 | Temporarily hiding video player | `releaseResources()` | Player can be quickly resumed without reloading video |
 | App shutdown or logout | `dispose()` | Ensures complete cleanup |
 
+**List and detail screens (same controller):** Prefer one `NativeVideoPlayerController` instance that you pass from the list screen to the detail screen. Both can show `NativeVideoPlayer(controller: sameController)`; the plugin supports multiple simultaneous platform views per controller and keeps playback in sync. If the list unmounts the player when not visible (e.g. to save memory), call `controller.releaseResources()` in the list’s `dispose` or visibility callback and **do not** call `dispose()` on the controller so the detail screen can keep using it. When the user navigates back, the list can build `NativeVideoPlayer(controller: sameController)` again; the plugin reconnects the native surface so the inline video shows correctly instead of a black screen.
+
 **Example: Shared player across screens**
 
 ```dart

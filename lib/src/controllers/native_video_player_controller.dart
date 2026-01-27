@@ -863,6 +863,11 @@ class NativeVideoPlayerController {
 
     // If we're reconnecting after all platform views were disposed, refresh availability flags
     if (wasDisconnected) {
+      // Ask native to reconnect surface for this view (Android reconnects ExoPlayer surface;
+      // iOS no-ops). Ensures video shows when returning from detail to inline (list→detail→back).
+      if (_methodChannel != null) {
+        await _methodChannel!.ensureSurfaceConnected();
+      }
       // Re-fetch availability flags from native side FIRST (wait for it to complete)
       // This ensures the state is up-to-date before we emit it
       await _refreshAvailabilityFlags();
