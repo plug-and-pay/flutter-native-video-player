@@ -14,6 +14,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -127,7 +128,9 @@ class VideoPlayerView(
         } else {
             Log.d(TAG, "No controller ID provided, creating new player")
             isSharedPlayer = false
-            ExoPlayer.Builder(context).build()
+            ExoPlayer.Builder(context)
+                .setAudioAttributes(AudioAttributes.DEFAULT, false)
+                .build()
         }
 
         // Set repeat mode for looping

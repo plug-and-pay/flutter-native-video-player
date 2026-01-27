@@ -219,9 +219,6 @@ extension VideoPlayerView {
         // --- Set up periodic time observer for Now Playing elapsed time updates ---
         setupPeriodicTimeObserver()
 
-        // --- Set up audio session for lock screen playback ---
-        prepareAudioSession()
-
         // --- Listen for end of playback ---
         NotificationCenter.default.addObserver(
             self,

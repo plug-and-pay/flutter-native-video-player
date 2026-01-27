@@ -3,6 +3,7 @@ package com.huddlecommunity.better_native_video_player.manager
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.ExoPlayer
 import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler
@@ -34,7 +35,9 @@ object SharedPlayerManager {
     fun getOrCreatePlayer(context: Context, controllerId: Int): Pair<ExoPlayer, Boolean> {
         val alreadyExisted = players.containsKey(controllerId)
         val player = players.getOrPut(controllerId) {
-            ExoPlayer.Builder(context).build()
+            ExoPlayer.Builder(context)
+                .setAudioAttributes(AudioAttributes.DEFAULT, false)
+                .build()
         }
         return Pair(player, alreadyExisted)
     }

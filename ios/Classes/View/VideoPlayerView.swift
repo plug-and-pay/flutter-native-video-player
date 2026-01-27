@@ -254,9 +254,6 @@ import QuartzCore
             }
         }
 
-        // Background audio setup - required for automatic PiP and lock screen playback
-        prepareAudioSession()
-
         print("Setting up method channel: \(channelName)")
         // Set up method call handler
         print("Setting method handler for channel: \(channelName)")
