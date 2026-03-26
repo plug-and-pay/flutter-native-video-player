@@ -224,6 +224,20 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
             }
         }
     }
+    
+    @available(iOS 12.0, *)
+    public func playerViewController(
+        _ playerViewController: AVPlayerViewController,
+        willBeginFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        coordinator.animate(alongsideTransition: nil) { context in
+            if !context.isCancelled {
+                // Fullscreen entered
+                self.fullscreenPlayerViewController = playerViewController
+                self.sendEvent("fullscreenChange", data: ["isFullscreen": true])
+            }
+        }
+    }
 }
 
 // MARK: - AVPictureInPictureControllerDelegate
