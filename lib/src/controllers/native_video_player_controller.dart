@@ -65,8 +65,11 @@ class NativeVideoPlayerController {
       WidgetsBinding.instance.addObserver(_AppLifecycleObserver(this));
     }
 
-    // Set up controller-level event channel for persistent events (PiP, AirPlay)
-    _setupControllerEventChannel();
+    // Set up controller-level event channel for persistent events (PiP, AirPlay).
+    // This channel is iOS-only — Android has no native StreamHandler for it.
+    if (!kIsWeb && !Platform.isAndroid) {
+      _setupControllerEventChannel();
+    }
   }
 
   /// Initialize the controller and wait for the platform view to be created
@@ -1039,36 +1042,15 @@ class NativeVideoPlayerController {
     _controllerEventChannel = EventChannel(
       'native_video_player_controller_$id',
     );
-    try {
-      _controllerEventSubscription = _controllerEventChannel!
-          .receiveBroadcastStream()
-          .handleError((dynamic error) {
-            // Silently ignore MissingPluginException — on Android the native
-            // StreamHandler for this channel is not implemented, so both
-            // 'listen' (on subscribe) and 'cancel' (on dispose) throw.
-            // This is harmless: PiP/AirPlay events on this channel are iOS-only.
-            if (error is! MissingPluginException) {
-              debugPrint('Controller event channel error: $error');
-            }
-          })
-          .listen(
-            _handleControllerEvent,
-            onError: (dynamic error) {
-              if (error is! MissingPluginException) {
-                debugPrint('Controller event channel error: $error');
-              }
-            },
-            cancelOnError: false,
-          );
-    } on MissingPluginException {
-      // Android: native StreamHandler not registered yet — safe to ignore.
-      // The controller-level channel is iOS-only (PiP/AirPlay events).
-      debugPrint(
-        'native_video_player_controller_$id: StreamHandler not available on this platform — skipping.',
-      );
-    } catch (e) {
-      debugPrint('Controller event channel setup error: $e');
-    }
+    _controllerEventSubscription = _controllerEventChannel!
+        .receiveBroadcastStream()
+        .listen(
+          _handleControllerEvent,
+          onError: (dynamic error) {
+            debugPrint('Controller event channel error: $error');
+          },
+          cancelOnError: false,
+        );
   }
 
   /// Handles events from the controller-level event channel
