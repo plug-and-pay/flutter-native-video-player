@@ -16,7 +16,7 @@ class ControllerEventChannelHandler: NSObject, FlutterStreamHandler {
     /// Called when Flutter starts listening to the event channel
     /// Registers the event sink with SharedPlayerManager for persistent event delivery
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-        print("📡 [ControllerEventChannelHandler] onListen called for controller \(controllerId)")
+        npLog("📡 [ControllerEventChannelHandler] onListen called for controller \(controllerId)")
         SharedPlayerManager.shared.registerControllerEventSink(events, for: controllerId)
         return nil
     }
@@ -24,7 +24,7 @@ class ControllerEventChannelHandler: NSObject, FlutterStreamHandler {
     /// Called when Flutter stops listening to the event channel
     /// Unregisters the event sink from SharedPlayerManager
     func onCancel(withArguments arguments: Any?) -> FlutterError? {
-        print("🔌 [ControllerEventChannelHandler] onCancel called for controller \(controllerId)")
+        npLog("🔌 [ControllerEventChannelHandler] onCancel called for controller \(controllerId)")
         SharedPlayerManager.shared.unregisterControllerEventSink(for: controllerId)
         return nil
     }

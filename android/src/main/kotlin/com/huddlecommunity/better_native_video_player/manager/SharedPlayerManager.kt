@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.ExoPlayer
 import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
@@ -74,7 +73,7 @@ object SharedPlayerManager {
     fun registerView(controllerId: Int, viewId: Long, reconnectCallback: () -> Unit) {
         val views = activeViews.getOrPut(controllerId) { mutableMapOf() }
         views[viewId] = reconnectCallback
-        Log.d(TAG, "Registered view $viewId for controller $controllerId (total views: ${views.size})")
+        NpLog.d(TAG, "Registered view $viewId for controller $controllerId (total views: ${views.size})")
     }
 
     /**
@@ -84,14 +83,14 @@ object SharedPlayerManager {
         val views = activeViews[controllerId]
         if (views != null) {
             views.remove(viewId)
-            Log.d(TAG, "Unregistered view $viewId for controller $controllerId (remaining views: ${views.size})")
+            NpLog.d(TAG, "Unregistered view $viewId for controller $controllerId (remaining views: ${views.size})")
 
             // Notify all remaining views to reconnect their surfaces
             views.values.forEach { callback ->
                 try {
                     callback()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error calling reconnect callback: ${e.message}", e)
+                    NpLog.e(TAG, "Error calling reconnect callback: ${e.message}", e)
                 }
             }
 
@@ -109,7 +108,7 @@ object SharedPlayerManager {
      */
     fun registerControllerEventSink(controllerId: Int, sink: EventChannel.EventSink) {
         controllerEventSinks[controllerId] = sink
-        Log.d(TAG, "Registered controller event sink for controller $controllerId")
+        NpLog.d(TAG, "Registered controller event sink for controller $controllerId")
     }
 
     /**
@@ -117,7 +116,7 @@ object SharedPlayerManager {
      */
     fun unregisterControllerEventSink(controllerId: Int) {
         controllerEventSinks.remove(controllerId)
-        Log.d(TAG, "Unregistered controller event sink for controller $controllerId")
+        NpLog.d(TAG, "Unregistered controller event sink for controller $controllerId")
     }
 
     /**
@@ -138,7 +137,7 @@ object SharedPlayerManager {
      */
     fun setQualities(controllerId: Int, qualities: List<Map<String, Any>>) {
         qualitiesCache[controllerId] = qualities
-        Log.d(TAG, "Stored ${qualities.size} qualities for controller $controllerId")
+        NpLog.d(TAG, "Stored ${qualities.size} qualities for controller $controllerId")
     }
 
     /**
@@ -158,7 +157,7 @@ object SharedPlayerManager {
         // Stop playback
         player.stop()
 
-        Log.d(TAG, "Stopped all views for controller $controllerId")
+        NpLog.d(TAG, "Stopped all views for controller $controllerId")
     }
 
     /**
@@ -182,7 +181,7 @@ object SharedPlayerManager {
         // Clear active views for this controller
         activeViews.remove(controllerId)
 
-        Log.d(TAG, "Removed player for controller $controllerId")
+        NpLog.d(TAG, "Removed player for controller $controllerId")
 
         // If no more players, stop the service
         if (players.isEmpty()) {

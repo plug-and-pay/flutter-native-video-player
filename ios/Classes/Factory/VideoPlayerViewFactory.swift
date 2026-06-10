@@ -19,15 +19,15 @@ import UIKit
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         messenger = registrar.messenger()
-        print("Registering NativeVideoPlayerPlugin")
+        npLog("Registering NativeVideoPlayerPlugin")
         let factory = VideoPlayerViewFactory(messenger: registrar.messenger())
         registrar.register(factory, withId: "native_video_player")
-        print("NativeVideoPlayerPlugin registered with id: native_video_player")
+        npLog("NativeVideoPlayerPlugin registered with id: native_video_player")
 
         // Register a method handler at the plugin level to forward calls to the appropriate view
         let channel = FlutterMethodChannel(name: "native_video_player", binaryMessenger: registrar.messenger())
         channel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
-            print("Plugin received method call: \(call.method)")
+            npLog("Plugin received method call: \(call.method)")
 
             // Handle controller-level methods
             if call.method == "setupControllerEventChannel" {
@@ -88,7 +88,7 @@ import UIKit
                     // Flutter assets are bundled in the app's main bundle
                     let key = registrar.lookupKey(forAsset: assetKey)
                     if let path = Bundle.main.path(forResource: key, ofType: nil) {
-                        print("Resolved asset '\(assetKey)' to '\(path)'")
+                        npLog("Resolved asset '\(assetKey)' to '\(path)'")
                         result(path)
                     } else {
                         result(FlutterError(code: "ASSET_NOT_FOUND", message: "Asset not found: \(assetKey)", details: nil))
@@ -103,14 +103,14 @@ import UIKit
     }
     
     public static func registerView(_ view: VideoPlayerView, withId viewId: Int64) {
-        print("Registering view with id: \(viewId)")
+        npLog("Registering view with id: \(viewId)")
         // Prune entries whose views have been deallocated
         registeredViews = registeredViews.filter { $0.value.view != nil }
         registeredViews[viewId] = WeakVideoPlayerViewWrapper(view: view)
     }
 
     public static func unregisterView(withId viewId: Int64) {
-        print("Unregistering view with id: \(viewId)")
+        npLog("Unregistering view with id: \(viewId)")
         registeredViews.removeValue(forKey: viewId)
     }
 
@@ -126,7 +126,7 @@ import UIKit
         }
 
         guard let messenger = messenger else {
-            print("⚠️ Cannot setup controller event channel - messenger is nil")
+            npLog("⚠️ Cannot setup controller event channel - messenger is nil")
             return
         }
 
@@ -162,7 +162,7 @@ class VideoPlayerViewFactory: NSObject, FlutterPlatformViewFactory {
         viewIdentifier viewId: Int64,
         arguments args: Any?
     ) -> FlutterPlatformView {
-        print("VideoPlayerViewFactory creating view with id: \(viewId)")
+        npLog("VideoPlayerViewFactory creating view with id: \(viewId)")
         let view = VideoPlayerView(
             frame: frame,
             viewIdentifier: viewId,

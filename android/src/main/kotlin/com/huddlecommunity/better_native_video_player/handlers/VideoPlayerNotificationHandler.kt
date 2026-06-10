@@ -11,7 +11,6 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.support.v4.media.session.MediaSessionCompat
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
@@ -91,7 +90,7 @@ class VideoPlayerNotificationHandler(
                 setShowBadge(false)
             }
             notificationManager.createNotificationChannel(channel)
-            Log.d(TAG, "Notification channel created")
+            NpLog.d(TAG, "Notification channel created")
         }
     }
 
@@ -100,7 +99,7 @@ class VideoPlayerNotificationHandler(
      */
     fun updateEventHandler(newEventHandler: VideoPlayerEventHandler) {
         eventHandler = newEventHandler
-        Log.d(TAG, "Event handler updated for shared notification handler")
+        NpLog.d(TAG, "Event handler updated for shared notification handler")
     }
 
     /**
@@ -130,7 +129,7 @@ class VideoPlayerNotificationHandler(
         player.seekTo(position)
         if (wasPlaying) player.play()
 
-        Log.d(TAG, "Updated player MediaItem metadata - title: ${mediaInfo["title"]}, subtitle: ${mediaInfo["subtitle"]}")
+        NpLog.d(TAG, "Updated player MediaItem metadata - title: ${mediaInfo["title"]}, subtitle: ${mediaInfo["subtitle"]}")
     }
 
     /**
@@ -149,13 +148,13 @@ class VideoPlayerNotificationHandler(
         // Store the new metadata
         currentTitle = newTitle
         currentSubtitle = newSubtitle
-        Log.d(TAG, "📱 Media info - title: $currentTitle, subtitle: $currentSubtitle, changed: $mediaInfoChanged")
+        NpLog.d(TAG, "📱 Media info - title: $currentTitle, subtitle: $currentSubtitle, changed: $mediaInfoChanged")
 
         // If MediaSession already exists, only update if media info changed
         if (mediaSession != null) {
             // Only update MediaItem if the info actually changed to avoid playback interruptions
             if (mediaInfoChanged) {
-                Log.d(TAG, "📱 MediaSession exists - media info changed, updating metadata")
+                NpLog.d(TAG, "📱 MediaSession exists - media info changed, updating metadata")
                 currentArtwork = null // Clear old artwork
                 currentArtworkUrl = null // Clear artwork URL to ignore pending loads
 
@@ -171,11 +170,11 @@ class VideoPlayerNotificationHandler(
                 handler.post {
                     if (player.playWhenReady) {
                         updateNotification()
-                        Log.d(TAG, "✅ Notification updated with new media info")
+                        NpLog.d(TAG, "✅ Notification updated with new media info")
                     }
                 }
             } else {
-                Log.d(TAG, "📱 MediaSession exists - media info unchanged, skipping update to avoid interruption")
+                NpLog.d(TAG, "📱 MediaSession exists - media info unchanged, skipping update to avoid interruption")
             }
             return
         }
@@ -202,12 +201,12 @@ class VideoPlayerNotificationHandler(
         // Add listener to track play/pause events
         player.addListener(playerListener)
 
-        Log.d(TAG, "MediaSession created - lock screen and notification controls active")
+        NpLog.d(TAG, "MediaSession created - lock screen and notification controls active")
 
         // Set metadata on the player's MediaItem first (for MediaSession to use)
         mediaInfo?.let { info ->
             updatePlayerMediaItemMetadata(info)
-            Log.d(TAG, "Initial MediaItem metadata set for new MediaSession")
+            NpLog.d(TAG, "Initial MediaItem metadata set for new MediaSession")
         }
 
         // Load artwork asynchronously if provided
@@ -226,9 +225,9 @@ class VideoPlayerNotificationHandler(
         try {
             val notification = buildNotification()
             notificationManager.notify(NOTIFICATION_ID, notification)
-            Log.d(TAG, "Notification shown/updated")
+            NpLog.d(TAG, "Notification shown/updated")
         } catch (e: Exception) {
-            Log.e(TAG, "Error showing notification: ${e.message}", e)
+            NpLog.e(TAG, "Error showing notification: ${e.message}", e)
         }
     }
 
@@ -244,7 +243,7 @@ class VideoPlayerNotificationHandler(
      */
     private fun hideNotification() {
         notificationManager.cancel(NOTIFICATION_ID)
-        Log.d(TAG, "Notification hidden")
+        NpLog.d(TAG, "Notification hidden")
     }
 
     /**
@@ -271,7 +270,7 @@ class VideoPlayerNotificationHandler(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        Log.d(TAG, "Building notification - title: $title, subtitle: $artist (from player: ${mediaMetadata != null})")
+        NpLog.d(TAG, "Building notification - title: $title, subtitle: $artist (from player: ${mediaMetadata != null})")
 
         // Get notification icon from the app's resources
         val appInfo = context.applicationInfo
@@ -285,7 +284,7 @@ class VideoPlayerNotificationHandler(
             method.invoke(session) as? MediaSessionCompat.Token
         } catch (e: Exception) {
             // If reflection fails (Media3 1.4.0+), create a token from the session's underlying binder
-            Log.w(TAG, "getSessionCompatToken not available, using alternative method")
+            NpLog.w(TAG, "getSessionCompatToken not available, using alternative method")
             null
         }
 
@@ -308,7 +307,7 @@ class VideoPlayerNotificationHandler(
         } else {
             // Fallback: create notification without media session integration
             // Controls will still work through MediaSession, just not integrated in notification
-            Log.w(TAG, "Creating notification without MediaSession token integration")
+            NpLog.w(TAG, "Creating notification without MediaSession token integration")
         }
 
         return builder.build()
@@ -327,7 +326,7 @@ class VideoPlayerNotificationHandler(
             loadArtwork(artworkUrl) { bitmap ->
                 // Only use this artwork if it's still the current one (prevent race conditions)
                 if (artworkUrl != currentArtworkUrl) {
-                    Log.d(TAG, "Ignoring outdated artwork for $artworkUrl")
+                    NpLog.d(TAG, "Ignoring outdated artwork for $artworkUrl")
                     return@loadArtwork
                 }
 
@@ -340,16 +339,16 @@ class VideoPlayerNotificationHandler(
                     if (player.playWhenReady) {
                         handler.post {
                             updateNotification()
-                            Log.d(TAG, "Artwork loaded and notification updated for $artworkUrl")
+                            NpLog.d(TAG, "Artwork loaded and notification updated for $artworkUrl")
                         }
                     } else {
-                        Log.d(TAG, "Artwork loaded but player not ready, will show on next play")
+                        NpLog.d(TAG, "Artwork loaded but player not ready, will show on next play")
                     }
                 }
             }
         }
 
-        Log.d(TAG, "Media metadata setup complete")
+        NpLog.d(TAG, "Media metadata setup complete")
     }
 
     /**
@@ -364,7 +363,7 @@ class VideoPlayerNotificationHandler(
                     callback(bitmap)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading artwork: ${e.message}", e)
+                NpLog.e(TAG, "Error loading artwork: ${e.message}", e)
                 withContext(Dispatchers.Main) {
                     callback(null)
                 }
@@ -416,6 +415,6 @@ class VideoPlayerNotificationHandler(
         currentArtworkUrl = null
         currentTitle = "Video"
         currentSubtitle = ""
-        Log.d(TAG, "MediaSession released")
+        NpLog.d(TAG, "MediaSession released")
     }
 }

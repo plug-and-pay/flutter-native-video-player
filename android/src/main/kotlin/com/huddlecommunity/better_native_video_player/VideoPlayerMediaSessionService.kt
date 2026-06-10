@@ -3,7 +3,6 @@ package com.huddlecommunity.better_native_video_player
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import androidx.media3.common.Player
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
@@ -41,44 +40,44 @@ class VideoPlayerMediaSessionService : MediaSessionService() {
          * This must be called before starting the service
          */
         fun setMediaSession(session: MediaSession?) {
-            Log.d(TAG, "MediaSession ${if (session != null) "set" else "cleared"}, hasPlayer=${session?.player != null}")
+            NpLog.d(TAG, "MediaSession ${if (session != null) "set" else "cleared"}, hasPlayer=${session?.player != null}")
             mediaSession = session
         }
     }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "VideoPlayerMediaSessionService onCreate, mediaSession=${mediaSession != null}")
+        NpLog.d(TAG, "VideoPlayerMediaSessionService onCreate, mediaSession=${mediaSession != null}")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand called, mediaSession=${mediaSession != null}, player=${mediaSession?.player != null}")
+        NpLog.d(TAG, "onStartCommand called, mediaSession=${mediaSession != null}, player=${mediaSession?.player != null}")
 
         // Important: Call super to trigger the Media3 notification framework
         val result = super.onStartCommand(intent, flags, startId)
 
         // Log player state for debugging
         mediaSession?.player?.let { player ->
-            Log.d(TAG, "Player state: playWhenReady=${player.playWhenReady}, playbackState=${player.playbackState}, mediaItemCount=${player.mediaItemCount}")
+            NpLog.d(TAG, "Player state: playWhenReady=${player.playWhenReady}, playbackState=${player.playbackState}, mediaItemCount=${player.mediaItemCount}")
         }
 
         return result
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
-        Log.d(TAG, "onGetSession called for ${controllerInfo.packageName}, returning session=${mediaSession != null}")
+        NpLog.d(TAG, "onGetSession called for ${controllerInfo.packageName}, returning session=${mediaSession != null}")
 
         // Return the MediaSession - this triggers the notification to appear
         return mediaSession
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.d(TAG, "Task removed")
+        NpLog.d(TAG, "Task removed")
         val session = mediaSession
         if (session != null) {
             if (!session.player.playWhenReady || session.player.mediaItemCount == 0) {
                 // Stop the service if not playing
-                Log.d(TAG, "Stopping service - not playing")
+                NpLog.d(TAG, "Stopping service - not playing")
                 stopSelf()
             }
         } else {
@@ -87,7 +86,7 @@ class VideoPlayerMediaSessionService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "VideoPlayerMediaSessionService onDestroy")
+        NpLog.d(TAG, "VideoPlayerMediaSessionService onDestroy")
         // Don't release the player or session here - they're managed by the notification handler
         super.onDestroy()
     }

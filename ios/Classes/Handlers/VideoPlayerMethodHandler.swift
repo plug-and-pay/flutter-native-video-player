@@ -7,7 +7,7 @@ import MediaPlayer
 extension VideoPlayerView {
 
     func handleLoad(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        print("handleLoad called with arguments: \(String(describing: call.arguments))")
+        npLog("handleLoad called with arguments: \(String(describing: call.arguments))")
 
         guard let arguments = call.arguments as? [String: Any],
               let urlString = arguments["url"] as? String,
@@ -26,21 +26,21 @@ extension VideoPlayerView {
         // Store media info for Now Playing
         if let mediaInfo = mediaInfo {
             currentMediaInfo = mediaInfo
-            print("📱 Stored media info during load: \(mediaInfo["title"] ?? "Unknown")")
+            npLog("📱 Stored media info during load: \(mediaInfo["title"] ?? "Unknown")")
 
             // Also store in SharedPlayerManager to persist across view recreations
             if let controllerIdValue = controllerId {
                 SharedPlayerManager.shared.setMediaInfo(for: controllerIdValue, mediaInfo: mediaInfo)
             }
         } else {
-            print("⚠️ No media info provided during load")
+            npLog("⚠️ No media info provided during load")
         }
 
         sendEvent("loading")
 
         // Determine if this is likely an HLS stream
         let isHls = isHlsUrl(url)
-        print("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
+        npLog("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
 
         // Fetch qualities (async) only for HLS streams
         if isHls {
@@ -90,11 +90,11 @@ extension VideoPlayerView {
                     "label": defaultQuality["label"] as? String ?? "Auto",
                     "isAuto": defaultQuality["isAuto"] as? Bool ?? true
                 ])
-                print("🎬 Sent qualityChange event with \(result.count) available qualities")
+                npLog("🎬 Sent qualityChange event with \(result.count) available qualities")
             }
             }
         } else {
-            print("🎬 Skipping quality fetch for non-HLS content")
+            npLog("🎬 Skipping quality fetch for non-HLS content")
         }
 
         // --- Build player item ---
@@ -119,11 +119,11 @@ extension VideoPlayerView {
             // Setup DRM asynchronously
             drmHandler.setupDRM(asset: asset) { [weak self] success, error in
                 if let error = error {
-                    print("🔐 DRM: Setup failed: \(error.localizedDescription)")
+                    npLog("🔐 DRM: Setup failed: \(error.localizedDescription)")
                     // Continue with playback even if DRM setup fails
                     // The player will attempt to play and may fail later
                 } else {
-                    print("🔐 DRM: Setup completed successfully")
+                    npLog("🔐 DRM: Setup completed successfully")
                 }
             }
         }
@@ -141,11 +141,11 @@ extension VideoPlayerView {
             // Note: We skip the video composition entirely to avoid performance issues
             // The video composition causes significant overhead during loading, especially for network assets
             // Most videos will display correctly without it
-            print("🎨 HDR disabled - skipping video composition for better performance")
+            npLog("🎨 HDR disabled - skipping video composition for better performance")
             
             // Original HDR correction code - disabled for performance
             // Only re-enable this if you encounter actual HDR color issues
-            print("🎨 HDR disabled - will apply SDR color space via videoComposition asynchronously")
+            npLog("🎨 HDR disabled - will apply SDR color space via videoComposition asynchronously")
             if let asset = playerItem.asset as? AVURLAsset {
                 // Load ALL properties that AVMutableVideoComposition(propertiesOf:) will need
                 // This prevents synchronous property access on the main thread
@@ -158,13 +158,13 @@ extension VideoPlayerView {
                         var error: NSError?
                         let status = asset.statusOfValue(forKey: key, error: &error)
                         if status != .loaded {
-                            print("⚠️ Failed to load asset property '\(key)': \(error?.localizedDescription ?? "unknown error")")
+                            npLog("⚠️ Failed to load asset property '\(key)': \(error?.localizedDescription ?? "unknown error")")
                             return
                         }
                     }
 
                     guard let videoTrack = asset.tracks(withMediaType: .video).first else {
-                        print("⚠️ No video track found, skipping video composition")
+                        npLog("⚠️ No video track found, skipping video composition")
                         return
                     }
 
@@ -176,7 +176,7 @@ extension VideoPlayerView {
                             var error: NSError?
                             let status = videoTrack.statusOfValue(forKey: key, error: &error)
                             if status != .loaded {
-                                print("⚠️ Failed to load track property '\(key)': \(error?.localizedDescription ?? "unknown error")")
+                                npLog("⚠️ Failed to load track property '\(key)': \(error?.localizedDescription ?? "unknown error")")
                                 // Continue anyway - some properties might be optional
                             }
                         }
@@ -202,7 +202,7 @@ extension VideoPlayerView {
                             // Apply the completed video composition on main thread
                             DispatchQueue.main.async {
                                 playerItem.videoComposition = videoComposition
-                                print("✅ Applied SDR color space (Rec.709) to video composition with size: \(videoComposition.renderSize)")
+                                npLog("✅ Applied SDR color space (Rec.709) to video composition with size: \(videoComposition.renderSize)")
                             }
                         }
                     }
@@ -210,7 +210,7 @@ extension VideoPlayerView {
             }
             
         } else {
-            print("🎨 HDR enabled - allowing native HDR playback")
+            npLog("🎨 HDR enabled - allowing native HDR playback")
         }
 
         // --- Set up observers for buffer status and player state ---
@@ -236,7 +236,7 @@ extension VideoPlayerView {
 
             switch item.status {
             case .readyToPlay:
-                print("🎬 Video ready to play")
+                npLog("🎬 Video ready to play")
 
                 // Get duration
                 let duration = item.duration
@@ -259,11 +259,11 @@ extension VideoPlayerView {
                 // as it interferes with automatic PiP from AVPlayerViewController
                 if #available(iOS 14.0, *) {
                     if AVPictureInPictureController.isPictureInPictureSupported() {
-                        print("🎬 PiP is supported on this device")
+                        npLog("🎬 PiP is supported on this device")
                         // Send availability immediately
                         self.sendEvent("pipAvailabilityChanged", data: ["isAvailable": true])
                     } else {
-                        print("🎬 PiP is NOT supported on this device")
+                        npLog("🎬 PiP is NOT supported on this device")
                         self.sendEvent("pipAvailabilityChanged", data: ["isAvailable": false])
                     }
                 } else {
@@ -277,7 +277,7 @@ extension VideoPlayerView {
                     self.prepareForPlayback()
 
                     // Start playback
-                    print("Auto-playing with speed: \(self.desiredPlaybackSpeed)")
+                    npLog("Auto-playing with speed: \(self.desiredPlaybackSpeed)")
                     self.player?.play()
                     self.player?.rate = self.desiredPlaybackSpeed
                     self.updateNowPlayingPlaybackTime()
@@ -318,25 +318,25 @@ extension VideoPlayerView {
         if mediaInfo == nil, let controllerIdValue = controllerId {
             mediaInfo = SharedPlayerManager.shared.getMediaInfo(for: controllerIdValue)
             if mediaInfo != nil {
-                print("📱 Retrieved media info from SharedPlayerManager for play")
+                npLog("📱 Retrieved media info from SharedPlayerManager for play")
                 currentMediaInfo = mediaInfo // Update local copy
             }
         }
 
         if let mediaInfo = mediaInfo {
             let title = mediaInfo["title"] ?? "Unknown"
-            print("📱 Setting Now Playing info for: \(title)")
+            npLog("📱 Setting Now Playing info for: \(title)")
             setupNowPlayingInfo(mediaInfo: mediaInfo)
 
             // Verify it was set correctly
             if let nowPlayingTitle = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String {
-                print("✅  Now Playing info confirmed: \(nowPlayingTitle)")
+                npLog("✅  Now Playing info confirmed: \(nowPlayingTitle)")
             } else {
-                print("⚠️  Failed to set Now Playing info")
+                npLog("⚠️  Failed to set Now Playing info")
             }
         } else {
-            print("⚠️  No media info available when playing - media controls will not work correctly")
-            print("   → currentMediaInfo was nil and SharedPlayerManager has no cached info for controller \(controllerId ?? -1)")
+            npLog("⚠️  No media info available when playing - media controls will not work correctly")
+            npLog("   → currentMediaInfo was nil and SharedPlayerManager has no cached info for controller \(controllerId ?? -1)")
         }
 
         // Mark this view as the primary (active) view for this controller
@@ -354,7 +354,7 @@ extension VideoPlayerView {
                 if shouldEnableAutoPiP {
                     SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
                 } else {
-                    print("🎬 Automatic PiP not enabled (canStartPictureInPictureAutomatically = false)")
+                    npLog("🎬 Automatic PiP not enabled (canStartPictureInPictureAutomatically = false)")
                 }
             }
         }
@@ -364,11 +364,11 @@ extension VideoPlayerView {
         // Prepare audio session, Now Playing info, and PiP before playback
         prepareForPlayback()
 
-        print("Playing with speed: \(desiredPlaybackSpeed)")
+        npLog("Playing with speed: \(desiredPlaybackSpeed)")
         player?.play()
         // Apply the desired playback speed
         player?.rate = desiredPlaybackSpeed
-        print("Applied playback rate: \(player?.rate ?? 0)")
+        npLog("Applied playback rate: \(player?.rate ?? 0)")
         updateNowPlayingPlaybackTime()
         // Play event will be sent automatically by timeControlStatus observer
         result(nil)
@@ -384,7 +384,7 @@ extension VideoPlayerView {
         // and prevents automatic PiP from working afterward
         if #available(iOS 14.2, *) {
             if let controllerIdValue = controllerId {
-                print("🎬 Video paused, but keeping automatic PiP state unchanged")
+                npLog("🎬 Video paused, but keeping automatic PiP state unchanged")
             }
         }
 
@@ -415,19 +415,19 @@ extension VideoPlayerView {
     func handleSetSpeed(call: FlutterMethodCall, result: @escaping FlutterResult) {
         if let args = call.arguments as? [String: Any],
            let speed = args["speed"] as? Double {
-            print("Setting playback speed to: \(speed)")
+            npLog("Setting playback speed to: \(speed)")
 
             // Store the desired speed
             desiredPlaybackSpeed = Float(speed)
 
-            print("Player status: \(player?.timeControlStatus.rawValue ?? -1)")
+            npLog("Player status: \(player?.timeControlStatus.rawValue ?? -1)")
 
             // If currently playing, apply the speed immediately
             if player?.timeControlStatus == .playing {
-                print("Player is playing, applying speed immediately")
+                npLog("Player is playing, applying speed immediately")
                 player?.rate = Float(speed)
             } else {
-                print("Player is not playing, speed will be applied on next play")
+                npLog("Player is not playing, speed will be applied on next play")
             }
 
             sendEvent("speedChange", data: ["speed": speed])
@@ -440,7 +440,7 @@ extension VideoPlayerView {
     func handleSetLooping(call: FlutterMethodCall, result: @escaping FlutterResult) {
         if let args = call.arguments as? [String: Any],
            let looping = args["looping"] as? Bool {
-            print("Setting looping to: \(looping)")
+            npLog("Setting looping to: \(looping)")
 
             // Update the enableLooping property
             enableLooping = looping
@@ -683,7 +683,7 @@ extension VideoPlayerView {
         // Re-enable it after a short delay so AirPlay can be used again later
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             player.usesExternalPlaybackWhileExternalScreenIsActive = true
-            print("AirPlay disconnected and re-enabled for future use")
+            npLog("AirPlay disconnected and re-enabled for future use")
         }
 
         result(nil)
@@ -708,11 +708,11 @@ extension VideoPlayerView {
     }
 
     func handleDispose(result: @escaping FlutterResult) {
-        print("🗑️ [VideoPlayerMethodHandler] handleDispose called for controllerId: \(String(describing: controllerId))")
+        npLog("🗑️ [VideoPlayerMethodHandler] handleDispose called for controllerId: \(String(describing: controllerId))")
 
         // Pause the player first
         player?.pause()
-        print("⏸️ [VideoPlayerMethodHandler] Player paused")
+        npLog("⏸️ [VideoPlayerMethodHandler] Player paused")
 
         // Clean up DRM handler
         drmHandler?.cleanup()
@@ -723,16 +723,16 @@ extension VideoPlayerView {
 
         // Remove from shared manager if this is a shared player
         if let controllerId = controllerId {
-            print("🔄 [VideoPlayerMethodHandler] Calling SharedPlayerManager.removePlayer for controllerId: \(controllerId)")
+            npLog("🔄 [VideoPlayerMethodHandler] Calling SharedPlayerManager.removePlayer for controllerId: \(controllerId)")
             SharedPlayerManager.shared.removePlayer(for: controllerId)
-            print("✅ [VideoPlayerMethodHandler] SharedPlayerManager.removePlayer completed for controllerId: \(controllerId)")
+            npLog("✅ [VideoPlayerMethodHandler] SharedPlayerManager.removePlayer completed for controllerId: \(controllerId)")
         } else {
-            print("⚠️ [VideoPlayerMethodHandler] No controllerId - cannot remove from SharedPlayerManager")
+            npLog("⚠️ [VideoPlayerMethodHandler] No controllerId - cannot remove from SharedPlayerManager")
         }
 
         // Clear local player reference
         player = nil
-        print("🧹 [VideoPlayerMethodHandler] Local player reference cleared")
+        npLog("🧹 [VideoPlayerMethodHandler] Local player reference cleared")
 
         sendEvent("stopped")
         result(nil)
@@ -845,25 +845,25 @@ extension VideoPlayerView {
         if #available(iOS 14.0, *) {
             // Check if video is loaded and ready
             guard let player = player, let currentItem = player.currentItem else {
-                print("❌ No video loaded for PiP")
+                npLog("❌ No video loaded for PiP")
                 result(FlutterError(code: "NO_VIDEO", message: "No video loaded.", details: nil))
                 return
             }
             
             guard currentItem.status == .readyToPlay else {
-                print("❌ Video not ready for PiP")
+                npLog("❌ Video not ready for PiP")
                 result(FlutterError(code: "NOT_READY", message: "Video is not ready to play.", details: nil))
                 return
             }
             
             // Check if PiP is supported on device
             guard AVPictureInPictureController.isPictureInPictureSupported() else {
-                print("❌ PiP not supported on this device")
+                npLog("❌ PiP not supported on this device")
                 result(FlutterError(code: "NOT_SUPPORTED", message: "Picture-in-Picture is not supported on this device.", details: nil))
                 return
             }
 
-            print("🎬 Starting manual PiP")
+            npLog("🎬 Starting manual PiP")
 
             // Mark manual PiP as active for this controller
             if let controllerIdValue = controllerId {
@@ -874,12 +874,12 @@ extension VideoPlayerView {
             // This prevents the AVPlayerViewController from starting its own PiP simultaneously
             // NOTE: We do this AFTER the checks, so it doesn't interfere with the next manual PiP attempt
             playerViewController.allowsPictureInPicturePlayback = false
-            print("   → Temporarily disabled AVPlayerViewController PiP during manual start")
+            npLog("   → Temporarily disabled AVPlayerViewController PiP during manual start")
 
             // Also disable automatic inline PiP
             if #available(iOS 14.2, *) {
                 playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
-                print("   → Temporarily disabled automatic inline PiP during manual start")
+                npLog("   → Temporarily disabled automatic inline PiP during manual start")
             }
 
             // Get or create the PiP controller for this player layer
@@ -888,9 +888,9 @@ extension VideoPlayerView {
                 if let playerLayer = findPlayerLayer() {
                     pipController = try? AVPictureInPictureController(playerLayer: playerLayer)
                     pipController?.delegate = self
-                    print("✅ Created PiP controller for manual entry")
+                    npLog("✅ Created PiP controller for manual entry")
                 } else {
-                    print("❌ Could not find player layer")
+                    npLog("❌ Could not find player layer")
                     if let controllerIdValue = controllerId {
                         SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
                     }
@@ -906,24 +906,24 @@ extension VideoPlayerView {
 
             func tryStartPip() {
                 attempt += 1
-                print("🎬 Attempt \(attempt)/\(maxAttempts) to start PiP")
+                npLog("🎬 Attempt \(attempt)/\(maxAttempts) to start PiP")
 
                 if let pipController = pipController {
-                    print("   → isPictureInPicturePossible: \(pipController.isPictureInPicturePossible)")
+                    npLog("   → isPictureInPicturePossible: \(pipController.isPictureInPicturePossible)")
 
                     if pipController.isPictureInPicturePossible {
-                        print("🎬 Starting manual PiP now")
+                        npLog("🎬 Starting manual PiP now")
                         pipController.startPictureInPicture()
                         result(true)
                     } else if attempt < maxAttempts {
                         // Retry after a short delay
-                        print("   → PiP not ready yet, retrying in 0.2s...")
+                        npLog("   → PiP not ready yet, retrying in 0.2s...")
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                             guard self != nil else { return }
                             tryStartPip()
                         }
                     } else {
-                        print("❌ PiP not possible after \(maxAttempts) attempts")
+                        npLog("❌ PiP not possible after \(maxAttempts) attempts")
                         if let controllerIdValue = controllerId {
                             SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
                             // Re-enable AVPlayerViewController PiP since we're not starting
@@ -932,7 +932,7 @@ extension VideoPlayerView {
                         result(FlutterError(code: "PIP_NOT_POSSIBLE", message: "Picture-in-Picture is not possible at this time. Make sure the video is playing and loaded.", details: nil))
                     }
                 } else {
-                    print("❌ PiP controller is nil")
+                    npLog("❌ PiP controller is nil")
                     result(FlutterError(code: "NO_CONTROLLER", message: "PiP controller is not available", details: nil))
                 }
             }
@@ -991,7 +991,7 @@ extension VideoPlayerView {
             // First check this view's pipController
             if let pipController = pipController {
                 if pipController.isPictureInPictureActive {
-                    print("🛑 Stopping PiP from current view")
+                    npLog("🛑 Stopping PiP from current view")
                     pipController.stopPictureInPicture()
                     result(true)
                     return
@@ -1001,13 +1001,13 @@ extension VideoPlayerView {
             // If this view doesn't have an active PiP, check other views for the same controller
             // This handles the case where user navigated away from the detail screen back to list
             if let controllerIdValue = controllerId {
-                print("🔍 Checking other views for controller \(controllerIdValue) to stop PiP")
+                npLog("🔍 Checking other views for controller \(controllerIdValue) to stop PiP")
                 let allViews = SharedPlayerManager.shared.findAllViewsForController(controllerIdValue)
 
                 for view in allViews {
                     if let otherPipController = view.pipController,
                        otherPipController.isPictureInPictureActive {
-                        print("🛑 Found active PiP on view \(view.viewId), stopping it")
+                        npLog("🛑 Found active PiP on view \(view.viewId), stopping it")
                         otherPipController.stopPictureInPicture()
                         result(true)
                         return
@@ -1016,7 +1016,7 @@ extension VideoPlayerView {
             }
 
             // No active PiP found on any view
-            print("⚠️ No active PiP found for this controller")
+            npLog("⚠️ No active PiP found for this controller")
             result(false)
         } else {
             result(FlutterError(code: "NOT_SUPPORTED", message: "PiP not supported on this iOS version", details: nil))
@@ -1027,25 +1027,25 @@ extension VideoPlayerView {
         if #available(iOS 14.2, *) {
             // Check if video is loaded and playing
             guard let player = player, let currentItem = player.currentItem else {
-                print("❌ Cannot enable automatic PiP: No video loaded")
+                npLog("❌ Cannot enable automatic PiP: No video loaded")
                 result(FlutterError(code: "NO_VIDEO", message: "No video loaded.", details: nil))
                 return
             }
 
             guard currentItem.status == .readyToPlay else {
-                print("❌ Cannot enable automatic PiP: Video not ready")
+                npLog("❌ Cannot enable automatic PiP: Video not ready")
                 result(FlutterError(code: "NOT_READY", message: "Video is not ready to play.", details: nil))
                 return
             }
 
             // Check if PiP is supported on device
             guard AVPictureInPictureController.isPictureInPictureSupported() else {
-                print("❌ Cannot enable automatic PiP: PiP not supported on this device")
+                npLog("❌ Cannot enable automatic PiP: PiP not supported on this device")
                 result(FlutterError(code: "NOT_SUPPORTED", message: "Picture-in-Picture is not supported on this device.", details: nil))
                 return
             }
 
-            print("🎬 Enabling automatic inline PiP")
+            npLog("🎬 Enabling automatic inline PiP")
 
             // Enable automatic PiP on this view controller
             playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
@@ -1053,9 +1053,9 @@ extension VideoPlayerView {
             // Also update the stored setting if this is a shared player
             if let controllerIdValue = controllerId {
                 SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: true)
-                print("✅ Automatic inline PiP enabled for controller \(controllerIdValue)")
+                npLog("✅ Automatic inline PiP enabled for controller \(controllerIdValue)")
             } else {
-                print("✅ Automatic inline PiP enabled for non-shared player")
+                npLog("✅ Automatic inline PiP enabled for non-shared player")
             }
 
             result(true)
@@ -1066,7 +1066,7 @@ extension VideoPlayerView {
 
     func handleDisableAutomaticInlinePip(result: @escaping FlutterResult) {
         if #available(iOS 14.2, *) {
-            print("🎬 Disabling automatic inline PiP")
+            npLog("🎬 Disabling automatic inline PiP")
 
             // Disable automatic PiP on this view controller
             playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
@@ -1074,9 +1074,9 @@ extension VideoPlayerView {
             // Also update the stored setting if this is a shared player
             if let controllerIdValue = controllerId {
                 SharedPlayerManager.shared.setAutomaticPiPEnabled(for: controllerIdValue, enabled: false)
-                print("✅ Automatic inline PiP disabled for controller \(controllerIdValue)")
+                npLog("✅ Automatic inline PiP disabled for controller \(controllerIdValue)")
             } else {
-                print("✅ Automatic inline PiP disabled for non-shared player")
+                npLog("✅ Automatic inline PiP disabled for non-shared player")
             }
 
             result(true)
@@ -1098,8 +1098,16 @@ extension VideoPlayerView {
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
             guard let self = self, let player = self.player, let currentItem = player.currentItem else { return }
 
-            // Update Now Playing info
-            self.updateNowPlayingPlaybackTime()
+            // Resync Now Playing elapsed time only every 10th tick (~5s): the
+            // system extrapolates position from the playback rate, and the
+            // play/pause/seek paths push immediate updates. Writing the
+            // MPNowPlayingInfoCenter dictionary is an XPC call — doing it
+            // every 0.5s per view is wasted work.
+            self.nowPlayingResyncTick += 1
+            if self.nowPlayingResyncTick >= 10 {
+                self.nowPlayingResyncTick = 0
+                self.updateNowPlayingPlaybackTime()
+            }
 
             // Get current playback position
             let currentTime = player.currentTime()
@@ -1202,7 +1210,7 @@ extension VideoPlayerView {
 
         // Get all media selection options for legible characteristics (subtitles/captions)
         guard let mediaSelectionGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
-            print("📝 No subtitle tracks available")
+            npLog("📝 No subtitle tracks available")
             result([])
             return
         }
@@ -1240,10 +1248,10 @@ extension VideoPlayerView {
             ]
 
             tracks.append(trackInfo)
-            print("📝 Found subtitle track: \(displayName) (\(languageCode)) - Selected: \(isSelected)")
+            npLog("📝 Found subtitle track: \(displayName) (\(languageCode)) - Selected: \(isSelected)")
         }
 
-        print("📝 Total subtitle tracks found: \(tracks.count)")
+        npLog("📝 Total subtitle tracks found: \(tracks.count)")
         result(tracks)
     }
 
@@ -1268,7 +1276,7 @@ extension VideoPlayerView {
 
         // Index -1 means disable subtitles
         if index == -1 {
-            print("📝 Disabling subtitles")
+            npLog("📝 Disabling subtitles")
             playerItem.select(nil, in: mediaSelectionGroup)
             sendEvent("subtitleChange", data: [
                 "index": -1,
@@ -1301,7 +1309,7 @@ extension VideoPlayerView {
             displayName = languageCode
         }
 
-        print("📝 Selected subtitle track: \(displayName) (\(languageCode))")
+        npLog("📝 Selected subtitle track: \(displayName) (\(languageCode))")
 
         sendEvent("subtitleChange", data: [
             "index": index,

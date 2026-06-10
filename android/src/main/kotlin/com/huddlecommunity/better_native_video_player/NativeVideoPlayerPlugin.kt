@@ -2,7 +2,7 @@ package com.huddlecommunity.better_native_video_player
 
 import android.app.Activity
 import android.content.Context
-import android.util.Log
+import android.content.pm.ApplicationInfo
 import androidx.media3.common.util.UnstableApi
 import com.huddlecommunity.better_native_video_player.handlers.ControllerEventChannelHandler
 import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
@@ -43,12 +43,12 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         private val controllerEventChannels = mutableMapOf<Int, EventChannel>()
 
         fun registerView(view: VideoPlayerView, viewId: Long) {
-            Log.d(TAG, "Registering view with id: $viewId")
+            NpLog.d(TAG, "Registering view with id: $viewId")
             registeredViews[viewId] = view
         }
 
         fun unregisterView(viewId: Long) {
-            Log.d(TAG, "Unregistering view with id: $viewId")
+            NpLog.d(TAG, "Unregistering view with id: $viewId")
             registeredViews.remove(viewId)
         }
 
@@ -71,12 +71,12 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
          */
         fun setupControllerEventChannel(controllerId: Int) {
             if (controllerEventChannels.containsKey(controllerId)) {
-                Log.d(TAG, "Controller event channel for $controllerId already exists")
+                NpLog.d(TAG, "Controller event channel for $controllerId already exists")
                 return
             }
             val binaryMessenger = messenger
             if (binaryMessenger == null) {
-                Log.w(TAG, "Cannot setup controller event channel - no messenger")
+                NpLog.w(TAG, "Cannot setup controller event channel - no messenger")
                 return
             }
             val channel = EventChannel(
@@ -85,7 +85,7 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
             )
             channel.setStreamHandler(ControllerEventChannelHandler(controllerId))
             controllerEventChannels[controllerId] = channel
-            Log.d(TAG, "Set up controller event channel for controller $controllerId")
+            NpLog.d(TAG, "Set up controller event channel for controller $controllerId")
         }
 
         /**
@@ -95,12 +95,18 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         fun teardownControllerEventChannel(controllerId: Int) {
             controllerEventChannels.remove(controllerId)?.setStreamHandler(null)
             SharedPlayerManager.unregisterControllerEventSink(controllerId)
-            Log.d(TAG, "Tore down controller event channel for controller $controllerId")
+            NpLog.d(TAG, "Tore down controller event channel for controller $controllerId")
         }
     }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        Log.d(TAG, "Registering NativeVideoPlayerPlugin")
+        // Gate debug logging on the CONSUMING app's debuggable flag (the
+        // library's own BuildConfig.DEBUG tracks the library build type, not
+        // the app's)
+        NpLog.enabled = (binding.applicationContext.applicationInfo.flags and
+            ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+        NpLog.d(TAG, "Registering NativeVideoPlayerPlugin")
 
         messenger = binding.binaryMessenger
 
@@ -115,7 +121,7 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         // Register method channel for forwarding calls to specific views
         val channel = MethodChannel(binding.binaryMessenger, VIEW_TYPE)
         channel.setMethodCallHandler { call, result ->
-            Log.d(TAG, "Plugin received method call: ${call.method}")
+            NpLog.d(TAG, "Plugin received method call: ${call.method}")
 
             // Handle controller-level methods that don't require a viewId
             when (call.method) {
@@ -187,20 +193,20 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
 
                             // Only extract if the file doesn't already exist or is outdated
                             if (!outputFile.exists()) {
-                                Log.d(TAG, "Extracting asset '$assetPath' to '${outputFile.absolutePath}'")
+                                NpLog.d(TAG, "Extracting asset '$assetPath' to '${outputFile.absolutePath}'")
                                 binding.applicationContext.assets.open(assetPath).use { inputStream ->
                                     outputFile.outputStream().use { outputStream ->
                                         inputStream.copyTo(outputStream)
                                     }
                                 }
                             } else {
-                                Log.d(TAG, "Asset already extracted at '${outputFile.absolutePath}'")
+                                NpLog.d(TAG, "Asset already extracted at '${outputFile.absolutePath}'")
                             }
 
-                            Log.d(TAG, "Resolved asset '$assetKey' to '${outputFile.absolutePath}'")
+                            NpLog.d(TAG, "Resolved asset '$assetKey' to '${outputFile.absolutePath}'")
                             result.success(outputFile.absolutePath)
                         } catch (e: Exception) {
-                            Log.e(TAG, "Failed to resolve asset: ${e.message}", e)
+                            NpLog.e(TAG, "Failed to resolve asset: ${e.message}", e)
                             result.error("ASSET_ERROR", "Failed to resolve asset: ${e.message}", null)
                         }
                     } else {
@@ -211,11 +217,11 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
             }
         }
 
-        Log.d(TAG, "NativeVideoPlayerPlugin registered with id: $VIEW_TYPE")
+        NpLog.d(TAG, "NativeVideoPlayerPlugin registered with id: $VIEW_TYPE")
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        Log.d(TAG, "NativeVideoPlayerPlugin detached - cleaning up all players")
+        NpLog.d(TAG, "NativeVideoPlayerPlugin detached - cleaning up all players")
 
         // Tear down all controller-level event channels before dropping the messenger
         controllerEventChannels.values.forEach { it.setStreamHandler(null) }
@@ -228,22 +234,22 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        Log.d(TAG, "Plugin attached to activity: ${binding.activity}")
+        NpLog.d(TAG, "Plugin attached to activity: ${binding.activity}")
         currentActivity = binding.activity
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
-        Log.d(TAG, "Plugin detached from activity for config changes")
+        NpLog.d(TAG, "Plugin detached from activity for config changes")
         // Don't clear activity - it will be reattached
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-        Log.d(TAG, "Plugin reattached to activity: ${binding.activity}")
+        NpLog.d(TAG, "Plugin reattached to activity: ${binding.activity}")
         currentActivity = binding.activity
     }
 
     override fun onDetachedFromActivity() {
-        Log.d(TAG, "Plugin detached from activity")
+        NpLog.d(TAG, "Plugin detached from activity")
         currentActivity = null
     }
 }
@@ -262,7 +268,7 @@ class VideoPlayerViewFactory(
     }
 
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
-        Log.d(TAG, "Creating VideoPlayerView with id: $viewId")
+        NpLog.d(TAG, "Creating VideoPlayerView with id: $viewId")
 
         @Suppress("UNCHECKED_CAST")
         val creationParams = args as? Map<String, Any>

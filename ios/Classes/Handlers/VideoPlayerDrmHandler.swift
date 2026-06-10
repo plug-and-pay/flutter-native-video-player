@@ -45,7 +45,7 @@ class VideoPlayerDrmHandler: NSObject {
         // For AES-128 (standard HLS encryption), headers passed to AVURLAsset should be sufficient
         // AVPlayer will automatically handle key requests for standard HLS encryption
         if drmTypeLower == "aes-128" {
-            print("🔐 DRM: AES-128 detected - using standard HLS encryption")
+            npLog("🔐 DRM: AES-128 detected - using standard HLS encryption")
             completion(true, nil)
             return
         }
@@ -67,7 +67,7 @@ class VideoPlayerDrmHandler: NSObject {
             return
         }
         
-        print("🔐 DRM: Setting up FairPlay - License URL: \(licenseUrl.absoluteString)")
+        npLog("🔐 DRM: Setting up FairPlay - License URL: \(licenseUrl.absoluteString)")
         
         // Create content key session
         contentKeySession = AVContentKeySession(keySystem: AVContentKeySystem.fairPlayStreaming)
@@ -83,23 +83,23 @@ class VideoPlayerDrmHandler: NSObject {
         if let certificateUrl = certificateUrl {
             fetchCertificate(url: certificateUrl) { [weak self] success, error in
                 if success {
-                    print("🔐 DRM: Certificate fetched successfully")
+                    npLog("🔐 DRM: Certificate fetched successfully")
                     completion(true, nil)
                 } else {
-                    print("🔐 DRM: Failed to fetch certificate: \(error?.localizedDescription ?? "unknown error")")
+                    npLog("🔐 DRM: Failed to fetch certificate: \(error?.localizedDescription ?? "unknown error")")
                     completion(false, error)
                 }
             }
         } else {
             // No certificate URL provided - FairPlay will use default certificate
-            print("🔐 DRM: No certificate URL provided, using default FairPlay certificate")
+            npLog("🔐 DRM: No certificate URL provided, using default FairPlay certificate")
             completion(true, nil)
         }
     }
     
     /// Fetches the FairPlay application certificate
     private func fetchCertificate(url: URL, completion: @escaping (Bool, Error?) -> Void) {
-        print("🔐 DRM: Fetching certificate from: \(url.absoluteString)")
+        npLog("🔐 DRM: Fetching certificate from: \(url.absoluteString)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -115,7 +115,7 @@ class VideoPlayerDrmHandler: NSObject {
             guard let self = self else { return }
             
             if let error = error {
-                print("🔐 DRM: Certificate fetch error: \(error.localizedDescription)")
+                npLog("🔐 DRM: Certificate fetch error: \(error.localizedDescription)")
                 completion(false, error)
                 return
             }
@@ -134,7 +134,7 @@ class VideoPlayerDrmHandler: NSObject {
             }
             
             self.certificateData = data
-            print("🔐 DRM: Certificate fetched successfully (\(data.count) bytes)")
+            npLog("🔐 DRM: Certificate fetched successfully (\(data.count) bytes)")
             completion(true, nil)
         }
         
@@ -147,7 +147,7 @@ class VideoPlayerDrmHandler: NSObject {
         // The session will be cleaned up when deallocated
         contentKeySession = nil
         certificateData = nil
-        print("🔐 DRM: Cleaned up DRM handler")
+        npLog("🔐 DRM: Cleaned up DRM handler")
     }
 }
 
@@ -155,10 +155,10 @@ class VideoPlayerDrmHandler: NSObject {
 
 extension VideoPlayerDrmHandler: AVContentKeySessionDelegate {
     func contentKeySession(_ session: AVContentKeySession, didProvide keyRequest: AVContentKeyRequest) {
-        print("🔐 DRM: Content key request received")
+        npLog("🔐 DRM: Content key request received")
         
         guard let licenseUrl = licenseUrl else {
-            print("🔐 DRM: Error - License URL not available")
+            npLog("🔐 DRM: Error - License URL not available")
             keyRequest.processContentKeyResponseError(NSError(domain: "VideoPlayerDrmHandler", code: -1, userInfo: [NSLocalizedDescriptionKey: "License URL not configured"]))
             return
         }
@@ -166,7 +166,7 @@ extension VideoPlayerDrmHandler: AVContentKeySessionDelegate {
         // Get the initialization data (SPC - Server Playback Context) from the key request
         // For FairPlay, this is the data that needs to be sent to the license server
         guard let initializationData = keyRequest.initializationData else {
-            print("🔐 DRM: Error - No initialization data in key request")
+            npLog("🔐 DRM: Error - No initialization data in key request")
             keyRequest.processContentKeyResponseError(NSError(domain: "VideoPlayerDrmHandler", code: -1, userInfo: [NSLocalizedDescriptionKey: "No initialization data"]))
             return
         }
@@ -189,14 +189,14 @@ extension VideoPlayerDrmHandler: AVContentKeySessionDelegate {
             }
         }
         
-        print("🔐 DRM: Sending license request to: \(licenseUrl.absoluteString)")
+        npLog("🔐 DRM: Sending license request to: \(licenseUrl.absoluteString)")
         
         // Send license request
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             
             if let error = error {
-                print("🔐 DRM: License request error: \(error.localizedDescription)")
+                npLog("🔐 DRM: License request error: \(error.localizedDescription)")
                 keyRequest.processContentKeyResponseError(error)
                 return
             }
@@ -205,14 +205,14 @@ extension VideoPlayerDrmHandler: AVContentKeySessionDelegate {
                   (200...299).contains(httpResponse.statusCode) else {
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
                 let error = NSError(domain: "VideoPlayerDrmHandler", code: -1, userInfo: [NSLocalizedDescriptionKey: "License request failed with status code: \(statusCode)"])
-                print("🔐 DRM: License request failed: \(error.localizedDescription)")
+                npLog("🔐 DRM: License request failed: \(error.localizedDescription)")
                 keyRequest.processContentKeyResponseError(error)
                 return
             }
             
             guard let data = data else {
                 let error = NSError(domain: "VideoPlayerDrmHandler", code: -1, userInfo: [NSLocalizedDescriptionKey: "No data in license response"])
-                print("🔐 DRM: License response error: \(error.localizedDescription)")
+                npLog("🔐 DRM: License response error: \(error.localizedDescription)")
                 keyRequest.processContentKeyResponseError(error)
                 return
             }
@@ -221,9 +221,9 @@ extension VideoPlayerDrmHandler: AVContentKeySessionDelegate {
             do {
                 let keyResponse = AVContentKeyResponse(fairPlayStreamingKeyResponseData: data)
                 keyRequest.processContentKeyResponse(keyResponse)
-                print("🔐 DRM: License response processed successfully")
+                npLog("🔐 DRM: License response processed successfully")
             } catch {
-                print("🔐 DRM: Error processing license response: \(error.localizedDescription)")
+                npLog("🔐 DRM: Error processing license response: \(error.localizedDescription)")
                 keyRequest.processContentKeyResponseError(error)
             }
         }
@@ -233,19 +233,19 @@ extension VideoPlayerDrmHandler: AVContentKeySessionDelegate {
     
     func contentKeySession(_ session: AVContentKeySession, didProvide keyRequest: AVPersistableContentKeyRequest) {
         // Handle persistable content key requests (for offline playback)
-        print("🔐 DRM: Persistable content key request received")
+        npLog("🔐 DRM: Persistable content key request received")
         // For now, we'll handle it the same way as regular key requests
         contentKeySession(session, didProvide: keyRequest as AVContentKeyRequest)
     }
     
     func contentKeySession(_ session: AVContentKeySession, didProvideRenewingContentKeyRequest keyRequest: AVContentKeyRequest) {
         // Handle renewing content key requests
-        print("🔐 DRM: Renewing content key request received")
+        npLog("🔐 DRM: Renewing content key request received")
         contentKeySession(session, didProvide: keyRequest)
     }
     
     func contentKeySession(_ session: AVContentKeySession, shouldRetry keyRequest: AVContentKeyRequest, reason retryReason: String) -> Bool {
-        print("🔐 DRM: Content key request should retry - reason: \(retryReason)")
+        npLog("🔐 DRM: Content key request should retry - reason: \(retryReason)")
         // Retry once for network errors
         return retryReason.contains("network") || retryReason.contains("timeout")
     }

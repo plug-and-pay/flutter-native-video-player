@@ -6,7 +6,6 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
-import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -86,7 +85,7 @@ class VideoPlayerMethodHandler(
             audioFocusRequest?.let { request ->
                 val result = audioManager.requestAudioFocus(request)
                 if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                    Log.d(TAG, "Audio focus requested and granted")
+                    NpLog.d(TAG, "Audio focus requested and granted")
                 }
             }
         } else {
@@ -115,7 +114,7 @@ class VideoPlayerMethodHandler(
      * Handles incoming method calls from Flutter
      */
     fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        Log.d(TAG, "Handling method call: ${call.method}")
+        NpLog.d(TAG, "Handling method call: ${call.method}")
 
         when (call.method) {
             "load" -> handleLoad(call, result)
@@ -162,11 +161,11 @@ class VideoPlayerMethodHandler(
         updateMediaInfo?.invoke(mediaInfo)
         mediaInfo?.let {
             val title = it["title"] as? String
-            Log.d(TAG, "📱 Stored media info during load: $title")
+            NpLog.d(TAG, "📱 Stored media info during load: $title")
         }
 
-        Log.d(TAG, "Loading video: $url (autoPlay: $autoPlay)")
-        Log.d(TAG, "Current player state - playbackState: ${player.playbackState}, duration: ${player.duration}, hasMedia: ${player.currentMediaItem != null}")
+        NpLog.d(TAG, "Loading video: $url (autoPlay: $autoPlay)")
+        NpLog.d(TAG, "Current player state - playbackState: ${player.playbackState}, duration: ${player.duration}, hasMedia: ${player.currentMediaItem != null}")
 
         // Only send "loading" event if player is actually starting to load new media
         // Don't send if player is already in IDLE state with no media loaded
@@ -177,12 +176,12 @@ class VideoPlayerMethodHandler(
                                       player.duration < 0 && 
                                       player.currentMediaItem == null
         if (isPlayerIdleWithNoMedia) {
-            Log.d(TAG, "Player is already idle with no media (playbackState=${player.playbackState}, duration=${player.duration}, hasMedia=${player.currentMediaItem != null}), skipping loading event")
+            NpLog.d(TAG, "Player is already idle with no media (playbackState=${player.playbackState}, duration=${player.duration}, hasMedia=${player.currentMediaItem != null}), skipping loading event")
             // Don't send loading event - the initial state should have already sent "idle"
             // If initial state wasn't sent yet, it will be sent when EventChannel connects
         } else {
             // Player has media or is in a different state, send loading event
-            Log.d(TAG, "Sending loading event - player is not idle or has media")
+            NpLog.d(TAG, "Sending loading event - player is not idle or has media")
             eventHandler.sendEvent("loading")
         }
 
@@ -191,7 +190,7 @@ class VideoPlayerMethodHandler(
         val isHls = isHlsUrl(url)
         currentVideoIsHls = isHls // Track for quality switching
 
-        Log.d(TAG, "Video source type - Local: $isLocalFile, HLS: $isHls")
+        NpLog.d(TAG, "Video source type - Local: $isLocalFile, HLS: $isHls")
 
         // Build data source factory
         // For remote URLs with custom headers, use HTTP-specific data source
@@ -228,7 +227,7 @@ class VideoPlayerMethodHandler(
                     "widevine" -> C.WIDEVINE_UUID
                     "clearkey", "aes-128" -> C.CLEARKEY_UUID
                     else -> {
-                        Log.w(TAG, "Unknown DRM type: $drmType, defaulting to Widevine")
+                        NpLog.w(TAG, "Unknown DRM type: $drmType, defaulting to Widevine")
                         C.WIDEVINE_UUID
                     }
                 }
@@ -241,9 +240,9 @@ class VideoPlayerMethodHandler(
                 }
 
                 mediaItemBuilder.setDrmConfiguration(drmBuilder.build())
-                Log.d(TAG, "DRM configured - Type: $drmType, License URL: $licenseUrl")
+                NpLog.d(TAG, "DRM configured - Type: $drmType, License URL: $licenseUrl")
             } else {
-                Log.w(TAG, "DRM config provided but licenseUrl is missing")
+                NpLog.w(TAG, "DRM config provided but licenseUrl is missing")
             }
         }
 
@@ -252,12 +251,12 @@ class VideoPlayerMethodHandler(
         // Create appropriate MediaSource based on URL type
         val mediaSource: MediaSource = if (isHls) {
             // HLS stream
-            Log.d(TAG, "Creating HLS media source")
+            NpLog.d(TAG, "Creating HLS media source")
             HlsMediaSource.Factory(finalDataSourceFactory)
                 .createMediaSource(mediaItem)
         } else {
             // Progressive download/playback (MP4, local files, etc.)
-            Log.d(TAG, "Creating progressive media source")
+            NpLog.d(TAG, "Creating progressive media source")
             ProgressiveMediaSource.Factory(finalDataSourceFactory)
                 .createMediaSource(mediaItem)
         }
@@ -268,7 +267,7 @@ class VideoPlayerMethodHandler(
 
         // Configure HDR settings for ExoPlayer using TrackSelectionParameters
         if (!enableHDR) {
-            Log.d(TAG, "🎨 HDR disabled - ExoPlayer will use automatic tone-mapping for HDR content")
+            NpLog.d(TAG, "🎨 HDR disabled - ExoPlayer will use automatic tone-mapping for HDR content")
             // Note: ExoPlayer automatically tone-maps HDR content to SDR on devices
             // that don't support HDR or when the display doesn't support it.
             //
@@ -283,14 +282,14 @@ class VideoPlayerMethodHandler(
             //
             // See: https://github.com/androidx/media/issues/1074
         } else {
-            Log.d(TAG, "🎨 HDR enabled - allowing native HDR playback")
+            NpLog.d(TAG, "🎨 HDR enabled - allowing native HDR playback")
         }
 
         // Fetch qualities asynchronously for HLS streams
         if (url.contains(".m3u8")) {
             CoroutineScope(Dispatchers.Main).launch {
                 availableQualities = VideoPlayerQualityHandler.fetchHLSQualities(url)
-                Log.d(TAG, "Fetched ${availableQualities.size} qualities")
+                NpLog.d(TAG, "Fetched ${availableQualities.size} qualities")
 
                 // Store in SharedPlayerManager if this is a shared player
                 if (controllerId != null) {
@@ -305,7 +304,7 @@ class VideoPlayerMethodHandler(
                         "label" to (defaultQuality["label"] ?: "Auto"),
                         "isAuto" to (defaultQuality["isAuto"] ?: true)
                     ))
-                    Log.d(TAG, "Sent qualityChange event with ${availableQualities.size} available qualities")
+                    NpLog.d(TAG, "Sent qualityChange event with ${availableQualities.size} available qualities")
                 }
             }
         }
@@ -325,7 +324,7 @@ class VideoPlayerMethodHandler(
 
                     // Auto play if requested - MUST be done after player is ready
                     if (autoPlay) {
-                        Log.d(TAG, "Auto-playing video after ready")
+                        NpLog.d(TAG, "Auto-playing video after ready")
                         requestAudioFocusForPlayback()
                         player.play()
                         // Play event will be sent automatically by VideoPlayerObserver
@@ -411,7 +410,7 @@ class VideoPlayerMethodHandler(
             } else {
                 androidx.media3.common.Player.REPEAT_MODE_OFF
             }
-            Log.d(TAG, "Looping set to: $looping")
+            NpLog.d(TAG, "Looping set to: $looping")
         }
         result.success(null)
     }
@@ -495,7 +494,7 @@ class VideoPlayerMethodHandler(
     private fun startQualityMonitoring() {
         // Quality monitoring is simplified for now
         // In a production app, you would implement bandwidth monitoring here
-        Log.d(TAG, "Auto quality monitoring enabled (simplified implementation)")
+        NpLog.d(TAG, "Auto quality monitoring enabled (simplified implementation)")
     }
 
     private fun switchToQuality(quality: Map<String, Any>, result: MethodChannel.Result?) {
@@ -546,7 +545,7 @@ class VideoPlayerMethodHandler(
             val cachedQualities = SharedPlayerManager.getQualities(controllerId)
             if (cachedQualities != null && cachedQualities.isNotEmpty()) {
                 availableQualities = cachedQualities
-                Log.d(TAG, "🔄 Restored ${cachedQualities.size} qualities from cache for controller $controllerId")
+                NpLog.d(TAG, "🔄 Restored ${cachedQualities.size} qualities from cache for controller $controllerId")
                 result.success(cachedQualities)
             } else {
                 result.success(availableQualities)
@@ -567,7 +566,7 @@ class VideoPlayerMethodHandler(
         // Remove from shared manager if this is a shared player
         if (controllerId != null) {
             SharedPlayerManager.removePlayer(context, controllerId)
-            Log.d(TAG, "Removed shared player for controller ID: $controllerId")
+            NpLog.d(TAG, "Removed shared player for controller ID: $controllerId")
         }
 
         eventHandler.sendEvent("stopped")
@@ -579,7 +578,7 @@ class VideoPlayerMethodHandler(
      * Triggers the native fullscreen dialog
      */
     private fun handleEnterFullScreen(result: MethodChannel.Result) {
-        Log.d(TAG, "Flutter requested enter fullscreen")
+        NpLog.d(TAG, "Flutter requested enter fullscreen")
         onFullscreenRequest?.invoke(true)
         result.success(null)
     }
@@ -589,7 +588,7 @@ class VideoPlayerMethodHandler(
      * Dismisses the native fullscreen dialog
      */
     private fun handleExitFullScreen(result: MethodChannel.Result) {
-        Log.d(TAG, "Flutter requested exit fullscreen")
+        NpLog.d(TAG, "Flutter requested exit fullscreen")
         onFullscreenRequest?.invoke(false)
         result.success(null)
     }
@@ -599,7 +598,7 @@ class VideoPlayerMethodHandler(
      * AirPlay is an Apple technology and not available on Android
      */
     private fun handleIsAirPlayAvailable(result: MethodChannel.Result) {
-        Log.d(TAG, "AirPlay availability checked - not supported on Android")
+        NpLog.d(TAG, "AirPlay availability checked - not supported on Android")
         // AirPlay is not available on Android
         result.success(false)
     }
@@ -609,7 +608,7 @@ class VideoPlayerMethodHandler(
      * AirPlay is an Apple technology and not available on Android
      */
     private fun handleShowAirPlayPicker(result: MethodChannel.Result) {
-        Log.d(TAG, "AirPlay picker requested but not supported on Android")
+        NpLog.d(TAG, "AirPlay picker requested but not supported on Android")
         // Simply return success - AirPlay is not available on Android
         result.success(null)
     }
@@ -619,7 +618,7 @@ class VideoPlayerMethodHandler(
      * AirPlay is an Apple technology and not available on Android
      */
     private fun handleStartAirPlayDetection(result: MethodChannel.Result) {
-        Log.d(TAG, "AirPlay detection start requested but not supported on Android")
+        NpLog.d(TAG, "AirPlay detection start requested but not supported on Android")
         // Simply return success - AirPlay is not available on Android
         result.success(null)
     }
@@ -629,7 +628,7 @@ class VideoPlayerMethodHandler(
      * AirPlay is an Apple technology and not available on Android
      */
     private fun handleStopAirPlayDetection(result: MethodChannel.Result) {
-        Log.d(TAG, "AirPlay detection stop requested but not supported on Android")
+        NpLog.d(TAG, "AirPlay detection stop requested but not supported on Android")
         // Simply return success - AirPlay is not available on Android
         result.success(null)
     }
@@ -639,7 +638,7 @@ class VideoPlayerMethodHandler(
      * AirPlay is an Apple technology and not available on Android
      */
     private fun handleDisconnectAirPlay(result: MethodChannel.Result) {
-        Log.d(TAG, "AirPlay disconnect requested but not supported on Android")
+        NpLog.d(TAG, "AirPlay disconnect requested but not supported on Android")
         // Simply return success - AirPlay is not available on Android
         result.success(null)
     }
@@ -670,7 +669,7 @@ class VideoPlayerMethodHandler(
      * AirPlay is an Apple-only technology
      */
     private fun checkAndSendAirPlayAvailability() {
-        Log.d(TAG, "📡 AirPlay availability check: false (Android)")
+        NpLog.d(TAG, "📡 AirPlay availability check: false (Android)")
         eventHandler.sendEvent("airPlayAvailabilityChanged", mapOf("isAvailable" to false))
     }
 
@@ -745,15 +744,15 @@ class VideoPlayerMethodHandler(
                         )
 
                         tracks.add(trackInfo)
-                        Log.d(TAG, "📝 Found subtitle track: $displayName ($languageCode) - Selected: $isSelected")
+                        NpLog.d(TAG, "📝 Found subtitle track: $displayName ($languageCode) - Selected: $isSelected")
                     }
                 }
             }
 
-            Log.d(TAG, "📝 Total subtitle tracks found: ${tracks.size}")
+            NpLog.d(TAG, "📝 Total subtitle tracks found: ${tracks.size}")
             result.success(tracks)
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting subtitle tracks: ${e.message}", e)
+            NpLog.e(TAG, "Error getting subtitle tracks: ${e.message}", e)
             result.success(emptyList<Map<String, Any>>())
         }
     }
@@ -774,7 +773,7 @@ class VideoPlayerMethodHandler(
 
             // Index -1 means disable subtitles
             if (index == -1) {
-                Log.d(TAG, "📝 Disabling subtitles")
+                NpLog.d(TAG, "📝 Disabling subtitles")
 
                 // Disable text track selection
                 val newParameters = player.trackSelectionParameters
@@ -831,7 +830,7 @@ class VideoPlayerMethodHandler(
 
             player.trackSelectionParameters = parametersBuilder.build()
 
-            Log.d(TAG, "📝 Selected subtitle track: $selectedDisplayName ($selectedLanguage)")
+            NpLog.d(TAG, "📝 Selected subtitle track: $selectedDisplayName ($selectedLanguage)")
 
             eventHandler.sendEvent("subtitleChange", mapOf(
                 "index" to index,
@@ -842,7 +841,7 @@ class VideoPlayerMethodHandler(
 
             result.success(null)
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting subtitle track: ${e.message}", e)
+            NpLog.e(TAG, "Error setting subtitle track: ${e.message}", e)
             result.error("ERROR", "Failed to set subtitle track: ${e.message}", null)
         }
     }
