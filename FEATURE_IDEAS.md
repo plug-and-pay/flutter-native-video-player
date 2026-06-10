@@ -2,8 +2,22 @@
 
 Candidate features people ask video players for (sourced from this repo's
 issue themes, better_player/video_player issue trackers, and Huddle's
-usage), ranked by expected value for Huddle-style feed apps. Nothing here
-is implemented; each item lists effort and the native surface it touches.
+usage), ranked by expected value for Huddle-style feed apps.
+
+**Status update (2026-06-11, `feat/extractor-and-player-features`):**
+implemented — #2 analytics (`PlaybackAnalytics`), #3 startAt + checkpoints
+(`load(startAt:)` native on both platforms + `PositionCheckpoints`),
+#4 storyboards (`StoryboardThumbnails`: VTT + uniform sprite grids),
+#7 A-B loop (`setPlaybackRange`/`clearPlaybackRange`), #8 background
+toggle (`BackgroundPlaybackGuard`), #10 playlist
+(`NativeVideoPlayerPlaylist`). Extraction shipped as the separate
+`packages/better_native_video_extractor` package (Vimeo incl. referer,
+thumbnails, storyboard, expiry cache; YouTube) — the "app-side" placement
+argued for below, just maintained in-repo. Deliberately NOT implemented:
+#1 prefetch (perf Tier 3b, needs device A/B), #5 in-plugin Chromecast
+(app-level guidance written in HUDDLE_FINDINGS.md instead: receiver
+subtitle tracks + native-controls routing), #6 offline downloads,
+#9 DRM token refresh (device/SDK-dependent, not verifiable here).
 
 ## High value / moderate effort
 

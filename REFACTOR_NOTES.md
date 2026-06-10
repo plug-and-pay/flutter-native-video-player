@@ -145,3 +145,26 @@ MP4 ~200-360ms).
 - [ ] Low-end Android device feel with the `.feed()` presets + cap=2/3
 - [ ] Release-mode smoke test on both platforms (logging is now silent in
       release — confirm nothing depended on it)
+
+## Testing pattern: injecting native events in widget tests
+
+`test/player_features_test.dart` drives the controller with fake native
+events (`setMockStreamHandler` + `MockStreamHandlerEventSink.success`). Two
+rules keep that deterministic, learned the hard way:
+
+1. **Register the mock stream handlers AND construct the controller inside
+   the test body, never in `setUp`.** `setUp` runs outside `testWidgets`'
+   fake-async zone, and flutter_test pins handlers to the zone that
+   registered them — events injected through a setUp-registered handler are
+   delivered on the real event loop, where the fake-async test never (or
+   only flakily) observes them. The sink looks fine — `onListen` still
+   fires — which makes this miserable to debug. A `setMockMethodCallHandler`
+   in `setUp` is fine: method calls originate from the fake zone.
+2. **Fresh controller/view ids per test.** Same ids = same EventChannel
+   names; a previous test's late async `cancel` can clear the message
+   handler the current test just registered. (The on-device analogue is why
+   the stress harness uses fresh ids per visit.)
+
+Corollary: a fake-zone-constructed controller must be disposed in-body or
+with a timeout in `tearDown` — `dispose()` awaits futures that can never
+complete once the fake zone is gone.
