@@ -9,7 +9,11 @@ import UIKit
         let handler: ControllerEventChannelHandler
     }
 
-    private static var registeredViews: [Int64: VideoPlayerView] = [:]
+    // Weak references: the Flutter engine owns platform views, and deinit is
+    // the ONLY disposal hook a FlutterPlatformView gets on iOS. Holding views
+    // strongly here would keep every view (and its KVO/time observers) alive
+    // forever and make deinit unreachable.
+    private static var registeredViews: [Int64: WeakVideoPlayerViewWrapper] = [:]
     private static var controllerEventChannels: [Int: ControllerChannelEntry] = [:]
     private static var messenger: FlutterBinaryMessenger?
 
@@ -68,7 +72,7 @@ import UIKit
             // Forward view-level methods to the appropriate view
             if let args = call.arguments as? [String: Any],
                let viewId = args["viewId"] as? Int64,
-               let view = registeredViews[viewId] {
+               let view = registeredViews[viewId]?.view {
                 view.handleMethodCall(call: call, result: result)
             } else {
                 result(FlutterError(code: "NO_VIEW", message: "No view found for method call", details: nil))
@@ -100,9 +104,11 @@ import UIKit
     
     public static func registerView(_ view: VideoPlayerView, withId viewId: Int64) {
         print("Registering view with id: \(viewId)")
-        registeredViews[viewId] = view
+        // Prune entries whose views have been deallocated
+        registeredViews = registeredViews.filter { $0.value.view != nil }
+        registeredViews[viewId] = WeakVideoPlayerViewWrapper(view: view)
     }
-    
+
     public static func unregisterView(withId viewId: Int64) {
         print("Unregistering view with id: \(viewId)")
         registeredViews.removeValue(forKey: viewId)
@@ -145,7 +151,6 @@ import UIKit
 
 class VideoPlayerViewFactory: NSObject, FlutterPlatformViewFactory {
     private var messenger: FlutterBinaryMessenger
-    private var views: [Int64: VideoPlayerView] = [:]
 
     init(messenger: FlutterBinaryMessenger) {
         self.messenger = messenger
@@ -164,7 +169,9 @@ class VideoPlayerViewFactory: NSObject, FlutterPlatformViewFactory {
             arguments: args,
             binaryMessenger: messenger
         )
-        views[viewId] = view
+        // The engine owns the view; the plugin only keeps a weak registry for
+        // method-call routing (a strong reference here would prevent deinit,
+        // which is the platform view's only disposal hook on iOS).
         NativeVideoPlayerPlugin.registerView(view, withId: viewId)
         return view
     }

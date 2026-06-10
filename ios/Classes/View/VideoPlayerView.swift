@@ -693,6 +693,9 @@ import QuartzCore
     deinit {
         print("VideoPlayerView deinit for channel: \(channelName), viewId: \(viewId)")
 
+        // Drop this view from the plugin's method-call routing registry
+        NativeVideoPlayerPlugin.unregisterView(withId: viewId)
+
         // Use the isPipCurrentlyActive flag to check if PiP is active
         let isPipActiveNow = isPipCurrentlyActive
 
