@@ -16,6 +16,27 @@ class VideoItem {
     this.autoPlay = false,
   });
 
+  /// Videos for the performance/stress harness: [count] items alternating
+  /// HLS and MP4 sources with unique controller IDs in the 9000+ range so
+  /// they never collide with the regular sample videos.
+  static List<VideoItem> getStressVideos(int count, {int idOffset = 9000}) {
+    const hlsUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+    // Note: the BigBuckBunny googleapis URL used by the sample list returns
+    // 403 from some networks, so the stress harness uses the W3C-hosted
+    // Sintel trailer as its MP4 source instead.
+    const mp4Url = 'https://media.w3.org/2010/05/sintel/trailer.mp4';
+    return List<VideoItem>.generate(count, (i) {
+      final isHls = i.isEven;
+      return VideoItem(
+        id: idOffset + i,
+        title: 'Stress ${i + 1} (${isHls ? 'HLS' : 'MP4'})',
+        description: 'Stress test video ${i + 1}',
+        url: isHls ? hlsUrl : mp4Url,
+        artworkUrl: 'https://picsum.photos/id/${20 + i}/200/300',
+      );
+    });
+  }
+
   static List<VideoItem> getSampleVideos() {
     return [
       VideoItem(

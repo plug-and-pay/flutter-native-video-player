@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../models/video_item.dart';
 import '../widgets/video_player_card.dart';
-import 'video_detail_screen_full.dart';
+import 'perf/perf_menu_screen.dart';
 import 'subtitle_example_screen.dart';
+import 'video_detail_screen_full.dart';
 
 class VideoListScreenWithPlayers extends StatelessWidget {
   const VideoListScreenWithPlayers({super.key});
@@ -26,6 +27,17 @@ class VideoListScreenWithPlayers extends StatelessWidget {
           ),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('open_perf_menu'),
+            icon: const Icon(Icons.speed, color: Colors.black87),
+            tooltip: 'Performance harness',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PerfMenuScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.closed_caption, color: Colors.black87),
             tooltip: 'Subtitle Examples',
