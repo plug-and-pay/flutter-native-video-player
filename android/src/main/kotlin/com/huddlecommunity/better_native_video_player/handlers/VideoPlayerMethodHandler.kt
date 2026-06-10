@@ -14,11 +14,15 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.MimeTypes
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -70,6 +74,18 @@ class VideoPlayerMethodHandler(
     private val bitrateCheckInterval = 5000L // 5 seconds
     private var currentVideoIsHls = false // Track if current video is HLS for quality switching
 
+    // Ingredients of the last load, kept so sidecar subtitles can be attached
+    // after the fact (the media source must be rebuilt fresh; Media3 forbids
+    // reusing prepared MediaSource instances)
+    private var lastMediaItem: MediaItem? = null
+    private var lastDataSourceFactory: DataSource.Factory? = null
+
+    // Sidecar subtitle configurations attached to the current media source.
+    // They load UNSELECTED: the Flutter overlay renders inline captions; the
+    // native track is only selected during PiP/native fullscreen, where the
+    // Flutter UI is not visible (see setNativeSidecarActive).
+    private var sidecarSubtitleConfigs: List<MediaItem.SubtitleConfiguration> = emptyList()
+
     // Callback to handle fullscreen requests from Flutter
     var onFullscreenRequest: ((Boolean) -> Unit)? = null
 
@@ -120,6 +136,8 @@ class VideoPlayerMethodHandler(
 
         when (call.method) {
             "load" -> handleLoad(call, result)
+            "setSidecarSubtitles" -> handleSetSidecarSubtitles(call, result)
+            "setNativeSidecarActive" -> handleSetNativeSidecarActive(call, result)
             "play" -> handlePlay(result)
             "pause" -> handlePause(result)
             "seekTo" -> handleSeekTo(call, result)
@@ -250,21 +268,14 @@ class VideoPlayerMethodHandler(
 
         val mediaItem = mediaItemBuilder.build()
 
-        // Create appropriate MediaSource based on URL type
-        val mediaSource: MediaSource = if (isHls) {
-            // HLS stream
-            NpLog.d(TAG, "Creating HLS media source")
-            HlsMediaSource.Factory(finalDataSourceFactory)
-                .createMediaSource(mediaItem)
-        } else {
-            // Progressive download/playback (MP4, local files, etc.)
-            NpLog.d(TAG, "Creating progressive media source")
-            ProgressiveMediaSource.Factory(finalDataSourceFactory)
-                .createMediaSource(mediaItem)
-        }
+        // Remember the ingredients so sidecar subtitles can be (re)attached
+        // later without re-passing the load parameters
+        lastMediaItem = mediaItem
+        lastDataSourceFactory = finalDataSourceFactory
+        sidecarSubtitleConfigs = parseSidecarSubtitleConfigs(args["sidecarSubtitles"] as? List<*>)
 
-        // Set media source
-        player.setMediaSource(mediaSource)
+        // Set media source (main source merged with any sidecar subtitles)
+        player.setMediaSource(buildMediaSourceWithSidecars(mediaItem, finalDataSourceFactory))
         player.prepare()
 
         // Configure HDR settings for ExoPlayer using TrackSelectionParameters
@@ -420,6 +431,108 @@ class VideoPlayerMethodHandler(
     /**
      * Changes video quality (for HLS streams)
      */
+    /**
+     * Parses the Dart-side sidecar subtitle maps (URL sources only) into
+     * Media3 SubtitleConfigurations. Loaded UNSELECTED by design — see the
+     * sidecarSubtitleConfigs field comment.
+     */
+    private fun parseSidecarSubtitleConfigs(raw: List<*>?): List<MediaItem.SubtitleConfiguration> {
+        if (raw == null) return emptyList()
+        return raw.mapNotNull { entry ->
+            val map = entry as? Map<*, *> ?: return@mapNotNull null
+            val url = map["url"] as? String ?: return@mapNotNull null
+            val mimeType = when ((map["format"] as? String)?.lowercase()) {
+                "srt" -> MimeTypes.APPLICATION_SUBRIP
+                else -> MimeTypes.TEXT_VTT
+            }
+            MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(url))
+                .setMimeType(mimeType)
+                .setLanguage(map["language"] as? String)
+                .setLabel(map["label"] as? String)
+                .setSelectionFlags(0)
+                .build()
+        }
+    }
+
+    /**
+     * Builds the playback MediaSource: the type-specific main source merged
+     * with one SingleSampleMediaSource per sidecar subtitle (the documented
+     * Media3 pattern for sideloading when not using DefaultMediaSourceFactory).
+     */
+    private fun buildMediaSourceWithSidecars(
+        mediaItem: MediaItem,
+        dataSourceFactory: DataSource.Factory
+    ): MediaSource {
+        val mainSource: MediaSource = if (currentVideoIsHls) {
+            NpLog.d(TAG, "Creating HLS media source")
+            HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+        } else {
+            NpLog.d(TAG, "Creating progressive media source")
+            ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+        }
+        if (sidecarSubtitleConfigs.isEmpty()) return mainSource
+
+        NpLog.d(TAG, "Merging ${sidecarSubtitleConfigs.size} sidecar subtitle source(s)")
+        val subtitleSources = sidecarSubtitleConfigs.map { config ->
+            SingleSampleMediaSource.Factory(dataSourceFactory)
+                .createMediaSource(config, C.TIME_UNSET)
+        }
+        return MergingMediaSource(mainSource, *subtitleSources.toTypedArray())
+    }
+
+    /**
+     * Attaches sidecar subtitles after a load: rebuilds the media source with
+     * the merged subtitle tracks, preserving position and play state.
+     */
+    private fun handleSetSidecarSubtitles(call: MethodCall, result: MethodChannel.Result) {
+        val args = call.arguments as? Map<*, *>
+        sidecarSubtitleConfigs = parseSidecarSubtitleConfigs(args?.get("sidecarSubtitles") as? List<*>)
+
+        val mediaItem = lastMediaItem
+        val dataSourceFactory = lastDataSourceFactory
+        if (mediaItem == null || dataSourceFactory == null) {
+            // Nothing loaded yet: the configs apply at the next load
+            result.success(null)
+            return
+        }
+
+        val position = player.currentPosition
+        val wasPlaying = player.playWhenReady
+        player.setMediaSource(buildMediaSourceWithSidecars(mediaItem, dataSourceFactory))
+        player.prepare()
+        player.seekTo(position)
+        player.playWhenReady = wasPlaying
+        NpLog.d(TAG, "Rebuilt media source with sidecar subtitles at ${position}ms")
+        result.success(null)
+    }
+
+    /**
+     * Selects/deselects the native sidecar text track. Driven by the Dart
+     * controller when entering/leaving PiP or native fullscreen — contexts
+     * where the Flutter subtitle overlay is not visible, so the platform's
+     * SubtitleView must take over rendering.
+     */
+    private fun handleSetNativeSidecarActive(call: MethodCall, result: MethodChannel.Result) {
+        val args = call.arguments as? Map<*, *>
+        val active = args?.get("active") as? Boolean ?: false
+        val language = args?.get("language") as? String
+
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .apply {
+                if (active && language != null) {
+                    setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    setPreferredTextLanguage(language)
+                } else {
+                    setPreferredTextLanguage(null)
+                    setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                }
+            }
+            .build()
+        NpLog.d(TAG, "Native sidecar track active=$active language=$language")
+        result.success(null)
+    }
+
     private fun handleSetQuality(call: MethodCall, result: MethodChannel.Result) {
         // Check if current video is HLS before attempting quality switch
         if (!currentVideoIsHls) {

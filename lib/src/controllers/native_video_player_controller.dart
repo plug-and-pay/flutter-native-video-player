@@ -429,6 +429,13 @@ class NativeVideoPlayerController {
         _sidecarSubtitles.onPlayingChanged(isPlaying);
       }
     }
+    // Hand sidecar caption rendering to the native SubtitleView while the
+    // Flutter overlay is invisible (Android PiP / native fullscreen) and
+    // take it back when inline again.
+    if (oldState.isPipEnabled != newState.isPipEnabled ||
+        oldState.isFullScreen != newState.isFullScreen) {
+      _syncNativeSidecarCaptions(newState);
+    }
     if (oldState.currentPosition != newState.currentPosition) {
       if (!_positionController.isClosed) {
         _positionController.add(newState.currentPosition);
@@ -1951,6 +1958,31 @@ class NativeVideoPlayerController {
     if (androidMaps != null && _methodChannel != null) {
       await _methodChannel!.setSidecarSubtitles(androidMaps);
     }
+  }
+
+  /// Hands sidecar caption rendering between the Flutter overlay and
+  /// Android's native SubtitleView depending on context: PiP and NATIVE
+  /// fullscreen don't show Flutter UI, so the natively sideloaded track is
+  /// selected there; Dart fullscreen (custom overlay) keeps the Flutter
+  /// overlay. iOS has no native sideload — the overlay simply hides in PiP.
+  void _syncNativeSidecarCaptions(NativeVideoPlayerState state) {
+    if (kIsWeb || !Platform.isAndroid) {
+      return;
+    }
+    final int? selected = _sidecarSubtitles.selectedSource;
+    if (selected == null) {
+      return;
+    }
+    final bool nativeContext =
+        state.isPipEnabled || (state.isFullScreen && !_hasCustomOverlay);
+    unawaited(
+      _methodChannel?.setNativeSidecarActive(
+        active: nativeContext,
+        language: nativeContext
+            ? _sidecarSubtitles.sources[selected].language
+            : null,
+      ),
+    );
   }
 
   /// Maps URL sources for Android's native sideloading; null on other

@@ -62,6 +62,23 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Selects/deselects the natively sideloaded sidecar text track (Android;
+  /// used while PiP or native fullscreen hides the Flutter subtitle overlay).
+  Future<void> setNativeSidecarActive({
+    required bool active,
+    String? language,
+  }) async {
+    try {
+      await _methodChannel.invokeMethod<void>('setNativeSidecarActive', {
+        'viewId': primaryPlatformViewId,
+        'active': active,
+        if (language != null) 'language': language,
+      });
+    } catch (e) {
+      debugPrint('Failed to toggle native sidecar captions: $e');
+    }
+  }
+
   /// Starts or resumes video playback
   Future<void> play() async {
     try {
