@@ -1,5 +1,36 @@
 # Performance roadmap — beyond the lifecycle branch
 
+## Consolidated gains so far (master → current branches, all measured)
+
+iOS simulator (iPhone 17 Pro Max, debug, identical Marionette-driven
+scenarios; memory/CPU via top, frames via SchedulerBinding):
+
+| Scenario / metric | master | now |
+|---|---|---|
+| MissingPluginException, whole session | 75 (2 per controller lifecycle) | **0** |
+| Lifecycle stress ×20 + same-ID full cycles ×10 | 41 exceptions | **0** |
+| Fast scroll, 30-tile feed — janky frames | 40% (avg 8.4ms) | **24% (avg 5.8ms)** |
+| Memory, 2 players | 327–336 MB | **264–273 MB** |
+| Memory, 4 players | 389–398 MB | 366–377 MB |
+| Memory, 6 players | 491–495 MB | **441–453 MB** |
+| UI frames built per 21s window (N=4) | 541 | **309** |
+| Cap=2 on N=4 feed (opt-in) | n/a | playing=2, LRU paused in place |
+| Viewport cap, lossy variant (N=6) | CPU 36–44% | 27–32% (−40 MB) |
+| Viewport cap, lossless ×1.5 headroom (N=6, full-width tiles) | CPU 37–43% | 36–42% (win = steady-state 1080p prevention; deepens on smaller tiles/real devices) |
+
+Structural wins not visible in a table: every iOS platform view used to be
+strongly retained forever (deinit never ran — KVO observers, periodic time
+observers and route detectors leaked per unmounted view); 411 iOS print()
++ 156 Android log calls gated out of release; Now Playing XPC writes cut
+from 2/s to ~1/5s; Android tickers no longer run while paused; one AirPlay
+route detector instead of N+1. Test suite: 11/31 passing on master (20
+hung) → 72/72 now.
+
+Biggest REMAINING lever for Huddle specifically: the per-video Vimeo
+WebView extraction — see HUDDLE_FINDINGS.md; replacing it with the
+verified plain-HTTP config fetch removes five browser engines from a
+five-video feed, which outweighs every player-side win above.
+
 Where the remaining performance lives, what each step buys, and what it
 costs. Feasibility of every native API named here was verified against the
 exact dependencies we ship (Media3 1.5.0 jars in the Gradle cache, iOS
