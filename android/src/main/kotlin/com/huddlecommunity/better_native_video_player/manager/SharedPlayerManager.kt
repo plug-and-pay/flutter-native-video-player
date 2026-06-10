@@ -2,12 +2,15 @@ package com.huddlecommunity.better_native_video_player.manager
 
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.ExoPlayer
 import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerEventHandler
+import io.flutter.plugin.common.EventChannel
 
 /**
  * Manages shared ExoPlayer instances and NotificationHandlers across multiple platform views
@@ -27,6 +30,14 @@ object SharedPlayerManager {
     // Store available qualities for each controller
     // This ensures qualities persist across view recreations
     private val qualitiesCache = mutableMapOf<Int, List<Map<String, Any>>>()
+
+    // Controller-level event sinks (native_video_player_controller_<id>).
+    // These persist while all platform views are disposed so controller-scoped
+    // events keep flowing after releaseResources(); mirrors the iOS
+    // SharedPlayerManager.controllerEventSinks design.
+    private val controllerEventSinks = mutableMapOf<Int, EventChannel.EventSink>()
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
      * Gets or creates a player for the given controller ID
@@ -89,6 +100,36 @@ object SharedPlayerManager {
                 activeViews.remove(controllerId)
             }
         }
+    }
+
+    /**
+     * Registers a controller-level event sink for persistent events.
+     * Replaces any previous sink for the same controller (e.g. after a hot
+     * restart, where the new Dart isolate re-listens on the same channel).
+     */
+    fun registerControllerEventSink(controllerId: Int, sink: EventChannel.EventSink) {
+        controllerEventSinks[controllerId] = sink
+        Log.d(TAG, "Registered controller event sink for controller $controllerId")
+    }
+
+    /**
+     * Unregisters a controller-level event sink
+     */
+    fun unregisterControllerEventSink(controllerId: Int) {
+        controllerEventSinks.remove(controllerId)
+        Log.d(TAG, "Unregistered controller event sink for controller $controllerId")
+    }
+
+    /**
+     * Sends an event through the controller-level event channel.
+     * Safe to call without a registered sink (normal during initialization or
+     * after disposal); delivery happens on the main looper.
+     */
+    fun sendControllerEvent(controllerId: Int, eventName: String, data: Map<String, Any?> = emptyMap()) {
+        val sink = controllerEventSinks[controllerId] ?: return
+        val event = HashMap<String, Any?>(data)
+        event["event"] = eventName
+        mainHandler.post { sink.success(event) }
     }
 
     /**
@@ -163,6 +204,10 @@ object SharedPlayerManager {
 
         // Clear qualities cache
         qualitiesCache.clear()
+
+        // Drop controller-level event sinks (their channels are torn down by
+        // the plugin on engine detach)
+        controllerEventSinks.clear()
 
         // Stop the service when clearing all players
         stopMediaSessionService(context)

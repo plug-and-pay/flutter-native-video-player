@@ -708,6 +708,10 @@ class VideoPlayerView(
         // Mark as disposed to prevent any further events
         isDisposed = true
 
+        // Remove this view from the plugin's static registry (otherwise the
+        // map keeps a strong reference to every view ever created)
+        NativeVideoPlayerPlugin.unregisterView(viewId)
+
         // Exit fullscreen if active
         if (isFullScreen) {
             val activity = getActivity(context)

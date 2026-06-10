@@ -4,11 +4,13 @@ import android.app.Activity
 import android.content.Context
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
+import com.huddlecommunity.better_native_video_player.handlers.ControllerEventChannelHandler
 import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
@@ -31,6 +33,15 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         // Store current activity
         private var currentActivity: Activity? = null
 
+        // Messenger of the most recently attached engine; needed to create
+        // controller-level EventChannels before any platform view exists.
+        private var messenger: BinaryMessenger? = null
+
+        // Controller-level EventChannels keyed by controller ID. Created on
+        // demand via setupControllerEventChannel (called from the Dart
+        // controller constructor) and torn down on controller dispose.
+        private val controllerEventChannels = mutableMapOf<Int, EventChannel>()
+
         fun registerView(view: VideoPlayerView, viewId: Long) {
             Log.d(TAG, "Registering view with id: $viewId")
             registeredViews[viewId] = view
@@ -48,16 +59,58 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
          * Used by MainActivity to trigger automatic PiP on user leave hint
          */
         fun getAllViews(): Collection<VideoPlayerView> = registeredViews.values
+
+        /**
+         * Registers the StreamHandler for `native_video_player_controller_<id>`.
+         *
+         * Called via the shared method channel from the Dart controller
+         * constructor BEFORE Dart listens, so the EventChannel `listen` call
+         * always finds a native handler (avoids MissingPluginException).
+         * Idempotent: an existing registration for the ID is kept (the Dart
+         * side re-listening simply replaces the sink via onListen).
+         */
+        fun setupControllerEventChannel(controllerId: Int) {
+            if (controllerEventChannels.containsKey(controllerId)) {
+                Log.d(TAG, "Controller event channel for $controllerId already exists")
+                return
+            }
+            val binaryMessenger = messenger
+            if (binaryMessenger == null) {
+                Log.w(TAG, "Cannot setup controller event channel - no messenger")
+                return
+            }
+            val channel = EventChannel(
+                binaryMessenger,
+                "native_video_player_controller_$controllerId"
+            )
+            channel.setStreamHandler(ControllerEventChannelHandler(controllerId))
+            controllerEventChannels[controllerId] = channel
+            Log.d(TAG, "Set up controller event channel for controller $controllerId")
+        }
+
+        /**
+         * Removes the StreamHandler registered by [setupControllerEventChannel].
+         * Idempotent; also defensively drops the sink in case onCancel never ran.
+         */
+        fun teardownControllerEventChannel(controllerId: Int) {
+            controllerEventChannels.remove(controllerId)?.setStreamHandler(null)
+            SharedPlayerManager.unregisterControllerEventSink(controllerId)
+            Log.d(TAG, "Tore down controller event channel for controller $controllerId")
+        }
     }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         Log.d(TAG, "Registering NativeVideoPlayerPlugin")
+
+        messenger = binding.binaryMessenger
 
         // Register platform view factory
         binding.platformViewRegistry.registerViewFactory(
             VIEW_TYPE,
             VideoPlayerViewFactory(binding.binaryMessenger, binding.applicationContext)
         )
+
+        val applicationContext = binding.applicationContext
 
         // Register method channel for forwarding calls to specific views
         val channel = MethodChannel(binding.binaryMessenger, VIEW_TYPE)
@@ -66,13 +119,40 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
 
             // Handle controller-level methods that don't require a viewId
             when (call.method) {
+                "setupControllerEventChannel" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val controllerId = args?.get("controllerId") as? Int
+                    if (controllerId != null) {
+                        setupControllerEventChannel(controllerId)
+                        result.success(null)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Controller ID is required", null)
+                    }
+                    return@setMethodCallHandler
+                }
                 "teardownControllerEventChannel" -> {
                     val args = call.arguments as? Map<*, *>
                     val controllerId = args?.get("controllerId") as? Int
-                    Log.d(TAG, "teardownControllerEventChannel called for controller: $controllerId")
-                    // On Android, controller-level EventChannels are managed by Flutter
-                    // This is a no-op on Android, but we handle it to prevent errors
-                    result.success(null)
+                    if (controllerId != null) {
+                        teardownControllerEventChannel(controllerId)
+                        result.success(null)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Controller ID is required", null)
+                    }
+                    return@setMethodCallHandler
+                }
+                "disposeController" -> {
+                    // Releases the shared native player by controller ID. Used by
+                    // Dart dispose() when no platform view is alive (after
+                    // releaseResources()) so the native player cannot leak.
+                    val args = call.arguments as? Map<*, *>
+                    val controllerId = args?.get("controllerId") as? Int
+                    if (controllerId != null) {
+                        SharedPlayerManager.removePlayer(applicationContext, controllerId)
+                        result.success(null)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Controller ID is required", null)
+                    }
                     return@setMethodCallHandler
                 }
             }
@@ -136,6 +216,12 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         Log.d(TAG, "NativeVideoPlayerPlugin detached - cleaning up all players")
+
+        // Tear down all controller-level event channels before dropping the messenger
+        controllerEventChannels.values.forEach { it.setStreamHandler(null) }
+        controllerEventChannels.clear()
+        messenger = null
+
         // Clean up all shared players when the Flutter engine is detached
         // This ensures players are properly disposed when the app is closed/terminated
         SharedPlayerManager.clearAll(binding.applicationContext)
