@@ -52,6 +52,27 @@ platforms incl. tests. Risk: low — pure ABR constraint, no lifecycle change.
 Caveat: only helps HLS/adaptive sources; a single-file MP4 has nothing to
 down-select (document this; Huddle's content is HLS).
 
+### Tier 1 results (implemented on `perf/viewport-quality-capping`)
+
+Measured A/B in one session (iOS simulator, N=6 stress feed, HLS x36xhzz,
+~21s windows, Marionette-driven). Each ~1248x702px tile capped variant
+selection from 1080p down to the 480p rung (the 1280-wide 720p variant just
+exceeds the cap):
+
+| Metric | cap OFF | cap ON (settled) |
+|---|---|---|
+| App CPU | 36-44% | **27-32%** (~25-30% relative reduction) |
+| Memory | 435-445 MB | **402-403 MB** (~-40 MB) |
+| Janky frames (>16ms) | 155/485 (32%) | **43/240 (18%)** |
+| Frame total avg | 7.46 ms | **5.45 ms** |
+
+The first capped window read higher (CPU 27-35%, falling) because ABR takes
+a few segments to settle onto the lower variant after load. MPE stayed 0;
+all six tiles kept playing. Verified end-to-end: each tile logs its reported
+viewport ("NativeVideoPlayer: viewport 1248x702 reported for view N").
+Expect a LARGER relative win on real devices for network/battery, and on
+smaller tiles (Huddle feed cards) a deeper quality step-down.
+
 ## Tier 2 — lighter native views when controls are hidden (iOS first)
 
 - **iOS**: when `showNativeControls == false` (always true for Huddle), host
