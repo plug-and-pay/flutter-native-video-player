@@ -2,8 +2,15 @@ import Flutter
 import UIKit
 
 @objc public class NativeVideoPlayerPlugin: NSObject, FlutterPlugin {
+    /// Retains a controller-level EventChannel together with its handler so the
+    /// channel can be deregistered (`setStreamHandler(nil)`) on teardown.
+    private struct ControllerChannelEntry {
+        let channel: FlutterEventChannel
+        let handler: ControllerEventChannelHandler
+    }
+
     private static var registeredViews: [Int64: VideoPlayerView] = [:]
-    private static var controllerEventHandlers: [Int: ControllerEventChannelHandler] = [:]
+    private static var controllerEventChannels: [Int: ControllerChannelEntry] = [:]
     private static var messenger: FlutterBinaryMessenger?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -19,10 +26,38 @@ import UIKit
             print("Plugin received method call: \(call.method)")
 
             // Handle controller-level methods
+            if call.method == "setupControllerEventChannel" {
+                // Called from the Dart controller constructor BEFORE Dart listens
+                // on native_video_player_controller_<id>, so the listen call always
+                // finds a registered handler (avoids MissingPluginException).
+                if let args = call.arguments as? [String: Any],
+                   let controllerId = args["controllerId"] as? Int {
+                    NativeVideoPlayerPlugin.setupControllerEventChannel(for: controllerId)
+                    result(nil)
+                } else {
+                    result(FlutterError(code: "INVALID_ARGUMENT", message: "Controller ID is required", details: nil))
+                }
+                return
+            }
+
             if call.method == "teardownControllerEventChannel" {
                 if let args = call.arguments as? [String: Any],
                    let controllerId = args["controllerId"] as? Int {
                     NativeVideoPlayerPlugin.teardownControllerEventChannel(for: controllerId)
+                    result(nil)
+                } else {
+                    result(FlutterError(code: "INVALID_ARGUMENT", message: "Controller ID is required", details: nil))
+                }
+                return
+            }
+
+            if call.method == "disposeController" {
+                // Releases the shared native player by controller ID. Used by Dart
+                // dispose() when no platform view is alive (after releaseResources())
+                // so the native player cannot leak.
+                if let args = call.arguments as? [String: Any],
+                   let controllerId = args["controllerId"] as? Int {
+                    SharedPlayerManager.shared.removePlayer(for: controllerId)
                     result(nil)
                 } else {
                     result(FlutterError(code: "INVALID_ARGUMENT", message: "Controller ID is required", details: nil))
@@ -73,10 +108,14 @@ import UIKit
         registeredViews.removeValue(forKey: viewId)
     }
 
+    /// Registers the StreamHandler for `native_video_player_controller_<id>`.
+    ///
+    /// Idempotent: an existing registration is kept (Dart re-listening simply
+    /// replaces the sink via the handler's onListen). Called both via the shared
+    /// method channel (from the Dart controller constructor, before Dart listens)
+    /// and from VideoPlayerView init as a safety net.
     public static func setupControllerEventChannel(for controllerId: Int) {
-        // Don't set up if already exists
-        guard controllerEventHandlers[controllerId] == nil else {
-            print("Controller event channel for controller \(controllerId) already exists")
+        guard controllerEventChannels[controllerId] == nil else {
             return
         }
 
@@ -85,21 +124,22 @@ import UIKit
             return
         }
 
-        print("✅ Setting up controller event channel for controller \(controllerId)")
         let handler = ControllerEventChannelHandler(controllerId: controllerId)
         let channel = FlutterEventChannel(
             name: "native_video_player_controller_\(controllerId)",
             binaryMessenger: messenger
         )
         channel.setStreamHandler(handler)
-        controllerEventHandlers[controllerId] = handler
+        controllerEventChannels[controllerId] = ControllerChannelEntry(channel: channel, handler: handler)
     }
 
+    /// Deregisters the channel registered by `setupControllerEventChannel`.
+    /// Idempotent; also defensively drops the sink in case onCancel never ran.
     public static func teardownControllerEventChannel(for controllerId: Int) {
-        if let handler = controllerEventHandlers[controllerId] {
-            print("🗑️ Tearing down controller event channel for controller \(controllerId)")
-            controllerEventHandlers.removeValue(forKey: controllerId)
+        if let entry = controllerEventChannels.removeValue(forKey: controllerId) {
+            entry.channel.setStreamHandler(nil)
         }
+        SharedPlayerManager.shared.unregisterControllerEventSink(for: controllerId)
     }
 }
 

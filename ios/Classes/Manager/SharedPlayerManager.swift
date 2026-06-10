@@ -324,6 +324,7 @@ class SharedPlayerManager: NSObject {
         mediaInfoCache.removeAll()
         controllerWithAutomaticPiP = nil
         controllersWithManualPiP.removeAll()
+        controllerEventSinks.removeAll()
     }
 
     // MARK: - AirPlay Route Detection
