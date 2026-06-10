@@ -1,5 +1,7 @@
 package com.huddlecommunity.better_native_video_player.handlers
 
+import com.huddlecommunity.better_native_video_player.NpLog
+
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.EventChannel

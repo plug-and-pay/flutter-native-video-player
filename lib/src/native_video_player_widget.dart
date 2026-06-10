@@ -219,6 +219,13 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     return params;
   }
 
+  /// The platform view is built once and cached: rebuilding this State (e.g.
+  /// overlay visibility setState) must never re-run UiKitView /
+  /// PlatformViewLink construction.
+  Widget? _cachedPlatformView;
+
+  Widget _platformView() => _cachedPlatformView ??= _buildPlatformView();
+
   Widget _buildPlatformView() {
     const String viewType = 'native_video_player';
     final Map<String, dynamic> creationParams = _getCreationParams();
@@ -278,7 +285,7 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final platformView = _buildPlatformView();
+    final platformView = _platformView();
 
     Widget content;
 
@@ -300,15 +307,20 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
                 child: Container(color: Colors.transparent),
               ),
             ),
-          // Animated overlay with tap-to-hide
-          FadeTransition(
-            opacity: _overlayOpacity,
-            child: GestureDetector(
-              onTap: _overlayVisible ? _toggleOverlay : null,
-              behavior: HitTestBehavior.deferToChild,
-              child: IgnorePointer(
-                ignoring: !_overlayVisible,
-                child: widget.overlayBuilder!(context, widget.controller),
+          // Animated overlay with tap-to-hide, isolated in its own repaint
+          // boundary so fade animations only repaint the overlay layer (a
+          // boundary around the platform view itself would be useless — it
+          // composites outside Flutter's raster cache)
+          RepaintBoundary(
+            child: FadeTransition(
+              opacity: _overlayOpacity,
+              child: GestureDetector(
+                onTap: _overlayVisible ? _toggleOverlay : null,
+                behavior: HitTestBehavior.deferToChild,
+                child: IgnorePointer(
+                  ignoring: !_overlayVisible,
+                  child: widget.overlayBuilder!(context, widget.controller),
+                ),
               ),
             ),
           ),

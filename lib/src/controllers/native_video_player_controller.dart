@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config/native_video_player_config.dart';
 import '../enums/native_video_player_event.dart';
 import '../fullscreen/fullscreen_manager.dart';
 import '../fullscreen/fullscreen_video_player.dart';
@@ -16,6 +17,7 @@ import '../models/native_video_player_subtitle_track.dart';
 import '../platform/platform_utils.dart';
 import '../platform/video_player_method_channel.dart';
 import '../services/airplay_state_manager.dart';
+import '../services/playback_coordinator.dart';
 
 /// Controller for managing native video player via platform channels
 ///
@@ -287,6 +289,10 @@ class NativeVideoPlayerController {
   Future<void>? get debugControllerChannelSetup =>
       _controllerChannelSetupFuture;
 
+  /// Adapter through which the [PlaybackCoordinator] sees this controller
+  /// (cap enforcement for [NativeVideoPlayerConfig.maxConcurrentPlayingPlayers]).
+  late final PlayableHandle _playableHandle = _ControllerPlayableHandle(this);
+
   /// Whether the MainActivity PiP event listener has been set up
   static bool _pipEventListenerSetup = false;
 
@@ -386,6 +392,19 @@ class NativeVideoPlayerController {
     if (oldState.activityState != newState.activityState) {
       if (!_playerStateController.isClosed) {
         _playerStateController.add(newState.activityState);
+      }
+
+      // Report playing-state TRANSITIONS to the playback coordinator (cap
+      // enforcement). Transitions — not play() calls — also catch playback
+      // started natively (native controls, remote commands, autoplay).
+      final bool wasPlaying =
+          oldState.activityState == PlayerActivityState.playing;
+      final bool isPlaying =
+          newState.activityState == PlayerActivityState.playing;
+      if (!wasPlaying && isPlaying) {
+        PlaybackCoordinator.instance.onPlaying(_playableHandle);
+      } else if (wasPlaying && !isPlaying) {
+        PlaybackCoordinator.instance.onStoppedPlaying(_playableHandle);
       }
     }
     if (oldState.currentPosition != newState.currentPosition) {
@@ -851,6 +870,14 @@ class NativeVideoPlayerController {
     'enableHDR': enableHDR,
     'enableLooping': enableLooping,
     'preventFullscreenSwipeDismiss': preventFullscreenSwipeDismiss,
+    'timeUpdateIntervalMs':
+        NativeVideoPlayerConfig.global.timeUpdateInterval.inMilliseconds,
+    if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
+      'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
+          .toMap(),
+    if (NativeVideoPlayerConfig.global.iosBufferConfig != null)
+      'iosBufferConfig': NativeVideoPlayerConfig.global.iosBufferConfig!
+          .toMap(),
     if (mediaInfo != null) 'mediaInfo': mediaInfo!.toMap(),
   };
 
@@ -2462,6 +2489,9 @@ class NativeVideoPlayerController {
     // Mark as disposed immediately to prevent new events from being added
     _isDisposed = true;
 
+    // Remove from the playback coordinator (cap enforcement)
+    PlaybackCoordinator.instance.unregister(_playableHandle);
+
     // Wait for any in-flight controller-channel setup so it cannot subscribe
     // after teardown (its retries abort early now that _isDisposed is set).
     try {
@@ -2583,6 +2613,26 @@ class NativeVideoPlayerController {
       handler(controlEvent);
     }
   }
+}
+
+/// Adapter exposing a controller to the [PlaybackCoordinator] without
+/// widening the controller's public API.
+class _ControllerPlayableHandle implements PlayableHandle {
+  _ControllerPlayableHandle(this.controller);
+
+  final NativeVideoPlayerController controller;
+
+  @override
+  int get id => controller.id;
+
+  @override
+  bool get isPipActive => controller._state.isPipEnabled;
+
+  @override
+  bool get isAirPlayConnected => controller._state.isAirplayConnected;
+
+  @override
+  Future<void> pauseForCap() => controller.pause();
 }
 
 /// App lifecycle observer to hide overlay before automatic PiP on Android

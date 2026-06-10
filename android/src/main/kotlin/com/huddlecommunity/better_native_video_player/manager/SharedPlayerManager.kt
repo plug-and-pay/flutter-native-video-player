@@ -1,10 +1,13 @@
 package com.huddlecommunity.better_native_video_player.manager
 
+import com.huddlecommunity.better_native_video_player.NpLog
+
 import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler
@@ -41,15 +44,53 @@ object SharedPlayerManager {
     /**
      * Gets or creates a player for the given controller ID
      * Returns a Pair<ExoPlayer, Boolean> where the Boolean indicates if the player already existed (true) or was newly created (false)
+     *
+     * [bufferConfig] (optional, from the Dart NativeVideoPlayerConfig) tunes
+     * DefaultLoadControl and only applies when the player is first created
+     * for this controller ID; null keeps ExoPlayer's defaults.
      */
-    fun getOrCreatePlayer(context: Context, controllerId: Int): Pair<ExoPlayer, Boolean> {
+    fun getOrCreatePlayer(
+        context: Context,
+        controllerId: Int,
+        bufferConfig: Map<*, *>? = null
+    ): Pair<ExoPlayer, Boolean> {
         val alreadyExisted = players.containsKey(controllerId)
         val player = players.getOrPut(controllerId) {
-            ExoPlayer.Builder(context)
-                .setAudioAttributes(AudioAttributes.DEFAULT, false)
-                .build()
+            buildPlayer(context, bufferConfig)
         }
         return Pair(player, alreadyExisted)
+    }
+
+    /**
+     * Builds an ExoPlayer, optionally with a tuned DefaultLoadControl.
+     */
+    fun buildPlayer(context: Context, bufferConfig: Map<*, *>? = null): ExoPlayer {
+        val builder = ExoPlayer.Builder(context)
+            .setAudioAttributes(AudioAttributes.DEFAULT, false)
+        if (bufferConfig != null) {
+            val minBufferMs = (bufferConfig["minBufferMs"] as? Number)?.toInt() ?: 50000
+            val maxBufferMs = (bufferConfig["maxBufferMs"] as? Number)?.toInt() ?: 50000
+            val bufferForPlaybackMs =
+                (bufferConfig["bufferForPlaybackMs"] as? Number)?.toInt() ?: 2500
+            val bufferForPlaybackAfterRebufferMs =
+                (bufferConfig["bufferForPlaybackAfterRebufferMs"] as? Number)?.toInt() ?: 5000
+            builder.setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        minBufferMs,
+                        maxBufferMs,
+                        bufferForPlaybackMs,
+                        bufferForPlaybackAfterRebufferMs
+                    )
+                    .build()
+            )
+            NpLog.d(
+                TAG,
+                "Built player with buffer config: min=$minBufferMs max=$maxBufferMs " +
+                    "forPlayback=$bufferForPlaybackMs afterRebuffer=$bufferForPlaybackAfterRebufferMs"
+            )
+        }
+        return builder.build()
     }
 
     /**

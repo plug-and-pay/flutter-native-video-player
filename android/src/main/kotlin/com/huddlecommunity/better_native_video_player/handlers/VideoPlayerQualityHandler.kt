@@ -1,5 +1,7 @@
 package com.huddlecommunity.better_native_video_player.handlers
 
+import com.huddlecommunity.better_native_video_player.NpLog
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL

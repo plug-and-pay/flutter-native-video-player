@@ -1,5 +1,7 @@
 package com.huddlecommunity.better_native_video_player.handlers
 
+import com.huddlecommunity.better_native_video_player.NpLog
+
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.PlaybackException
@@ -17,12 +19,12 @@ class VideoPlayerObserver(
     private val notificationHandler: com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler? = null,
     private val getMediaInfo: (() -> Map<String, Any>?)? = null,
     private val controllerId: Int? = null,
-    private val viewId: Long? = null
+    private val viewId: Long? = null,
+    private val updateIntervalMs: Long = 500L
 ) : Player.Listener {
 
     companion object {
         private const val TAG = "VideoPlayerObserver"
-        private const val UPDATE_INTERVAL_MS = 500L // Update every 500ms
     }
 
     // Track if we've already sent a buffering event to avoid duplicates
@@ -43,7 +45,7 @@ class VideoPlayerObserver(
         override fun run() {
             sendTimeUpdate()
             if (isTickerRunning) {
-                handler.postDelayed(this, UPDATE_INTERVAL_MS)
+                handler.postDelayed(this, updateIntervalMs)
             }
         }
     }

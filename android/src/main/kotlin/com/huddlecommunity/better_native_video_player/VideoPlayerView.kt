@@ -13,7 +13,6 @@ import androidx.annotation.RequiresApi
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -113,10 +112,13 @@ class VideoPlayerView(
             NpLog.d(TAG, "📱 Stored media info during init: $title")
         }
 
-        // Get or create shared player
+        // Get or create shared player. The optional buffer config (from the
+        // Dart NativeVideoPlayerConfig) only applies at first creation.
+        val bufferConfig = args?.get("androidBufferConfig") as? Map<*, *>
         val isSharedPlayer: Boolean
         player = if (controllerId != null) {
-            val (sharedPlayer, alreadyExisted) = SharedPlayerManager.getOrCreatePlayer(context, controllerId)
+            val (sharedPlayer, alreadyExisted) =
+                SharedPlayerManager.getOrCreatePlayer(context, controllerId, bufferConfig)
             isSharedPlayer = alreadyExisted
             if (alreadyExisted) {
                 NpLog.d(TAG, "Using existing shared player for controller ID: $controllerId")
@@ -127,9 +129,7 @@ class VideoPlayerView(
         } else {
             NpLog.d(TAG, "No controller ID provided, creating new player")
             isSharedPlayer = false
-            ExoPlayer.Builder(context)
-                .setAudioAttributes(AudioAttributes.DEFAULT, false)
-                .build()
+            SharedPlayerManager.buildPlayer(context, bufferConfig)
         }
 
         // Set repeat mode for looping
@@ -265,13 +265,16 @@ class VideoPlayerView(
         // Callbacks removed as they're no longer needed
 
         // Setup observer with notification handler and media info getter
+        val timeUpdateIntervalMs =
+            (args?.get("timeUpdateIntervalMs") as? Number)?.toLong() ?: 500L
         observer = VideoPlayerObserver(
             player = player,
             eventHandler = eventHandler,
             notificationHandler = notificationHandler,
             getMediaInfo = { currentMediaInfo },
             controllerId = controllerId,
-            viewId = viewId
+            viewId = viewId,
+            updateIntervalMs = timeUpdateIntervalMs
         )
         player.addListener(observer)
 

@@ -90,9 +90,6 @@ import QuartzCore
     // Track if this is a shared player (to avoid sending duplicate initialization events)
     var isSharedPlayer: Bool = false
 
-    // AirPlay route detector
-    var routeDetector: AVRouteDetector?
-
     // Store desired playback speed
     var desiredPlaybackSpeed: Float = 1.0
 
@@ -105,6 +102,14 @@ import QuartzCore
     // Whether to prevent swipe-to-dismiss in native fullscreen mode (the
     // system swipe gesture can leave the inline player with a black screen)
     var preventFullscreenSwipeDismiss: Bool = true
+
+    // Interval between timeUpdate events while playing (from the Dart
+    // NativeVideoPlayerConfig; default matches previous behavior)
+    var timeUpdateIntervalMs: Int = 500
+
+    // Optional AVPlayer buffer tuning (from the Dart NativeVideoPlayerConfig)
+    var preferredForwardBufferDuration: Double?
+    var automaticallyWaitsToMinimizeStalling: Bool = true
 
     // Track if app is in background to keep audio playing on screen lock
     var isInBackground: Bool = false
@@ -209,6 +214,14 @@ import QuartzCore
 
             // Fullscreen swipe-to-dismiss configuration from args
             preventFullscreenSwipeDismiss = args["preventFullscreenSwipeDismiss"] as? Bool ?? true
+
+            // Time-update interval and buffer tuning from args
+            timeUpdateIntervalMs = args["timeUpdateIntervalMs"] as? Int ?? 500
+            if let bufferConfig = args["iosBufferConfig"] as? [String: Any] {
+                preferredForwardBufferDuration = bufferConfig["preferredForwardBufferDuration"] as? Double
+                automaticallyWaitsToMinimizeStalling =
+                    bufferConfig["automaticallyWaitsToMinimizeStalling"] as? Bool ?? true
+            }
 
             // For shared players, try to get PiP settings from SharedPlayerManager
             // This ensures PiP settings persist across all views using the same controller
@@ -350,9 +363,11 @@ import QuartzCore
         )
         npLog("✅ Registered audio session interruption observer for view \(viewId)")
 
-        // Set up AirPlay route detector (iOS 11.0+)
+        // Use the app-wide route detector in SharedPlayerManager instead of a
+        // per-view AVRouteDetector — route detection is power-expensive and
+        // one detector serves all views (iOS 11.0+).
         if #available(iOS 11.0, *) {
-            setupAirPlayRouteDetector()
+            SharedPlayerManager.shared.ensureRouteDetectionStarted()
         }
     }
 
@@ -635,13 +650,11 @@ import QuartzCore
             sendEvent("isInitialized")
         }
 
-        // Send initial AirPlay availability state
+        // Send initial AirPlay availability state (from the app-wide detector)
         if #available(iOS 11.0, *) {
-            if let detector = routeDetector {
-                let isAvailable = detector.multipleRoutesDetected
-                npLog("[\(channelName)] Sending initial AirPlay availability: \(isAvailable)")
-                sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
-            }
+            let isAvailable = SharedPlayerManager.shared.isAirPlayRouteAvailable
+            npLog("[\(channelName)] Sending initial AirPlay availability: \(isAvailable)")
+            sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
         }
 
         // Send initial AirPlay connection state
@@ -804,13 +817,6 @@ import QuartzCore
 
         // Remove player observer for externalPlaybackActive
         player?.removeObserver(self, forKeyPath: "externalPlaybackActive")
-
-        // Remove route detector observer
-        if #available(iOS 11.0, *) {
-            routeDetector?.removeObserver(self, forKeyPath: "multipleRoutesDetected")
-            routeDetector?.isRouteDetectionEnabled = false
-            routeDetector = nil
-        }
 
         NotificationCenter.default.removeObserver(self)
         methodChannel.setMethodCallHandler(nil)

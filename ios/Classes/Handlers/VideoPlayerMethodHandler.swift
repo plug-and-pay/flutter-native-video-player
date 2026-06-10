@@ -130,6 +130,13 @@ extension VideoPlayerView {
         
         playerItem = AVPlayerItem(asset: asset)
 
+        // Optional buffer tuning from NativeVideoPlayerConfig (0/default =
+        // AVPlayer decides automatically)
+        if let preferredForwardBufferDuration = preferredForwardBufferDuration {
+            playerItem.preferredForwardBufferDuration = preferredForwardBufferDuration
+        }
+        player?.automaticallyWaitsToMinimizeStalling = automaticallyWaitsToMinimizeStalling
+
         // Replace current item immediately - don't wait for HDR configuration
         // This allows the video to start loading right away
         player?.replaceCurrentItem(with: playerItem)
@@ -1093,18 +1100,21 @@ extension VideoPlayerView {
             self.timeObserver = nil
         }
 
-        // Update Now Playing info every second
-        let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        // Emit timeUpdate events at the configured interval while playing
+        let intervalSeconds = Double(timeUpdateIntervalMs) / 1000.0
+        let interval = CMTime(seconds: intervalSeconds, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        // Resync Now Playing roughly every 5 seconds regardless of interval
+        let nowPlayingResyncEvery = max(1, Int((5000.0 / Double(timeUpdateIntervalMs)).rounded()))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
             guard let self = self, let player = self.player, let currentItem = player.currentItem else { return }
 
-            // Resync Now Playing elapsed time only every 10th tick (~5s): the
-            // system extrapolates position from the playback rate, and the
+            // Resync Now Playing elapsed time only every ~5s: the system
+            // extrapolates position from the playback rate, and the
             // play/pause/seek paths push immediate updates. Writing the
             // MPNowPlayingInfoCenter dictionary is an XPC call — doing it
-            // every 0.5s per view is wasted work.
+            // every tick per view is wasted work.
             self.nowPlayingResyncTick += 1
-            if self.nowPlayingResyncTick >= 10 {
+            if self.nowPlayingResyncTick >= nowPlayingResyncEvery {
                 self.nowPlayingResyncTick = 0
                 self.updateNowPlayingPlaybackTime()
             }

@@ -10,6 +10,18 @@ import Flutter
 class SharedPlayerManager: NSObject {
     static let shared = SharedPlayerManager()
 
+    /// Threading contract: every mutating entry point must run on the main
+    /// thread — method-channel handlers and platform-view init/deinit already
+    /// do. The dictionaries below are intentionally unsynchronized; this
+    /// assertion (debug builds only) catches violations instead of corrupting
+    /// state silently.
+    @inline(__always)
+    private func assertMainThread(_ function: StaticString = #function) {
+        #if DEBUG
+        dispatchPrecondition(condition: .onQueue(.main))
+        #endif
+    }
+
     private var players: [Int: AVPlayer] = [:]
 
     /// Shared AVPlayerViewController instances (persist across view disposal)
@@ -95,6 +107,7 @@ class SharedPlayerManager: NSObject {
     /// Returns a tuple (AVPlayer, AVPlayerViewController, Bool) where the Bool indicates if they already existed
     /// This ensures the view controller persists across platform view disposal so PiP delegate callbacks continue to work
     func getOrCreatePlayerAndViewController(for controllerId: Int) -> (AVPlayer, AVPlayerViewController, Bool) {
+        assertMainThread()
         if let existingPlayer = players[controllerId],
            let existingViewController = playerViewControllers[controllerId] {
             npLog("♻️ [SharedPlayerManager] Reusing existing player AND view controller for controller ID: \(controllerId)")
@@ -174,6 +187,7 @@ class SharedPlayerManager: NSObject {
     /// Registers a controller-level event sink for persistent events
     /// This sink receives PiP and AirPlay events independently of platform views
     func registerControllerEventSink(_ eventSink: @escaping FlutterEventSink, for controllerId: Int) {
+        assertMainThread()
         controllerEventSinks[controllerId] = eventSink
         npLog("✅ [SharedPlayerManager] Registered controller event sink for controller \(controllerId)")
 
@@ -183,6 +197,7 @@ class SharedPlayerManager: NSObject {
 
     /// Unregisters a controller-level event sink
     func unregisterControllerEventSink(for controllerId: Int) {
+        assertMainThread()
         controllerEventSinks.removeValue(forKey: controllerId)
         npLog("🗑️ [SharedPlayerManager] Unregistered controller event sink for controller \(controllerId)")
     }
@@ -258,6 +273,7 @@ class SharedPlayerManager: NSObject {
 
     /// Removes a player (called when explicitly disposed)
     func removePlayer(for controllerId: Int) {
+        assertMainThread()
         npLog("🗑️ [SharedPlayerManager] removePlayer called for controllerId: \(controllerId)")
         npLog("📊 [SharedPlayerManager] Current players count: \(players.count), players: \(players.keys.sorted())")
 
@@ -329,6 +345,21 @@ class SharedPlayerManager: NSObject {
 
     // MARK: - AirPlay Route Detection
 
+    /// True while the global route detector reports multiple available routes
+    var isAirPlayRouteAvailable: Bool {
+        globalRouteDetector?.multipleRoutesDetected ?? false
+    }
+
+    /// Starts global route detection if not already running. Called when a
+    /// platform view is created — replaces the previous per-view
+    /// AVRouteDetector instances (route detection is power-expensive; one
+    /// app-wide detector serves all views).
+    @available(iOS 11.0, *)
+    func ensureRouteDetectionStarted() {
+        guard globalRouteDetector == nil else { return }
+        startAirPlayRouteDetection()
+    }
+
     /// Starts global AirPlay route detection
     /// This monitors AirPlay device availability across the entire app
     @available(iOS 11.0, *)
@@ -391,6 +422,16 @@ class SharedPlayerManager: NSObject {
                 view.sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
             }
         }
+
+        // Also send through the controller-level channels so availability
+        // survives view disposal (previously done by per-view detectors)
+        for controllerId in controllerEventSinks.keys {
+            sendControllerEvent(
+                "airPlayAvailabilityChanged",
+                data: ["isAvailable": isAvailable],
+                for: controllerId
+            )
+        }
     }
 
     /// KVO observer for route detector changes
@@ -408,6 +449,7 @@ class SharedPlayerManager: NSObject {
     /// Register a VideoPlayerView instance
     /// Multiple views can be registered for the same controller (e.g., list + detail screen)
     func registerVideoPlayerView(_ view: VideoPlayerView, viewId: Int64) {
+        assertMainThread()
         let key = "\(viewId)"
         videoPlayerViews[key] = WeakVideoPlayerViewWrapper(view: view)
         npLog("   → Registered view with ID \(viewId), total views: \(videoPlayerViews.count)")
@@ -415,6 +457,7 @@ class SharedPlayerManager: NSObject {
     
     /// Unregister a VideoPlayerView when it's disposed
     func unregisterVideoPlayerView(viewId: Int64) {
+        assertMainThread()
         let key = "\(viewId)"
         videoPlayerViews.removeValue(forKey: key)
         npLog("   → Unregistered view with ID \(viewId), remaining views: \(videoPlayerViews.count)")

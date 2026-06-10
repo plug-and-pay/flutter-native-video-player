@@ -235,30 +235,9 @@ extension VideoPlayerView {
             }
         }
 
-        // Handle AVRouteDetector observations
-        if #available(iOS 11.0, *) {
-            if let detector = object as? AVRouteDetector, detector == routeDetector {
-                switch keyPath {
-                case "multipleRoutesDetected":
-                    let isAvailable = routeDetector?.multipleRoutesDetected ?? false
-                    npLog("AVRouteDetector multipleRoutesDetected changed to: \(isAvailable)")
-                    let eventData: [String: Any] = ["isAvailable": isAvailable]
-
-                    // Send through per-view event channel (legacy)
-                    sendEvent("airPlayAvailabilityChanged", data: eventData)
-
-                    // Send through controller-level event channel (persists when views disposed)
-                    if let controllerIdValue = controllerId {
-                        SharedPlayerManager.shared.sendControllerEvent(
-                            "airPlayAvailabilityChanged",
-                            data: eventData,
-                            for: controllerIdValue
-                        )
-                    }
-                default: break
-                }
-            }
-        }
+        // Note: AirPlay availability changes are observed by the app-wide
+        // route detector in SharedPlayerManager, which fans the event out to
+        // all per-view and controller-level channels.
     }
 
     @objc func playerItemFailedToPlay(notification: Notification) {
@@ -289,33 +268,6 @@ extension VideoPlayerView {
     }
 
     // MARK: - AirPlay Route Detection
-
-    /// Sets up AVRouteDetector to monitor AirPlay availability
-    @available(iOS 11.0, *)
-    func setupAirPlayRouteDetector() {
-        npLog("Setting up AirPlay route detector")
-        routeDetector = AVRouteDetector()
-        routeDetector?.isRouteDetectionEnabled = true
-
-        // Observe changes to multipleRoutesDetected
-        routeDetector?.addObserver(
-            self,
-            forKeyPath: "multipleRoutesDetected",
-            options: [.new, .initial],
-            context: nil
-        )
-
-        npLog("AirPlay route detector setup complete, multipleRoutesDetected: \(routeDetector?.multipleRoutesDetected ?? false)")
-    }
-
-    /// Observes AirPlay route availability changes
-    @objc func handleAirPlayRouteChange() {
-        if #available(iOS 11.0, *) {
-            if let isAvailable = routeDetector?.multipleRoutesDetected {
-                sendEvent("airPlayAvailabilityChanged", data: ["isAvailable": isAvailable])
-            }
-        }
-    }
 
     /// Gets the name of the currently connected AirPlay device
     func getAirPlayDeviceName() -> String? {

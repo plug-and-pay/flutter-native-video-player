@@ -11,6 +11,7 @@
 /// - Background playback with media notifications
 library;
 
+export 'src/config/native_video_player_config.dart';
 export 'src/controllers/native_video_player_controller.dart';
 export 'src/enums/native_video_player_event.dart';
 export 'src/fullscreen/fullscreen_manager.dart';
