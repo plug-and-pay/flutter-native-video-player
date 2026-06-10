@@ -1,0 +1,17 @@
+name: better_native_video_extractor
+description: >-
+  Extracts playable stream URLs, thumbnails and metadata from hosted video
+  platforms (Vimeo, YouTube) without WebViews. Companion module for
+  better_native_video_player; usable with any player.
+version: 0.1.0
+repository: https://github.com/DaniKemper010/native-video-player
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  youtube_explode_dart: ^2.3.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0
