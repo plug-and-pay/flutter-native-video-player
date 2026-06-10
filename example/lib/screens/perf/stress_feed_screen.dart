@@ -102,6 +102,20 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
                 child: const Text('Pause all'),
               ),
               const Spacer(),
+              const Text('cap 2', style: TextStyle(fontSize: 12)),
+              Switch(
+                key: const ValueKey('feed_set_cap_2'),
+                value:
+                    NativeVideoPlayerConfig
+                        .global
+                        .maxConcurrentPlayingPlayers !=
+                    null,
+                onChanged: (value) => setState(() {
+                  NativeVideoPlayerConfig.global = NativeVideoPlayerConfig(
+                    maxConcurrentPlayingPlayers: value ? 2 : null,
+                  );
+                }),
+              ),
               const Text('naive', style: TextStyle(fontSize: 12)),
               Switch(
                 key: const ValueKey('feed_toggle_card_mode'),
