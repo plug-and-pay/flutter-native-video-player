@@ -1333,6 +1333,82 @@ extension VideoPlayerView {
         result(tracks)
     }
 
+    /// Mirror of handleGetAvailableSubtitleTracks for the AUDIBLE media
+    /// characteristic: lists alternate audio renditions (languages, audio
+    /// description, commentary) of HLS/multi-track content. Issues #23/#16.
+    func handleGetAvailableAudioTracks(result: @escaping FlutterResult) {
+        guard let playerItem = player?.currentItem,
+              let asset = playerItem.asset as? AVURLAsset,
+              let mediaSelectionGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
+            result([])
+            return
+        }
+
+        let currentSelection = playerItem.currentMediaSelection.selectedMediaOption(in: mediaSelectionGroup)
+        var tracks: [[String: Any]] = []
+        for (index, option) in mediaSelectionGroup.options.enumerated() {
+            let languageCode = option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
+            var displayName = option.displayName
+            if displayName.isEmpty, let locale = option.locale {
+                displayName = Locale.current.localizedString(forIdentifier: locale.identifier) ?? languageCode
+            }
+            if displayName.isEmpty {
+                displayName = languageCode
+            }
+            tracks.append([
+                "index": index,
+                "language": languageCode,
+                "displayName": displayName,
+                "isSelected": option == currentSelection
+            ])
+        }
+        npLog("🔊 Total audio tracks found: \(tracks.count)")
+        result(tracks)
+    }
+
+    /// Selects an alternate audio rendition by index (audible group).
+    func handleSetAudioTrack(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let trackInfo = args["track"] as? [String: Any],
+              let index = trackInfo["index"] as? Int else {
+            result(FlutterError(code: "INVALID_TRACK", message: "Invalid audio track data", details: nil))
+            return
+        }
+
+        guard let playerItem = player?.currentItem,
+              let asset = playerItem.asset as? AVURLAsset,
+              let mediaSelectionGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
+            result(FlutterError(code: "NO_AUDIO_TRACKS", message: "No alternate audio tracks available", details: nil))
+            return
+        }
+
+        guard index >= 0 && index < mediaSelectionGroup.options.count else {
+            result(FlutterError(code: "INVALID_INDEX", message: "Invalid audio track index", details: nil))
+            return
+        }
+
+        let option = mediaSelectionGroup.options[index]
+        playerItem.select(option, in: mediaSelectionGroup)
+
+        let languageCode = option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
+        var displayName = option.displayName
+        if displayName.isEmpty, let locale = option.locale {
+            displayName = Locale.current.localizedString(forIdentifier: locale.identifier) ?? languageCode
+        }
+        if displayName.isEmpty {
+            displayName = languageCode
+        }
+        npLog("🔊 Selected audio track: \(displayName) (\(languageCode))")
+
+        sendEvent("audioTrackChange", data: [
+            "index": index,
+            "language": languageCode,
+            "displayName": displayName,
+            "isSelected": true
+        ])
+        result(nil)
+    }
+
     func handleSetSubtitleTrack(call: FlutterMethodCall, result: @escaping FlutterResult) {
         guard let args = call.arguments as? [String: Any],
               let trackInfo = args["track"] as? [String: Any],

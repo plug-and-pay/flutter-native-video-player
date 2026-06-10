@@ -12,6 +12,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.MimeTypes
@@ -138,6 +139,8 @@ class VideoPlayerMethodHandler(
             "load" -> handleLoad(call, result)
             "setSidecarSubtitles" -> handleSetSidecarSubtitles(call, result)
             "setNativeSidecarActive" -> handleSetNativeSidecarActive(call, result)
+            "getAvailableAudioTracks" -> handleGetAvailableAudioTracks(result)
+            "setAudioTrack" -> handleSetAudioTrack(call, result)
             "play" -> handlePlay(result)
             "pause" -> handlePause(result)
             "seekTo" -> handleSeekTo(call, result)
@@ -431,6 +434,100 @@ class VideoPlayerMethodHandler(
     /**
      * Changes video quality (for HLS streams)
      */
+    /**
+     * Lists the alternate audio tracks (languages, audio description,
+     * commentary) of the current media — the audio mirror of the subtitle
+     * track API (issues #23/#16). Index is the track's position within its
+     * audio track group, matching what handleSetAudioTrack expects.
+     */
+    private fun handleGetAvailableAudioTracks(result: MethodChannel.Result) {
+        try {
+            val tracks = mutableListOf<Map<String, Any>>()
+            for (group in player.currentTracks.groups) {
+                if (group.type != C.TRACK_TYPE_AUDIO) continue
+                for (trackIndex in 0 until group.length) {
+                    val format = group.getTrackFormat(trackIndex)
+                    val languageCode = format.language ?: "unknown"
+                    val displayName = format.label?.takeIf { it.isNotEmpty() }
+                        ?: try {
+                            java.util.Locale(languageCode)
+                                .getDisplayLanguage(java.util.Locale.getDefault())
+                                .takeIf { it.isNotEmpty() } ?: languageCode
+                        } catch (e: Exception) {
+                            languageCode
+                        }
+                    tracks.add(
+                        mapOf(
+                            "index" to tracks.size,
+                            "language" to languageCode,
+                            "displayName" to displayName,
+                            "isSelected" to group.isTrackSelected(trackIndex)
+                        )
+                    )
+                }
+            }
+            NpLog.d(TAG, "🔊 Total audio tracks found: ${tracks.size}")
+            result.success(tracks)
+        } catch (e: Exception) {
+            NpLog.e(TAG, "Error getting audio tracks: ${e.message}", e)
+            result.success(emptyList<Map<String, Any>>())
+        }
+    }
+
+    /**
+     * Selects an alternate audio track by flat index (the enumeration order
+     * of handleGetAvailableAudioTracks). Uses a TrackSelectionOverride —
+     * unlike a preferred-language hint, this distinguishes multiple tracks
+     * of the same language (e.g. "English" vs "English audio description").
+     */
+    private fun handleSetAudioTrack(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val args = call.arguments as? Map<*, *>
+            val trackInfo = args?.get("track") as? Map<*, *>
+            val requestedIndex = trackInfo?.get("index") as? Int
+            if (requestedIndex == null) {
+                result.error("INVALID_TRACK", "Invalid audio track data", null)
+                return
+            }
+
+            var flatIndex = 0
+            for (group in player.currentTracks.groups) {
+                if (group.type != C.TRACK_TYPE_AUDIO) continue
+                for (trackIndex in 0 until group.length) {
+                    if (flatIndex == requestedIndex) {
+                        player.trackSelectionParameters = player.trackSelectionParameters
+                            .buildUpon()
+                            .setOverrideForType(
+                                TrackSelectionOverride(group.mediaTrackGroup, trackIndex)
+                            )
+                            .build()
+
+                        val format = group.getTrackFormat(trackIndex)
+                        val languageCode = format.language ?: "unknown"
+                        val displayName = format.label?.takeIf { it.isNotEmpty() } ?: languageCode
+                        NpLog.d(TAG, "🔊 Selected audio track: $displayName ($languageCode)")
+                        eventHandler.sendEvent(
+                            "audioTrackChange",
+                            mapOf(
+                                "index" to requestedIndex,
+                                "language" to languageCode,
+                                "displayName" to displayName,
+                                "isSelected" to true
+                            )
+                        )
+                        result.success(null)
+                        return
+                    }
+                    flatIndex++
+                }
+            }
+            result.error("INVALID_INDEX", "Invalid audio track index", null)
+        } catch (e: Exception) {
+            NpLog.e(TAG, "Error setting audio track: ${e.message}", e)
+            result.error("AUDIO_TRACK_ERROR", e.message, null)
+        }
+    }
+
     /**
      * Parses the Dart-side sidecar subtitle maps (URL sources only) into
      * Media3 SubtitleConfigurations. Loaded UNSELECTED by design — see the

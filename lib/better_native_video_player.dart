@@ -16,6 +16,7 @@ export 'src/controllers/native_video_player_controller.dart';
 export 'src/enums/native_video_player_event.dart';
 export 'src/fullscreen/fullscreen_manager.dart';
 export 'src/fullscreen/fullscreen_video_player.dart';
+export 'src/models/native_video_player_audio_track.dart';
 export 'src/models/native_video_player_media_info.dart';
 export 'src/models/native_video_player_quality.dart';
 export 'src/models/native_video_player_sidecar_subtitle.dart';

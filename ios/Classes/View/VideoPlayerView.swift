@@ -437,6 +437,10 @@ import QuartzCore
             handleGetAvailableSubtitleTracks(result: result)
         case "setSubtitleTrack":
             handleSetSubtitleTrack(call: call, result: result)
+        case "getAvailableAudioTracks":
+            handleGetAvailableAudioTracks(result: result)
+        case "setAudioTrack":
+            handleSetAudioTrack(call: call, result: result)
         case "enterFullScreen":
             handleEnterFullScreen(result: result)
         case "exitFullScreen":

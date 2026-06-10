@@ -10,6 +10,7 @@ import '../config/native_video_player_config.dart';
 import '../enums/native_video_player_event.dart';
 import '../fullscreen/fullscreen_manager.dart';
 import '../fullscreen/fullscreen_video_player.dart';
+import '../models/native_video_player_audio_track.dart';
 import '../models/native_video_player_media_info.dart';
 import '../models/native_video_player_quality.dart';
 import '../models/native_video_player_sidecar_subtitle.dart';
@@ -1942,6 +1943,20 @@ class NativeVideoPlayerController {
     // (which emits its own subtitleChange event).
     _sidecarSubtitles.deselect();
     await _methodChannel?.setSubtitleTrack(track);
+  }
+
+  /// Gets the alternate audio tracks of the current media (multiple
+  /// languages, audio description, commentary). Empty for single-audio
+  /// content. Issues #23/#16.
+  Future<List<NativeVideoPlayerAudioTrack>> getAvailableAudioTracks() async {
+    return await _methodChannel?.getAvailableAudioTracks() ??
+        <NativeVideoPlayerAudioTrack>[];
+  }
+
+  /// Selects an alternate audio track from [getAvailableAudioTracks].
+  /// Control listeners receive a [PlayerControlState.audioTrackChanged] event.
+  Future<void> setAudioTrack(NativeVideoPlayerAudioTrack track) async {
+    await _methodChannel?.setAudioTrack(track);
   }
 
   /// Replaces the sidecar (external VTT/SRT) subtitle sources.
