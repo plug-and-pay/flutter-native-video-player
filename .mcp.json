@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "marionette": {
+      "command": "sh",
+      "args": ["-c", "cd example && exec dart run marionette_mcp"]
+    }
+  }
+}
