@@ -1,0 +1,20 @@
+1
+00:00:00,000 --> 00:00:04,000
+[NL] Sidecar-ondertitels werken!
+
+2
+00:00:04,000 --> 00:00:08,000
+Deze regel komt uit een SRT-bestand
+gerenderd door de Flutter-overlay.
+
+3
+00:00:08,000 --> 00:00:15,000
+Stijl en positie zijn instelbaar.
+
+4
+00:00:15,000 --> 00:00:30,000
+Cues blijven synchroon bij zoeken en snelheid.
+
+5
+00:00:30,000 --> 00:00:52,000
+Laatste Nederlandse cue van het voorbeeld.

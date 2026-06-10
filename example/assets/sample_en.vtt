@@ -1,0 +1,17 @@
+WEBVTT - English sample sidecar subtitles
+
+00:00.000 --> 00:04.000
+[EN] Sidecar subtitles are working!
+
+00:04.000 --> 00:08.000
+This cue comes from a VTT file
+rendered by the Flutter overlay.
+
+00:08.000 --> 00:15.000
+Styling and position are configurable.
+
+00:15.000 --> 00:30.000
+<i>Cues stay in sync</i> across seeks and speed changes.
+
+00:30.000 --> 00:52.000
+Final English cue of the sample file.

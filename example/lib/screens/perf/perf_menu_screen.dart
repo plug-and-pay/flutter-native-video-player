@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'audio_track_screen.dart';
 import 'lifecycle_stress_screen.dart';
 import 'nav_loop_screen.dart';
 import 'pip_screen.dart';
 import 'scroll_feed_screen.dart';
+import 'sidecar_subtitle_screen.dart';
 import 'stress_feed_screen.dart';
 
 /// Hub for the performance/stress harness screens. Every entry is keyed so
@@ -55,6 +57,16 @@ class PerfMenuScreen extends StatelessWidget {
             key: const ValueKey('perf_pip'),
             title: const Text('PiP harness'),
             onTap: () => _push(context, const PipScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_sidecar_subs'),
+            title: const Text('Sidecar subtitles (VTT/SRT)'),
+            onTap: () => _push(context, const SidecarSubtitleScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_audio_tracks'),
+            title: const Text('Audio track selection'),
+            onTap: () => _push(context, const AudioTrackScreen()),
           ),
         ],
       ),
