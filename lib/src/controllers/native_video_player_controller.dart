@@ -250,7 +250,11 @@ class NativeVideoPlayerController {
   final Map<int, StreamSubscription<dynamic>> _eventSubscriptions =
       <int, StreamSubscription<dynamic>>{};
 
-  /// MainActivity PiP event channel subscription (Android only)
+  /// MainActivity PiP event channel subscription (Android only).
+  ///
+  /// Always null: the native `native_video_player_pip_events` channel was
+  /// never implemented and its dead Dart-side listener has been removed. The
+  /// field and getter are kept only because the getter is public API.
   StreamSubscription<dynamic>? _pipEventSubscription;
 
   /// MainActivity PiP event channel subscription (Android only)
@@ -292,9 +296,6 @@ class NativeVideoPlayerController {
   /// Adapter through which the [PlaybackCoordinator] sees this controller
   /// (cap enforcement for [NativeVideoPlayerConfig.maxConcurrentPlayingPlayers]).
   late final PlayableHandle _playableHandle = _ControllerPlayableHandle(this);
-
-  /// Whether the MainActivity PiP event listener has been set up
-  static bool _pipEventListenerSetup = false;
 
   /// Timer for buffering state debounce (400ms)
   Timer? _bufferingDebounceTimer;
@@ -995,98 +996,6 @@ class NativeVideoPlayerController {
     // This ensures that both the original and fullscreen widgets receive events
     // Use retry logic to handle race condition where native side hasn't finished initializing
     unawaited(_subscribeToEventChannelWithRetry(platformViewId));
-
-    // Set up MainActivity PiP event listener (Android only, once per app)
-    _setupMainActivityPipListener();
-  }
-
-  /// Sets up a global PiP event listener from MainActivity (Android only)
-  ///
-  /// This listener receives PiP enter/exit events from the MainActivity
-  /// when the user presses the home button or exits PiP mode.
-  /// Only set up once per app lifecycle.
-  ///
-  /// NOTE: Currently disabled as the native Android EventChannel
-  /// 'native_video_player_pip_events' is not implemented yet.
-  /// PiP functionality still works through the standard PiP API.
-  void _setupMainActivityPipListener() {
-    // Disabled until the Android EventChannel is properly implemented
-    // TODO: Implement native_video_player_pip_events EventChannel on Android
-    return;
-
-    // ignore: dead_code
-    if (_pipEventListenerSetup) {
-      return;
-    }
-
-    // ignore: dead_code
-    _pipEventListenerSetup = true;
-
-    // Only set up the PiP event channel on Android
-    // iOS doesn't have this channel and doesn't need it
-    // ignore: dead_code
-    if (!PlatformUtils.isAndroid) {
-      return;
-    }
-
-    // ignore: dead_code
-    try {
-      final EventChannel pipEventChannel = const EventChannel(
-        'native_video_player_pip_events',
-      );
-
-      _pipEventSubscription = pipEventChannel.receiveBroadcastStream().listen(
-        (dynamic eventMap) {
-          final map = eventMap as Map<dynamic, dynamic>;
-          final String eventName = map['event'] as String;
-          final bool isInPipMode =
-              map['isInPictureInPictureMode'] as bool? ?? false;
-
-          // Create a control event based on the MainActivity event
-          final PlayerControlState state;
-          if (eventName == 'pipStart') {
-            state = PlayerControlState.pipStarted;
-          } else if (eventName == 'pipStop') {
-            state = PlayerControlState.pipStopped;
-          } else {
-            return;
-          }
-
-          final controlEvent = PlayerControlEvent(
-            state: state,
-            data: <String, dynamic>{
-              'isPictureInPicture': isInPipMode,
-              'fromMainActivity': true,
-            },
-          );
-
-          // Update controller state
-          final bool isPipEnabled = state == PlayerControlState.pipStarted;
-          _updateState(
-            _state.copyWith(controlState: state, isPipEnabled: isPipEnabled),
-          );
-
-          // Notify all control listeners
-          for (final handler in _controlEventHandlers) {
-            handler(controlEvent);
-          }
-        },
-        onError: (dynamic error) {
-          // Silently handle MainActivity PiP event channel errors
-          if (kDebugMode && error is! MissingPluginException) {
-            debugPrint(
-              'MainActivity PiP event channel error (non-critical): $error',
-            );
-          }
-        },
-        cancelOnError: false,
-      );
-    } catch (e) {
-      // Silently handle setup errors
-      if (kDebugMode && e is! MissingPluginException) {
-        debugPrint('MainActivity PiP listener setup error (non-critical): $e');
-      }
-    }
   }
 
   /// Sets up the controller-level event channel for persistent events
