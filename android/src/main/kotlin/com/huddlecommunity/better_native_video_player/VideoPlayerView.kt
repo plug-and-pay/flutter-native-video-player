@@ -82,6 +82,11 @@ class VideoPlayerView(
     // HDR setting
     private var enableHDR: Boolean = false
 
+    // Viewport-based quality capping (NativeVideoPlayerConfig.qualityForViewportSize)
+    private var qualityForViewport: Boolean = false
+    private var lastViewportWidth: Int = 0
+    private var lastViewportHeight: Int = 0
+
 
     init {
         NpLog.d(TAG, "Creating VideoPlayerView with id: $viewId")
@@ -98,6 +103,9 @@ class VideoPlayerView(
 
         // Extract HDR setting from args
         enableHDR = args?.get("enableHDR") as? Boolean ?: false
+
+        // Viewport-based quality capping from args
+        qualityForViewport = args?.get("qualityForViewport") as? Boolean ?: false
         NpLog.d(TAG, "HDR setting: $enableHDR")
 
         // Extract looping setting from args
@@ -356,9 +364,58 @@ class VideoPlayerView(
                 reconnectSurface()
                 result.success(null)
             }
+            "setViewportSize" -> {
+                val width = (call.argument<Number>("width"))?.toInt() ?: 0
+                val height = (call.argument<Number>("height"))?.toInt() ?: 0
+                setViewportSize(width, height)
+                result.success(null)
+            }
             else -> {
                 methodHandler.handleMethodCall(call, result)
             }
+        }
+    }
+
+    /**
+     * Caps adaptive quality selection to the platform view's physical pixel
+     * size (qualityForViewport config). Without this, DefaultTrackSelector's
+     * viewport defaults to the physical DISPLAY size, so every feed tile
+     * selects full-screen quality. The cap is player-level and the player can
+     * be shared by multiple views: the most recent reporter wins, which is
+     * correct for list→detail (the larger detail view reports later).
+     */
+    fun setViewportSize(width: Int, height: Int) {
+        if (!qualityForViewport || width <= 0 || height <= 0) return
+        lastViewportWidth = width
+        lastViewportHeight = height
+        if (!isFullScreen) {
+            applyViewportConstraints(width, height)
+        }
+    }
+
+    private fun applyViewportConstraints(width: Int, height: Int) {
+        NpLog.d(TAG, "Applying viewport quality cap: ${width}x$height")
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setViewportSize(width, height, true)
+            .build()
+    }
+
+    /** Lifts the viewport quality cap (used while in native fullscreen). */
+    private fun clearViewportConstraints() {
+        if (!qualityForViewport) return
+        NpLog.d(TAG, "Clearing viewport quality cap (fullscreen)")
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .clearViewportSizeConstraints()
+            .build()
+    }
+
+    /** Re-applies the last reported viewport cap (after leaving fullscreen). */
+    private fun restoreViewportConstraints() {
+        if (!qualityForViewport) return
+        if (lastViewportWidth > 0 && lastViewportHeight > 0) {
+            applyViewportConstraints(lastViewportWidth, lastViewportHeight)
         }
     }
 
@@ -384,13 +441,16 @@ class VideoPlayerView(
         NpLog.d(TAG, "Got activity: ${activity.javaClass.simpleName}")
 
         if (enteringFullScreen) {
+            // Fullscreen shows the full display: lift the viewport quality cap
+            clearViewportConstraints()
             enterFullscreenNative(activity)
-            
+
             // Notify Flutter that fullscreen was entered
             eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to true))
         } else {
             exitFullscreenNative(activity)
-            
+            restoreViewportConstraints()
+
             // Notify Flutter that fullscreen was exited
             eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to false))
         }

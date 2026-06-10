@@ -107,6 +107,12 @@ import QuartzCore
     // NativeVideoPlayerConfig; default matches previous behavior)
     var timeUpdateIntervalMs: Int = 500
 
+    // Viewport-based quality capping (NativeVideoPlayerConfig.qualityForViewportSize):
+    // caps HLS variant selection to the platform view's physical pixel size.
+    // Lifted in native fullscreen and while AirPlay external playback is active.
+    var qualityForViewport: Bool = false
+    var viewportSize: CGSize?
+
     // Optional AVPlayer buffer tuning (from the Dart NativeVideoPlayerConfig)
     var preferredForwardBufferDuration: Double?
     var automaticallyWaitsToMinimizeStalling: Bool = true
@@ -217,6 +223,9 @@ import QuartzCore
 
             // Time-update interval and buffer tuning from args
             timeUpdateIntervalMs = args["timeUpdateIntervalMs"] as? Int ?? 500
+
+            // Viewport-based quality capping from args
+            qualityForViewport = args["qualityForViewport"] as? Bool ?? false
             if let bufferConfig = args["iosBufferConfig"] as? [String: Any] {
                 preferredForwardBufferDuration = bufferConfig["preferredForwardBufferDuration"] as? Double
                 automaticallyWaitsToMinimizeStalling =
@@ -444,6 +453,8 @@ import QuartzCore
             handleDisableAutomaticInlinePip(result: result)
         case "setShowNativeControls":
             handleSetShowNativeControls(call: call, result: result)
+        case "setViewportSize":
+            handleSetViewportSize(call: call, result: result)
         case "ensureSurfaceConnected":
             // No-op on iOS; each platform view uses its own AVPlayerViewController when shared.
             result(nil)

@@ -187,6 +187,10 @@ extension VideoPlayerView {
                     // When AirPlay connects, try to get device name with multiple retry attempts
                     npLog("🎯 AVPlayer externalPlaybackActive changed to: \(isActive)")
 
+                    // The receiver (TV) renders beyond the inline view's size:
+                    // lift the viewport quality cap while external playback is on
+                    liftViewportCap()
+
                     // Try to get device name immediately
                     let deviceName = getAirPlayDeviceName()
                     npLog("📱 Initial device name check: \(deviceName ?? "nil")")
@@ -217,6 +221,10 @@ extension VideoPlayerView {
                 } else {
                     // Disconnected from AirPlay
                     npLog("🎯 AVPlayer externalPlaybackActive changed to: \(isActive)")
+
+                    // Back to local rendering: restore the viewport quality cap
+                    applyViewportCapIfAppropriate()
+
                     var eventData: [String: Any] = ["isConnected": false, "isConnecting": false]
 
                     // Send through per-view event channel (legacy)

@@ -873,6 +873,7 @@ class NativeVideoPlayerController {
     'preventFullscreenSwipeDismiss': preventFullscreenSwipeDismiss,
     'timeUpdateIntervalMs':
         NativeVideoPlayerConfig.global.timeUpdateInterval.inMilliseconds,
+    'qualityForViewport': NativeVideoPlayerConfig.global.qualityForViewportSize,
     if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
       'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
           .toMap(),

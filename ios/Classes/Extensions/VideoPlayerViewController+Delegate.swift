@@ -204,8 +204,9 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
     ) {
         coordinator.animate(alongsideTransition: nil) { context in
             if !context.isCancelled {
-                // Fullscreen entered
+                // Fullscreen entered: lift the viewport quality cap
                 self.fullscreenPlayerViewController = playerViewController
+                self.liftViewportCap()
                 self.sendEvent("fullscreenChange", data: ["isFullscreen": true])
             }
         }
@@ -237,6 +238,8 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
             DispatchQueue.main.async {
                 self.playerViewController.player = nil
                 self.playerViewController.player = self.player
+                // Back inline: restore the viewport quality cap
+                self.applyViewportCapIfAppropriate()
             }
         }
     }

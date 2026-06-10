@@ -102,6 +102,21 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
                 child: const Text('Pause all'),
               ),
               const Spacer(),
+              const Text('vp', style: TextStyle(fontSize: 12)),
+              // Viewport quality capping. Applies at platform-view creation:
+              // toggle, then leave and re-enter this screen.
+              Switch(
+                key: const ValueKey('feed_toggle_viewport_cap'),
+                value: NativeVideoPlayerConfig.global.qualityForViewportSize,
+                onChanged: (value) => setState(() {
+                  NativeVideoPlayerConfig.global = NativeVideoPlayerConfig(
+                    maxConcurrentPlayingPlayers: NativeVideoPlayerConfig
+                        .global
+                        .maxConcurrentPlayingPlayers,
+                    qualityForViewportSize: value,
+                  );
+                }),
+              ),
               const Text('cap 2', style: TextStyle(fontSize: 12)),
               Switch(
                 key: const ValueKey('feed_set_cap_2'),
@@ -113,6 +128,8 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
                 onChanged: (value) => setState(() {
                   NativeVideoPlayerConfig.global = NativeVideoPlayerConfig(
                     maxConcurrentPlayingPlayers: value ? 2 : null,
+                    qualityForViewportSize:
+                        NativeVideoPlayerConfig.global.qualityForViewportSize,
                   );
                 }),
               ),

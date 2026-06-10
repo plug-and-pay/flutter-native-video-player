@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import 'config/native_video_player_config.dart';
 import 'controllers/native_video_player_controller.dart';
 import 'enums/native_video_player_event.dart';
 
@@ -207,6 +208,66 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
   Future<void> _onPlatformViewCreated(int id) async {
     _platformViewId = id;
     await widget.controller.onPlatformViewCreated(id, context);
+    // The first layout usually happens before the platform view exists, so
+    // report the viewport size now that there is a native receiver.
+    _maybeReportViewportSize();
+  }
+
+  /// Last layout constraints seen by the LayoutBuilder around the platform
+  /// view, in logical pixels.
+  BoxConstraints? _lastConstraints;
+  double _devicePixelRatio = 1.0;
+
+  /// Last viewport size sent to the native side, in physical pixels.
+  Size? _reportedViewportSize;
+
+  /// Reports the platform view's physical pixel size to the native side so
+  /// adaptive quality selection can be capped to what the view can display
+  /// (see [NativeVideoPlayerConfig.qualityForViewportSize]). No-op unless the
+  /// config flag is enabled, the platform view exists, and the size changed.
+  void _maybeReportViewportSize() {
+    if (!NativeVideoPlayerConfig.global.qualityForViewportSize) {
+      return;
+    }
+    final int? viewId = _platformViewId;
+    final BoxConstraints? constraints = _lastConstraints;
+    if (viewId == null || constraints == null) {
+      return;
+    }
+    if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+      return;
+    }
+    final size = Size(
+      (constraints.maxWidth * _devicePixelRatio).roundToDouble(),
+      (constraints.maxHeight * _devicePixelRatio).roundToDouble(),
+    );
+    if (size.width <= 0 || size.height <= 0) {
+      return;
+    }
+    if (_reportedViewportSize == size) {
+      return;
+    }
+    _reportedViewportSize = size;
+    unawaited(_sendViewportSize(viewId, size));
+  }
+
+  Future<void> _sendViewportSize(int viewId, Size physicalSize) async {
+    try {
+      await const MethodChannel(
+        'native_video_player',
+      ).invokeMethod<void>('setViewportSize', <String, dynamic>{
+        'viewId': viewId,
+        'width': physicalSize.width.round(),
+        'height': physicalSize.height.round(),
+      });
+      debugPrint(
+        'NativeVideoPlayer: viewport '
+        '${physicalSize.width.round()}x${physicalSize.height.round()} '
+        'reported for view $viewId (quality cap)',
+      );
+    } catch (e) {
+      debugPrint('Failed to report viewport size: $e');
+    }
   }
 
   Map<String, dynamic> _getCreationParams() {
@@ -285,7 +346,16 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final platformView = _platformView();
+    // Track the view's on-screen size for viewport-based quality capping
+    // (rotation/resize re-runs this builder; the report deduplicates).
+    final platformView = LayoutBuilder(
+      builder: (context, constraints) {
+        _lastConstraints = constraints;
+        _devicePixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+        _maybeReportViewportSize();
+        return _platformView();
+      },
+    );
 
     Widget content;
 

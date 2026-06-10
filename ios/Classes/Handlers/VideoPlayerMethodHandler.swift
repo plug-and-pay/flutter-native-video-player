@@ -137,6 +137,14 @@ extension VideoPlayerView {
         }
         player?.automaticallyWaitsToMinimizeStalling = automaticallyWaitsToMinimizeStalling
 
+        // Viewport-based quality cap (only the default adaptive load path;
+        // manual quality switches create their own uncapped items)
+        if qualityForViewport, let size = viewportSize,
+           fullscreenPlayerViewController == nil,
+           !(player?.isExternalPlaybackActive ?? false) {
+            playerItem.preferredMaximumResolution = size
+        }
+
         // Replace current item immediately - don't wait for HDR configuration
         // This allows the video to start loading right away
         player?.replaceCurrentItem(with: playerItem)
@@ -765,6 +773,9 @@ extension VideoPlayerView {
             // Store reference to dismiss later
             self.fullscreenPlayerViewController = fullscreenPlayerViewController
 
+            // Fullscreen shows the full display: lift the viewport quality cap
+            liftViewportCap()
+
             viewController.present(fullscreenPlayerViewController, animated: true) {
                 // Disable swipe/pinch gesture recognizers on the fullscreen player view
                 // hierarchy. This prevents the user from accidentally swiping up/down to
@@ -781,6 +792,46 @@ extension VideoPlayerView {
         } else {
             result(FlutterError(code: "FULLSCREEN_ERROR", message: "Could not present fullscreen player", details: nil))
         }
+    }
+
+    // MARK: - Viewport-based quality capping
+
+    /// Stores the platform view's physical pixel size and caps HLS variant
+    /// selection to it (NativeVideoPlayerConfig.qualityForViewportSize).
+    /// Without a cap, ABR selects quality for a full-screen viewport, so a
+    /// feed of small tiles decodes several full-resolution streams at once.
+    func handleSetViewportSize(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let width = args["width"] as? Int,
+              let height = args["height"] as? Int,
+              width > 0, height > 0 else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "width/height required", details: nil))
+            return
+        }
+        viewportSize = CGSize(width: width, height: height)
+        applyViewportCapIfAppropriate()
+        result(nil)
+    }
+
+    /// Applies the stored viewport cap to the current item unless fullscreen
+    /// or AirPlay external playback (which render beyond the inline view's
+    /// size) is active. preferredMaximumResolution is a preference: AVPlayer
+    /// still plays the lowest variant if none fits, so this can never stall
+    /// playback. Manual quality selection loads a dedicated variant URL via a
+    /// NEW player item and is therefore never constrained by this.
+    func applyViewportCapIfAppropriate() {
+        guard qualityForViewport, let size = viewportSize else { return }
+        guard fullscreenPlayerViewController == nil else { return }
+        guard !(player?.isExternalPlaybackActive ?? false) else { return }
+        npLog("🎚️ Applying viewport quality cap: \(Int(size.width))x\(Int(size.height))")
+        player?.currentItem?.preferredMaximumResolution = size
+    }
+
+    /// Lifts the viewport cap (fullscreen entered or AirPlay became active).
+    func liftViewportCap() {
+        guard qualityForViewport else { return }
+        npLog("🎚️ Lifting viewport quality cap")
+        player?.currentItem?.preferredMaximumResolution = .zero
     }
 
     /// Recursively disables pan and pinch gesture recognizers in the view hierarchy.
@@ -808,7 +859,10 @@ extension VideoPlayerView {
             fullscreenVC.dismiss(animated: true) {
                 // Clear the reference
                 self.fullscreenPlayerViewController = nil
-                
+
+                // Back inline: restore the viewport quality cap
+                self.applyViewportCapIfAppropriate()
+
                 // Resume playback if it was playing before
                 if wasPlaying {
                     self.player?.play()

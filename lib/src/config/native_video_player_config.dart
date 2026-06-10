@@ -20,6 +20,7 @@ class NativeVideoPlayerConfig {
     this.timeUpdateInterval = const Duration(milliseconds: 500),
     this.androidBufferConfig,
     this.iosBufferConfig,
+    this.qualityForViewportSize = false,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
@@ -55,6 +56,22 @@ class NativeVideoPlayerConfig {
   /// Optional AVPlayer buffer tuning (iOS). Applies on the next `load()`;
   /// null keeps AVPlayer's automatic behavior.
   final NativeVideoPlayerIosBufferConfig? iosBufferConfig;
+
+  /// Caps adaptive (HLS) quality selection to each player's on-screen size
+  /// (default: false = current behavior).
+  ///
+  /// By default ABR selects quality for a full-screen viewport, so a feed of
+  /// small tiles can decode several 1080p streams at once. With this enabled,
+  /// each platform view reports its physical pixel size and the player limits
+  /// variant selection accordingly (`TrackSelectionParameters.setViewportSize`
+  /// on Android, `AVPlayerItem.preferredMaximumResolution` on iOS).
+  ///
+  /// The cap is lifted automatically in native fullscreen and while AirPlay
+  /// external playback is active (iOS), and a Dart-fullscreen view reports its
+  /// own larger size. Manual quality selection via `setQuality` loads a
+  /// specific variant URL and is never constrained by this. Has no effect on
+  /// single-variant sources (plain MP4).
+  final bool qualityForViewportSize;
 }
 
 /// ExoPlayer `DefaultLoadControl` parameters (Android only).
