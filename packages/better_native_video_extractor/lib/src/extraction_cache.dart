@@ -12,7 +12,8 @@ import 'extractor.dart';
 /// - Coalesces concurrent extractions of the same video (a feed building
 ///   five cards for one video performs ONE request).
 class VideoExtractionCache {
-  VideoExtractionCache(this._extractor, {this.safetyMargin = const Duration(minutes: 2)});
+  VideoExtractionCache(this._extractor,
+      {this.safetyMargin = const Duration(minutes: 2)});
 
   final VideoSourceExtractor _extractor;
   final Duration safetyMargin;
@@ -33,7 +34,6 @@ class VideoExtractionCache {
         _cache[key] = result;
         return result;
       } finally {
-        unawaited(_inFlight.remove(key) == null ? null : null);
         _inFlight.remove(key);
       }
     });

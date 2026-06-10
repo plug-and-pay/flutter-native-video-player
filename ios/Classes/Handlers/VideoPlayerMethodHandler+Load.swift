@@ -24,6 +24,7 @@ extension VideoPlayerView {
         let headers = arguments["headers"] as? [String: String]
         let mediaInfo = arguments["mediaInfo"] as? [String: Any]
         let drmConfig = arguments["drmConfig"] as? [String: Any]
+        let startAtMs = arguments["startAtMs"] as? Int ?? 0
 
         // Store media info for Now Playing
         if let mediaInfo = mediaInfo {
@@ -145,6 +146,14 @@ extension VideoPlayerView {
            fullscreenPlayerViewController == nil,
            !(player?.isExternalPlaybackActive ?? false) {
             playerItem.preferredMaximumResolution = size
+        }
+
+        // Resume position: seek the item BEFORE attaching it, so loading
+        // starts at the target position and the first rendered frame is
+        // already there (no visible jump after playback starts).
+        if startAtMs > 0 {
+            let target = CMTime(value: CMTimeValue(startAtMs), timescale: 1000)
+            playerItem.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: nil)
         }
 
         // Replace current item immediately - don't wait for HDR configuration

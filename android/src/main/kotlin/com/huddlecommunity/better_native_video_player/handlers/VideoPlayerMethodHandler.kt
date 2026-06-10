@@ -179,6 +179,7 @@ class VideoPlayerMethodHandler(
         val headers = args["headers"] as? Map<String, String>
         val mediaInfo = args["mediaInfo"] as? Map<String, Any>
         val drmConfig = args["drmConfig"] as? Map<*, *>
+        val startAtMs = (args["startAtMs"] as? Number)?.toLong() ?: 0L
 
         // Store media info in the VideoPlayerView
         updateMediaInfo?.invoke(mediaInfo)
@@ -277,8 +278,15 @@ class VideoPlayerMethodHandler(
         lastDataSourceFactory = finalDataSourceFactory
         sidecarSubtitleConfigs = parseSidecarSubtitleConfigs(args["sidecarSubtitles"] as? List<*>)
 
-        // Set media source (main source merged with any sidecar subtitles)
-        player.setMediaSource(buildMediaSourceWithSidecars(mediaItem, finalDataSourceFactory))
+        // Set media source (main source merged with any sidecar subtitles).
+        // A resume position (startAtMs) is handed to ExoPlayer up front so
+        // playback begins there directly — no visible seek after start.
+        val mediaSource = buildMediaSourceWithSidecars(mediaItem, finalDataSourceFactory)
+        if (startAtMs > 0) {
+            player.setMediaSource(mediaSource, startAtMs)
+        } else {
+            player.setMediaSource(mediaSource)
+        }
         player.prepare()
 
         // Configure HDR settings for ExoPlayer using TrackSelectionParameters

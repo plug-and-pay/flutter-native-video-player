@@ -6,7 +6,8 @@ Future<void> main() async {
   print('title: ${video.title}');
   print('duration: ${video.duration}');
   print('hls: ${video.hlsUrl?.substring(0, 60)}...');
-  print('thumbs: ${video.thumbnails.length}, best: ${video.bestThumbnail?.url}');
+  print(
+      'thumbs: ${video.thumbnails.length}, best: ${video.bestThumbnail?.url}');
   print('expiresAt: ${video.expiresAt} (fresh: ${video.isFresh()})');
   extractor.close();
 }

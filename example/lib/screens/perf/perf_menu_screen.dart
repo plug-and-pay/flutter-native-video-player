@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'audio_track_screen.dart';
+import 'extractor_screen.dart';
 import 'lifecycle_stress_screen.dart';
 import 'nav_loop_screen.dart';
 import 'pip_screen.dart';
+import 'player_features_screen.dart';
+import 'playlist_screen.dart';
 import 'scroll_feed_screen.dart';
 import 'sidecar_subtitle_screen.dart';
 import 'stress_feed_screen.dart';
@@ -67,6 +70,21 @@ class PerfMenuScreen extends StatelessWidget {
             key: const ValueKey('feature_audio_tracks'),
             title: const Text('Audio track selection'),
             onTap: () => _push(context, const AudioTrackScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_player_features'),
+            title: const Text('Player features (startAt, A-B, analytics)'),
+            onTap: () => _push(context, const PlayerFeaturesScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_playlist'),
+            title: const Text('Playlist auto-advance'),
+            onTap: () => _push(context, const PlaylistScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_extractor'),
+            title: const Text('Vimeo extractor (no WebView)'),
+            onTap: () => _push(context, const ExtractorScreen()),
           ),
         ],
       ),

@@ -12,6 +12,7 @@ import '../fullscreen/fullscreen_manager.dart';
 import '../fullscreen/fullscreen_video_player.dart';
 import '../models/native_video_player_audio_track.dart';
 import '../models/native_video_player_media_info.dart';
+import '../models/native_video_player_playback_range.dart';
 import '../models/native_video_player_quality.dart';
 import '../models/native_video_player_sidecar_subtitle.dart';
 import '../models/native_video_player_state.dart';
@@ -445,6 +446,7 @@ class NativeVideoPlayerController {
       }
       // Re-anchor the sidecar subtitle engine's cue timing.
       _sidecarSubtitles.onPosition(newState.currentPosition);
+      _enforcePlaybackRange(newState.currentPosition);
     }
     if (oldState.speed != newState.speed) {
       if (!_speedController.isClosed) {
@@ -1150,13 +1152,23 @@ class NativeVideoPlayerController {
   /// A Future that completes when the video is loaded
   ///
   /// **Note:** For better clarity, consider using [loadUrl] for remote videos or [loadFile] for local files.
+  ///
+  /// Pass [startAt] to begin playback at a stored resume position — the
+  /// position is applied natively before the first frame, so there is no
+  /// visible seek after playback starts.
+  ///
+  /// [force] loads even when the current state is `loaded` (the guard that
+  /// prevents accidental double-loads). Use it to replace the current video
+  /// with a different one, e.g. for playlist advancement.
   Future<void> load({
     required String url,
     Map<String, String>? headers,
     Map<String, dynamic>? drmConfig,
     List<NativeVideoPlayerSidecarSubtitle>? sidecarSubtitles,
+    Duration? startAt,
+    bool force = false,
   }) async {
-    if (_state.activityState.isLoaded) {
+    if (!force && _state.activityState.isLoaded) {
       return;
     }
 
@@ -1175,6 +1187,9 @@ class NativeVideoPlayerController {
 
     _url = url;
 
+    // An A-B range only makes sense for the video it was set on.
+    _playbackRange = null;
+
     if (sidecarSubtitles != null) {
       _sidecarSubtitles.setSources(sidecarSubtitles);
     }
@@ -1190,6 +1205,7 @@ class NativeVideoPlayerController {
         // so captions can also render in PiP/native fullscreen; iOS and
         // non-URL sources render through the Flutter overlay only.
         sidecarSubtitles: _androidSidecarMaps(sidecarSubtitles),
+        startAtMs: startAt?.inMilliseconds,
       );
 
       // Fetch available qualities after loading
@@ -1265,8 +1281,16 @@ class NativeVideoPlayerController {
     required String url,
     Map<String, String>? headers,
     Map<String, dynamic>? drmConfig,
+    Duration? startAt,
+    bool force = false,
   }) async {
-    return load(url: url, headers: headers, drmConfig: drmConfig);
+    return load(
+      url: url,
+      headers: headers,
+      drmConfig: drmConfig,
+      startAt: startAt,
+      force: force,
+    );
   }
 
   /// Loads a local video file into the player
@@ -1312,6 +1336,66 @@ class NativeVideoPlayerController {
   /// Seeks to a specific position
   Future<void> seekTo(Duration position) async {
     await _methodChannel?.seekTo(position);
+  }
+
+  /// The active A-B playback range, or null when playback is unrestricted.
+  NativeVideoPlayerPlaybackRange? get playbackRange => _playbackRange;
+  NativeVideoPlayerPlaybackRange? _playbackRange;
+
+  /// Guards against re-triggering range handling on every position tick
+  /// while the boundary seek/pause is still in flight.
+  bool _rangeActionInFlight = false;
+
+  /// Confines playback to [start]..[end] (A-B loop / clip range).
+  ///
+  /// With [loop] (default) the player seeks back to [start] whenever the
+  /// position reaches [end]; with `loop: false` it pauses once at [end] and
+  /// the range is released. If the current position is outside the range,
+  /// playback seeks to [start] immediately. Enforcement runs on the
+  /// existing position updates, so boundary precision follows the
+  /// configured time-update interval. Cleared by [clearPlaybackRange] and
+  /// by loading a new video.
+  Future<void> setPlaybackRange({
+    required Duration start,
+    required Duration end,
+    bool loop = true,
+  }) async {
+    final range = NativeVideoPlayerPlaybackRange(
+      start: start,
+      end: end,
+      loop: loop,
+    );
+    _playbackRange = range;
+    _rangeActionInFlight = false;
+    if (!range.contains(_state.currentPosition)) {
+      await seekTo(start);
+    }
+  }
+
+  /// Removes the A-B playback range; playback continues unrestricted.
+  void clearPlaybackRange() {
+    _playbackRange = null;
+    _rangeActionInFlight = false;
+  }
+
+  /// Enforces the A-B range on position updates (called from
+  /// [_updateState] whenever the position changes).
+  void _enforcePlaybackRange(Duration position) {
+    final range = _playbackRange;
+    if (range == null || _rangeActionInFlight || position < range.end) {
+      return;
+    }
+    _rangeActionInFlight = true;
+    if (range.loop) {
+      unawaited(
+        seekTo(range.start).whenComplete(() => _rangeActionInFlight = false),
+      );
+    } else {
+      // One-shot clip range: stop at the end and release the range so the
+      // user can seek/replay freely afterwards.
+      _playbackRange = null;
+      unawaited(pause().whenComplete(() => _rangeActionInFlight = false));
+    }
   }
 
   /// Sets the volume

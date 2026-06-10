@@ -4,7 +4,8 @@ import 'package:test/test.dart';
 void main() {
   group('parseVideoId', () {
     test('accepts URLs, player URLs, bare ids and private hashes', () {
-      expect(VimeoExtractor.parseVideoId('https://vimeo.com/76979871'), '76979871');
+      expect(VimeoExtractor.parseVideoId('https://vimeo.com/76979871'),
+          '76979871');
       expect(
         VimeoExtractor.parseVideoId('https://player.vimeo.com/video/76979871'),
         '76979871',
@@ -30,7 +31,9 @@ void main() {
         'files': {
           'hls': {
             'cdns': {
-              'akfire': {'url': 'https://cdn.test/master.m3u8?exp=1781131250~x'},
+              'akfire': {
+                'url': 'https://cdn.test/master.m3u8?exp=1781131250~x'
+              },
               'fastly': {'url': 'https://cdn2.test/master.m3u8'},
             },
           },
@@ -38,6 +41,15 @@ void main() {
             {'height': 360, 'url': 'https://cdn.test/360.mp4'},
             {'height': 720, 'url': 'https://cdn.test/720.mp4?exp=1781131250'},
           ],
+        },
+        'thumb_preview': {
+          'url': 'https://sprites.test/board.webp',
+          'width': 4260,
+          'height': 2880,
+          'frame_width': 426,
+          'frame_height': 240,
+          'columns': 10,
+          'frames': 120,
         },
       },
       'video': {
@@ -65,6 +77,38 @@ void main() {
       expect(
         video.expiresAt,
         DateTime.fromMillisecondsSinceEpoch(1781131250 * 1000, isUtc: true),
+      );
+    });
+
+    test('parses the thumb_preview storyboard sprite sheet', () {
+      final video = VimeoExtractor.parseConfig(fixture, videoId: '42');
+
+      final sb = video.storyboard!;
+      expect(sb.url, 'https://sprites.test/board.webp');
+      expect(sb.frameWidth, 426);
+      expect(sb.frameHeight, 240);
+      expect(sb.columns, 10);
+      expect(sb.frames, 120);
+      expect(sb.width, 4260);
+      expect(sb.height, 2880);
+    });
+
+    test('storyboard is null when thumb_preview is absent or partial', () {
+      expect(
+        VimeoExtractor.parseConfig({
+          'video': {'title': 'x'},
+        }, videoId: '1')
+            .storyboard,
+        isNull,
+      );
+      expect(
+        VimeoExtractor.parseConfig({
+          'request': {
+            'thumb_preview': {'url': 'https://sprites.test/only-url.webp'},
+          },
+        }, videoId: '1')
+            .storyboard,
+        isNull,
       );
     });
 

@@ -25,7 +25,7 @@ import 'extractor.dart';
 /// hitting a dead URL mid-playback.
 class VimeoExtractor implements VideoSourceExtractor {
   VimeoExtractor({this.referer, this.headers = const {}, HttpClient? client})
-    : _client = client ?? HttpClient();
+      : _client = client ?? HttpClient();
 
   /// Referer header for domain-locked videos (e.g. "https://yourdomain.com").
   final String? referer;
@@ -93,8 +93,7 @@ class VimeoExtractor implements VideoSourceExtractor {
     String? progressiveUrl;
     final progressive = files?['progressive'];
     if (progressive is List && progressive.isNotEmpty) {
-      final sorted = [...progressive.cast<Map<String, dynamic>>()]
-        ..sort(
+      final sorted = [...progressive.cast<Map<String, dynamic>>()]..sort(
           (a, b) => ((b['height'] as num?) ?? 0).compareTo(
             (a['height'] as num?) ?? 0,
           ),
@@ -124,17 +123,42 @@ class VimeoExtractor implements VideoSourceExtractor {
 
     final durationSeconds = (video?['duration'] as num?)?.toInt();
 
+    // Scrub-preview sprite sheet ("thumb_preview": url + frame grid).
+    ExtractedStoryboard? storyboard;
+    final thumbPreview = (config['request']
+        as Map<String, dynamic>?)?['thumb_preview'] as Map<String, dynamic>?;
+    final sbUrl = thumbPreview?['url'] as String?;
+    final sbFrameWidth = (thumbPreview?['frame_width'] as num?)?.toDouble();
+    final sbFrameHeight = (thumbPreview?['frame_height'] as num?)?.toDouble();
+    final sbColumns = (thumbPreview?['columns'] as num?)?.toInt();
+    final sbFrames = (thumbPreview?['frames'] as num?)?.toInt();
+    if (sbUrl != null &&
+        sbFrameWidth != null &&
+        sbFrameHeight != null &&
+        sbColumns != null &&
+        sbFrames != null) {
+      storyboard = ExtractedStoryboard(
+        url: sbUrl,
+        frameWidth: sbFrameWidth,
+        frameHeight: sbFrameHeight,
+        columns: sbColumns,
+        frames: sbFrames,
+        width: (thumbPreview?['width'] as num?)?.toInt(),
+        height: (thumbPreview?['height'] as num?)?.toInt(),
+      );
+    }
+
     return ExtractedVideo(
       provider: 'vimeo',
       videoId: videoId,
       hlsUrl: hlsUrl,
       progressiveUrl: progressiveUrl,
       title: video?['title'] as String?,
-      duration: durationSeconds == null
-          ? null
-          : Duration(seconds: durationSeconds),
+      duration:
+          durationSeconds == null ? null : Duration(seconds: durationSeconds),
       thumbnails: thumbnails,
       expiresAt: expiryFromUrl(hlsUrl ?? progressiveUrl),
+      storyboard: storyboard,
     );
   }
 

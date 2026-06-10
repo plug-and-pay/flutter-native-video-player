@@ -21,6 +21,7 @@ class VideoPlayerMethodChannel {
     Map<String, dynamic>? mediaInfo,
     Map<String, dynamic>? drmConfig,
     List<Map<String, dynamic>>? sidecarSubtitles,
+    int? startAtMs,
   }) async {
     final Map<String, Object> params = <String, Object>{
       'url': url,
@@ -42,6 +43,10 @@ class VideoPlayerMethodChannel {
 
     if (sidecarSubtitles != null) {
       params['sidecarSubtitles'] = sidecarSubtitles;
+    }
+
+    if (startAtMs != null && startAtMs > 0) {
+      params['startAtMs'] = startAtMs;
     }
 
     await _methodChannel.invokeMethod<void>('load', params);
