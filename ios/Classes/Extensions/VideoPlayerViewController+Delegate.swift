@@ -195,32 +195,48 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
         return false
     }
     
-    // Handle when the user dismisses fullscreen by swiping down or tapping Done
+    // Handle when the user enters fullscreen via the native AVPlayerViewController
+    // button, so the Dart isFullScreenStream reflects native-initiated fullscreen too.
+    // Adopted from community PR #34 by @AleSpero.
+    public func playerViewController(
+        _ playerViewController: AVPlayerViewController,
+        willBeginFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        coordinator.animate(alongsideTransition: nil) { context in
+            if !context.isCancelled {
+                // Fullscreen entered
+                self.fullscreenPlayerViewController = playerViewController
+                self.sendEvent("fullscreenChange", data: ["isFullscreen": true])
+            }
+        }
+    }
+
+    // Handle when the user dismisses fullscreen by tapping Done.
+    // Refactored per community PR #32 by @anirudhrao-github: release the player
+    // and notify Dart immediately instead of after the dismiss animation.
     @available(iOS 13.0, *)
     public func playerViewController(_ playerViewController: AVPlayerViewController, willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {
-        // Store the playback state before dismissing
-        let wasPlaying = self.player?.rate != 0
-        
-        // Send fullscreen exit event when user dismisses fullscreen
-        coordinator.animate(alongsideTransition: nil) { _ in
-            // Check if this is the fullscreen view controller we're tracking
-            if playerViewController == self.fullscreenPlayerViewController {
-                // Release the video layer from the fullscreen VC as the presentation is ending
-                playerViewController.player = nil
-                self.fullscreenPlayerViewController = nil
-                
-                // Resume playback if it was playing before
-                if wasPlaying {
-                    self.player?.play()
-                }
+        guard playerViewController == self.fullscreenPlayerViewController else { return }
 
-                // Re-bind the player to the embedded view on the next run loop after the transition has fully finished
-                DispatchQueue.main.async {
-                    self.playerViewController.player = nil
-                    self.playerViewController.player = self.player
-                }
-                
-                self.sendEvent("fullscreenChange", data: ["isFullscreen": false])
+        let wasPlaying = self.player?.rate != 0
+
+        // Release the player from the fullscreen VC immediately so audio stops right
+        // away rather than waiting for the dismiss animation to complete.
+        playerViewController.player = nil
+        self.fullscreenPlayerViewController = nil
+
+        // Send the fullscreen exit event immediately so Dart can react without delay.
+        self.sendEvent("fullscreenChange", data: ["isFullscreen": false])
+
+        // Re-bind the player to the embedded view after the dismiss animation finishes.
+        coordinator.animate(alongsideTransition: nil) { _ in
+            if wasPlaying {
+                self.player?.play()
+            }
+
+            DispatchQueue.main.async {
+                self.playerViewController.player = nil
+                self.playerViewController.player = self.player
             }
         }
     }

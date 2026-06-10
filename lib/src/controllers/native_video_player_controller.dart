@@ -52,6 +52,7 @@ class NativeVideoPlayerController {
     this.enableHDR = true,
     this.enableLooping = false,
     this.showNativeControls = true,
+    this.preventFullscreenSwipeDismiss = true,
     List<DeviceOrientation>? preferredOrientations,
   }) {
     // Set preferred orientations if provided
@@ -141,6 +142,16 @@ class NativeVideoPlayerController {
   /// Whether to show native player controls (default: true)
   /// When set to false, native controls are hidden. Custom overlays automatically hide native controls regardless of this setting.
   final bool showNativeControls;
+
+  /// Whether swipe/pinch gestures are disabled in native iOS fullscreen
+  /// (default: true)
+  ///
+  /// AVPlayerViewController's internal swipe-to-dismiss gesture can leave the
+  /// inline player with a black screen; with this enabled, fullscreen can only
+  /// be exited via the Done button. Set to false to restore the system swipe
+  /// gesture. Has no effect on Android or on Dart-side (custom overlay)
+  /// fullscreen.
+  final bool preventFullscreenSwipeDismiss;
 
   /// BuildContext getter for showing Dart fullscreen dialog
   /// Returns a mounted context from any registered platform view
@@ -839,6 +850,7 @@ class NativeVideoPlayerController {
     'isFullScreen': _state.isFullScreen,
     'enableHDR': enableHDR,
     'enableLooping': enableLooping,
+    'preventFullscreenSwipeDismiss': preventFullscreenSwipeDismiss,
     if (mediaInfo != null) 'mediaInfo': mediaInfo!.toMap(),
   };
 

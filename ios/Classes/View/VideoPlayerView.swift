@@ -91,6 +91,10 @@ import QuartzCore
     // Store looping setting
     var enableLooping: Bool = false
 
+    // Whether to prevent swipe-to-dismiss in native fullscreen mode (the
+    // system swipe gesture can leave the inline player with a black screen)
+    var preventFullscreenSwipeDismiss: Bool = true
+
     // Track if app is in background to keep audio playing on screen lock
     var isInBackground: Bool = false
     var lastKnownRate: Float = 0.0
@@ -191,6 +195,9 @@ import QuartzCore
 
             // Looping configuration from args
             enableLooping = args["enableLooping"] as? Bool ?? false
+
+            // Fullscreen swipe-to-dismiss configuration from args
+            preventFullscreenSwipeDismiss = args["preventFullscreenSwipeDismiss"] as? Bool ?? true
 
             // For shared players, try to get PiP settings from SharedPlayerManager
             // This ensures PiP settings persist across all views using the same controller

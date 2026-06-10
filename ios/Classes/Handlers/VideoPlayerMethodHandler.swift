@@ -747,16 +747,46 @@ extension VideoPlayerView {
             fullscreenPlayerViewController.showsPlaybackControls = true
             fullscreenPlayerViewController.delegate = self
 
+            if preventFullscreenSwipeDismiss {
+                // Use .fullScreen modal style to prevent the iOS 13+ sheet dismiss gesture.
+                fullscreenPlayerViewController.modalPresentationStyle = .fullScreen
+                if #available(iOS 13.0, *) {
+                    fullscreenPlayerViewController.isModalInPresentation = true
+                }
+            }
+
             // Store reference to dismiss later
             self.fullscreenPlayerViewController = fullscreenPlayerViewController
 
             viewController.present(fullscreenPlayerViewController, animated: true) {
-                // Send event after animation completes
+                // Disable swipe/pinch gesture recognizers on the fullscreen player view
+                // hierarchy. This prevents the user from accidentally swiping up/down to
+                // exit AVPlayerViewController's internal fullscreen, which causes a black
+                // screen. Button taps (Done, play/pause, seek bar, etc.) keep working.
+                // Adopted from community PR #32 by @anirudhrao-github.
+                if self.preventFullscreenSwipeDismiss {
+                    self.disableSwipeGestures(in: fullscreenPlayerViewController.view)
+                }
+
                 self.sendEvent("fullscreenChange", data: ["isFullscreen": true])
                 result(nil)
             }
         } else {
             result(FlutterError(code: "FULLSCREEN_ERROR", message: "Could not present fullscreen player", details: nil))
+        }
+    }
+
+    /// Recursively disables pan and pinch gesture recognizers in the view hierarchy.
+    /// This prevents AVPlayerViewController's internal swipe-to-dismiss and
+    /// pinch-to-shrink gestures while keeping all button taps working.
+    private func disableSwipeGestures(in view: UIView) {
+        for gesture in view.gestureRecognizers ?? [] {
+            if gesture is UIPanGestureRecognizer || gesture is UIPinchGestureRecognizer {
+                gesture.isEnabled = false
+            }
+        }
+        for subview in view.subviews {
+            disableSwipeGestures(in: subview)
         }
     }
 
