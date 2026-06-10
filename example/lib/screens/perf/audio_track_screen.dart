@@ -35,8 +35,10 @@ class _AudioTrackScreenState extends State<AudioTrackScreen> {
     try {
       await _controller.initialize();
       await _controller.load(
+        // Classic Apple bipbop: TWO selectable audio renditions in one group
+        // ("BipBop Audio 1"/"BipBop Audio 2") + multi-language subtitles.
         url:
-            'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8',
+            'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8',
       );
       // Tracks become available once the manifest renditions are known.
       await Future<void>.delayed(const Duration(seconds: 2));
