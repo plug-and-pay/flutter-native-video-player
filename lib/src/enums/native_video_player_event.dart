@@ -28,6 +28,8 @@ enum PlayerControlState {
   fullscreenEntered,
   fullscreenExited,
   timeUpdated,
+  subtitleTrackChanged,
+  audioTrackChanged,
 }
 
 /// Activity state event for playback changes
@@ -126,6 +128,10 @@ class PlayerControlEvent {
       case 'timeUpdate':
       case 'timeUpdated': // Native side sends 'timeUpdated' in some cases
         return PlayerControlState.timeUpdated;
+      case 'subtitleChange':
+        return PlayerControlState.subtitleTrackChanged;
+      case 'audioTrackChange':
+        return PlayerControlState.audioTrackChanged;
       default:
         return PlayerControlState.none;
     }

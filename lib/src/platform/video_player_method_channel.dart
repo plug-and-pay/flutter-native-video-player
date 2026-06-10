@@ -19,6 +19,7 @@ class VideoPlayerMethodChannel {
     Map<String, String>? headers,
     Map<String, dynamic>? mediaInfo,
     Map<String, dynamic>? drmConfig,
+    List<Map<String, dynamic>>? sidecarSubtitles,
   }) async {
     final Map<String, Object> params = <String, Object>{
       'url': url,
@@ -38,7 +39,27 @@ class VideoPlayerMethodChannel {
       params['drmConfig'] = drmConfig;
     }
 
+    if (sidecarSubtitles != null) {
+      params['sidecarSubtitles'] = sidecarSubtitles;
+    }
+
     await _methodChannel.invokeMethod<void>('load', params);
+  }
+
+  /// Attaches sidecar subtitle sources natively (Android: rebuilds the
+  /// MediaItem with SubtitleConfigurations so captions can render in
+  /// PiP/native fullscreen). No-op failure by design.
+  Future<void> setSidecarSubtitles(
+    List<Map<String, dynamic>> sidecarSubtitles,
+  ) async {
+    try {
+      await _methodChannel.invokeMethod<void>('setSidecarSubtitles', {
+        'viewId': primaryPlatformViewId,
+        'sidecarSubtitles': sidecarSubtitles,
+      });
+    } catch (e) {
+      debugPrint('Failed to set sidecar subtitles: $e');
+    }
   }
 
   /// Starts or resumes video playback

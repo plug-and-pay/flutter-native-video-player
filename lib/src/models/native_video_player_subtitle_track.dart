@@ -1,3 +1,15 @@
+/// Where a subtitle track comes from.
+enum SubtitleTrackSource {
+  /// A track embedded in the media itself (HLS legible rendition, MP4 text
+  /// track), rendered natively by the platform player.
+  embedded,
+
+  /// An external VTT/SRT source provided via
+  /// `NativeVideoPlayerController.setSidecarSubtitles`/`load(sidecarSubtitles:)`,
+  /// rendered by the plugin's Flutter subtitle overlay.
+  sidecar,
+}
+
 /// Represents a subtitle/closed caption track in the video player
 class NativeVideoPlayerSubtitleTrack {
   const NativeVideoPlayerSubtitleTrack({
@@ -5,6 +17,7 @@ class NativeVideoPlayerSubtitleTrack {
     required this.language,
     required this.displayName,
     this.isSelected = false,
+    this.source = SubtitleTrackSource.embedded,
   });
 
   factory NativeVideoPlayerSubtitleTrack.fromMap(Map<dynamic, dynamic> map) {
@@ -37,8 +50,12 @@ class NativeVideoPlayerSubtitleTrack {
   /// Whether this subtitle track is currently selected
   final bool isSelected;
 
+  /// Whether the track is embedded in the media or a sidecar source
+  /// (defaults to embedded for backward compatibility).
+  final SubtitleTrackSource source;
+
   /// Whether this is the "Off" option
-  bool get isOff => index == -1;
+  bool get isOff => index == -1 && source == SubtitleTrackSource.embedded;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
     'index': index,
@@ -52,18 +69,20 @@ class NativeVideoPlayerSubtitleTrack {
     String? language,
     String? displayName,
     bool? isSelected,
+    SubtitleTrackSource? source,
   }) {
     return NativeVideoPlayerSubtitleTrack(
       index: index ?? this.index,
       language: language ?? this.language,
       displayName: displayName ?? this.displayName,
       isSelected: isSelected ?? this.isSelected,
+      source: source ?? this.source,
     );
   }
 
   @override
   String toString() =>
-      'NativeVideoPlayerSubtitleTrack(index: $index, language: $language, displayName: $displayName, isSelected: $isSelected)';
+      'NativeVideoPlayerSubtitleTrack(index: $index, language: $language, displayName: $displayName, isSelected: $isSelected, source: ${source.name})';
 
   @override
   bool operator ==(Object other) =>
@@ -73,8 +92,10 @@ class NativeVideoPlayerSubtitleTrack {
           index == other.index &&
           language == other.language &&
           displayName == other.displayName &&
-          isSelected == other.isSelected;
+          isSelected == other.isSelected &&
+          source == other.source;
 
   @override
-  int get hashCode => Object.hash(index, language, displayName, isSelected);
+  int get hashCode =>
+      Object.hash(index, language, displayName, isSelected, source);
 }

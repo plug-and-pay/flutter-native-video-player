@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'config/native_video_player_config.dart';
 import 'controllers/native_video_player_controller.dart';
 import 'enums/native_video_player_event.dart';
+import 'models/native_video_player_subtitle_style.dart';
+import 'subtitles/subtitle_overlay.dart';
 
 /// A native video player widget that wraps platform-specific video players
 /// (AVPlayerViewController on iOS, ExoPlayer on Android).
@@ -29,10 +31,16 @@ class NativeVideoPlayer extends StatefulWidget {
     this.overlayBuilder,
     this.overlayFadeDuration = const Duration(milliseconds: 300),
     this.isFullscreenContext = false,
+    this.subtitleStyle = const NativeVideoPlayerSubtitleStyle(),
     super.key,
   });
 
   final NativeVideoPlayerController controller;
+
+  /// Style and position for sidecar (external VTT/SRT) subtitles rendered by
+  /// the plugin's Flutter subtitle layer. Rebuild with a new style to change
+  /// it at runtime. Embedded native tracks use system caption settings.
+  final NativeVideoPlayerSubtitleStyle subtitleStyle;
 
   /// Optional overlay widget builder that renders on top of the video player.
   /// The builder receives the BuildContext and controller to build custom controls.
@@ -357,17 +365,36 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
       },
     );
 
+    // Sidecar subtitle layer: renders the active external-VTT/SRT cue lines
+    // above the video and below the controls. Suppressed during PiP (the
+    // Flutter UI is not part of the iOS PiP window; on Android the native
+    // sideloaded track takes over so captions stay visible there).
+    final subtitleLayer = StreamBuilder<bool>(
+      stream: widget.controller.isPipEnabledStream,
+      initialData: widget.controller.isPipEnabled,
+      builder: (context, pipSnapshot) {
+        if (pipSnapshot.data ?? false) return const SizedBox.shrink();
+        return SubtitleOverlay(
+          cueLines: widget.controller.activeSidecarCueLines,
+          style: widget.subtitleStyle,
+        );
+      },
+    );
+
     Widget content;
 
-    // If no overlay builder is provided, use just the platform view
+    // Without a custom controls overlay, the stack is just the platform view
+    // plus the subtitle layer
     if (widget.overlayBuilder == null) {
-      content = platformView;
+      content = Stack(children: [platformView, subtitleLayer]);
     } else {
       // Wrap platform view with animated overlay in a Stack
       content = Stack(
         children: [
           // Platform view
           platformView,
+          // Subtitles render below the controls overlay
+          subtitleLayer,
           // Transparent tap layer when overlay is hidden
           if (!_overlayVisible)
             Positioned.fill(

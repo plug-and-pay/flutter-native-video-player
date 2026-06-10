@@ -12,12 +12,14 @@ import '../fullscreen/fullscreen_manager.dart';
 import '../fullscreen/fullscreen_video_player.dart';
 import '../models/native_video_player_media_info.dart';
 import '../models/native_video_player_quality.dart';
+import '../models/native_video_player_sidecar_subtitle.dart';
 import '../models/native_video_player_state.dart';
 import '../models/native_video_player_subtitle_track.dart';
 import '../platform/platform_utils.dart';
 import '../platform/video_player_method_channel.dart';
 import '../services/airplay_state_manager.dart';
 import '../services/playback_coordinator.dart';
+import '../subtitles/sidecar_subtitle_engine.dart';
 
 /// Controller for managing native video player via platform channels
 ///
@@ -297,6 +299,22 @@ class NativeVideoPlayerController {
   /// (cap enforcement for [NativeVideoPlayerConfig.maxConcurrentPlayingPlayers]).
   late final PlayableHandle _playableHandle = _ControllerPlayableHandle(this);
 
+  /// Engine for sidecar (external VTT/SRT) subtitles: loads, parses and
+  /// time-syncs cues for the Flutter subtitle overlay. Survives
+  /// releaseResources() (sources/cues persist for reattachment); disposed
+  /// with the controller.
+  final SidecarSubtitleEngine _sidecarSubtitles = SidecarSubtitleEngine();
+
+  /// Active sidecar subtitle cue lines at the current playback position.
+  /// The [NativeVideoPlayer] widget's subtitle overlay listens to this;
+  /// custom overlays can too.
+  ValueListenable<List<String>> get activeSidecarCueLines =>
+      _sidecarSubtitles.activeCueLines;
+
+  /// Whether a sidecar subtitle track is currently selected.
+  bool get hasSidecarSubtitleSelected =>
+      _sidecarSubtitles.selectedSource != null;
+
   /// Timer for buffering state debounce (400ms)
   Timer? _bufferingDebounceTimer;
 
@@ -407,16 +425,22 @@ class NativeVideoPlayerController {
       } else if (wasPlaying && !isPlaying) {
         PlaybackCoordinator.instance.onStoppedPlaying(_playableHandle);
       }
+      if (wasPlaying != isPlaying) {
+        _sidecarSubtitles.onPlayingChanged(isPlaying);
+      }
     }
     if (oldState.currentPosition != newState.currentPosition) {
       if (!_positionController.isClosed) {
         _positionController.add(newState.currentPosition);
       }
+      // Re-anchor the sidecar subtitle engine's cue timing.
+      _sidecarSubtitles.onPosition(newState.currentPosition);
     }
     if (oldState.speed != newState.speed) {
       if (!_speedController.isClosed) {
         _speedController.add(newState.speed);
       }
+      _sidecarSubtitles.onSpeedChanged(newState.speed);
     }
     if (oldState.isPipEnabled != newState.isPipEnabled) {
       if (!_isPipEnabledController.isClosed) {
@@ -1675,6 +1699,7 @@ class NativeVideoPlayerController {
     required String url,
     Map<String, String>? headers,
     Map<String, dynamic>? drmConfig,
+    List<NativeVideoPlayerSidecarSubtitle>? sidecarSubtitles,
   }) async {
     if (_state.activityState.isLoaded) {
       return;
@@ -1695,6 +1720,10 @@ class NativeVideoPlayerController {
 
     _url = url;
 
+    if (sidecarSubtitles != null) {
+      _sidecarSubtitles.setSources(sidecarSubtitles);
+    }
+
     try {
       await _methodChannel!.load(
         url: url,
@@ -1702,6 +1731,10 @@ class NativeVideoPlayerController {
         headers: headers,
         mediaInfo: mediaInfo?.toMap(),
         drmConfig: drmConfig,
+        // Android attaches URL sources natively (MediaItem.SubtitleConfiguration)
+        // so captions can also render in PiP/native fullscreen; iOS and
+        // non-URL sources render through the Flutter overlay only.
+        sidecarSubtitles: _androidSidecarMaps(sidecarSubtitles),
       );
 
       // Fetch available qualities after loading
@@ -1847,17 +1880,104 @@ class NativeVideoPlayerController {
     await _methodChannel?.setQuality(quality);
   }
 
-  /// Gets available subtitle tracks
+  /// Gets available subtitle tracks: tracks EMBEDDED in the media plus any
+  /// sidecar (external VTT/SRT) sources provided via [setSidecarSubtitles]
+  /// or `load(sidecarSubtitles:)`, distinguished by
+  /// [NativeVideoPlayerSubtitleTrack.source].
   Future<List<NativeVideoPlayerSubtitleTrack>>
   getAvailableSubtitleTracks() async {
-    final tracks = await _methodChannel?.getAvailableSubtitleTracks();
-    return tracks ?? <NativeVideoPlayerSubtitleTrack>[];
+    final embedded =
+        await _methodChannel?.getAvailableSubtitleTracks() ??
+        <NativeVideoPlayerSubtitleTrack>[];
+    final int? selectedSidecar = _sidecarSubtitles.selectedSource;
+    final sources = _sidecarSubtitles.sources;
+    return <NativeVideoPlayerSubtitleTrack>[
+      // While a sidecar track renders, embedded tracks are natively disabled,
+      // so their stale isSelected flags are cleared.
+      for (final track in embedded)
+        selectedSidecar != null ? track.copyWith(isSelected: false) : track,
+      for (var i = 0; i < sources.length; i++)
+        NativeVideoPlayerSubtitleTrack(
+          index: i,
+          language: sources[i].language,
+          displayName: sources[i].label,
+          isSelected: selectedSidecar == i,
+          source: SubtitleTrackSource.sidecar,
+        ),
+    ];
   }
 
-  /// Sets the subtitle track
-  /// Pass a track with index -1 or use NativeVideoPlayerSubtitleTrack.off() to disable subtitles
+  /// Sets the subtitle track.
+  ///
+  /// Works for both embedded tracks and sidecar tracks (see
+  /// [NativeVideoPlayerSubtitleTrack.source]). Pass a track with index -1 or
+  /// use NativeVideoPlayerSubtitleTrack.off() to disable subtitles.
   Future<void> setSubtitleTrack(NativeVideoPlayerSubtitleTrack track) async {
+    if (track.source == SubtitleTrackSource.sidecar) {
+      try {
+        await _sidecarSubtitles.select(track.index);
+      } catch (e) {
+        // A broken subtitle source must never break playback.
+        debugPrint(
+          'Failed to load sidecar subtitle "${track.displayName}": $e',
+        );
+        return;
+      }
+      // Prevent double captions: disable any embedded native track.
+      await _methodChannel?.setSubtitleTrack(
+        NativeVideoPlayerSubtitleTrack.off(),
+      );
+      _emitSubtitleChanged(track);
+      return;
+    }
+
+    // Embedded track (or Off): stop sidecar rendering, delegate to native
+    // (which emits its own subtitleChange event).
+    _sidecarSubtitles.deselect();
     await _methodChannel?.setSubtitleTrack(track);
+  }
+
+  /// Replaces the sidecar (external VTT/SRT) subtitle sources.
+  ///
+  /// Selection resets to off; use [setSubtitleTrack] with one of the sidecar
+  /// entries from [getAvailableSubtitleTracks] to activate one. On Android,
+  /// URL sources are also attached natively so captions can render in PiP
+  /// and native fullscreen.
+  Future<void> setSidecarSubtitles(
+    List<NativeVideoPlayerSidecarSubtitle> sources,
+  ) async {
+    _sidecarSubtitles.setSources(sources);
+    final androidMaps = _androidSidecarMaps(sources);
+    if (androidMaps != null && _methodChannel != null) {
+      await _methodChannel!.setSidecarSubtitles(androidMaps);
+    }
+  }
+
+  /// Maps URL sources for Android's native sideloading; null on other
+  /// platforms or when there is nothing to attach.
+  List<Map<String, dynamic>>? _androidSidecarMaps(
+    List<NativeVideoPlayerSidecarSubtitle>? sources,
+  ) {
+    if (kIsWeb || !Platform.isAndroid || sources == null) {
+      return null;
+    }
+    final maps = [
+      for (final s in sources)
+        if (s.url != null) s.toMap(),
+    ];
+    return maps.isEmpty ? null : maps;
+  }
+
+  /// Notifies control listeners about a sidecar subtitle selection, matching
+  /// the event shape the native side emits for embedded tracks.
+  void _emitSubtitleChanged(NativeVideoPlayerSubtitleTrack track) {
+    final event = PlayerControlEvent(
+      state: PlayerControlState.subtitleTrackChanged,
+      data: track.toMap(),
+    );
+    for (final handler in _controlEventHandlers) {
+      handler(event);
+    }
   }
 
   /// Returns whether Picture-in-Picture is available on this device
@@ -2403,6 +2523,9 @@ class NativeVideoPlayerController {
 
     // Remove from the playback coordinator (cap enforcement)
     PlaybackCoordinator.instance.unregister(_playableHandle);
+
+    // Stop sidecar subtitle rendering/timers
+    _sidecarSubtitles.dispose();
 
     // Wait for any in-flight controller-channel setup so it cannot subscribe
     // after teardown (its retries abort early now that _isDisposed is set).
