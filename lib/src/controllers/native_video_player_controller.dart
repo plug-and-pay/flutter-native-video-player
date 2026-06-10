@@ -65,7 +65,7 @@ class NativeVideoPlayerController {
     }
 
     // Set up controller-level event channel for persistent events (PiP, AirPlay)
-    _setupControllerEventChannel();
+    _controllerChannelSetupFuture = _setupControllerEventChannel();
   }
 
   /// Initialize the controller and wait for the platform view to be created
@@ -249,6 +249,32 @@ class NativeVideoPlayerController {
 
   /// Controller-level event subscription (for PiP and AirPlay events)
   StreamSubscription<dynamic>? _controllerEventSubscription;
+
+  /// The shared plugin method channel, available from plugin registration
+  /// (before any platform view exists). Used for controller-scoped calls
+  /// that don't go through a per-view method channel.
+  static const MethodChannel _pluginMethodChannel = MethodChannel(
+    'native_video_player',
+  );
+
+  /// Delays between retries when asking the native side to register the
+  /// controller event channel handler. The plugin may not be attached yet
+  /// during a cold start or right after a hot restart.
+  @visibleForTesting
+  static List<Duration> controllerChannelRetryDelays = const [
+    Duration(milliseconds: 50),
+    Duration(milliseconds: 200),
+    Duration(seconds: 1),
+  ];
+
+  /// Completes when the constructor's controller-channel setup attempt has
+  /// finished (whether or not it succeeded).
+  Future<void>? _controllerChannelSetupFuture;
+
+  /// The in-flight controller-channel setup, exposed for tests.
+  @visibleForTesting
+  Future<void>? get debugControllerChannelSetup =>
+      _controllerChannelSetupFuture;
 
   /// Whether the MainActivity PiP event listener has been set up
   static bool _pipEventListenerSetup = false;
@@ -921,6 +947,11 @@ class NativeVideoPlayerController {
       }
     }
 
+    // Safety net: if the constructor's controller-channel setup failed (e.g.
+    // plugin not attached yet), retry now — a platform view existing proves
+    // the plugin is attached.
+    unawaited(_ensureControllerEventChannel());
+
     // IMPORTANT: Set up event channel for EVERY platform view
     // This ensures that both the original and fullscreen widgets receive events
     // Use retry logic to handle race condition where native side hasn't finished initializing
@@ -1024,7 +1055,55 @@ class NativeVideoPlayerController {
   /// This channel receives PiP and AirPlay events independently of platform views.
   /// It persists even when all platform views are disposed, allowing events to
   /// flow after calling releaseResources(). Only disposed when controller.dispose() is called.
-  void _setupControllerEventChannel() {
+  ///
+  /// The native StreamHandler is registered FIRST (via the shared plugin
+  /// method channel, which exists from plugin registration) and Dart only
+  /// listens after the native ack. Listening without a registered handler
+  /// makes the EventChannel's internal `listen` call fail with a
+  /// MissingPluginException that the services library reports straight to
+  /// [FlutterError.onError] (GitHub issue #31). Same ordering as the official
+  /// video_player plugin, which registers its event channel inside `create`
+  /// before Dart subscribes.
+  Future<void> _setupControllerEventChannel() async {
+    final bool registered = await _registerControllerChannelWithRetry();
+    if (!registered || _isDisposed) {
+      return;
+    }
+    _listenToControllerEventChannel();
+  }
+
+  /// Asks the native side to register the StreamHandler for
+  /// `native_video_player_controller_$id`, retrying briefly in case the
+  /// plugin is not attached yet (cold start / hot restart races).
+  Future<bool> _registerControllerChannelWithRetry() async {
+    for (var attempt = 0; ; attempt++) {
+      if (_isDisposed) {
+        return false;
+      }
+      try {
+        await _pluginMethodChannel.invokeMethod<void>(
+          'setupControllerEventChannel',
+          {'controllerId': id},
+        );
+        return true;
+      } catch (e) {
+        if (attempt >= controllerChannelRetryDelays.length) {
+          debugPrint(
+            'Controller event channel setup failed for controller $id ($e); '
+            'will retry when a platform view is created.',
+          );
+          return false;
+        }
+        await Future<void>.delayed(controllerChannelRetryDelays[attempt]);
+      }
+    }
+  }
+
+  /// Subscribes to the controller-level event channel. Idempotent.
+  void _listenToControllerEventChannel() {
+    if (_controllerEventSubscription != null || _isDisposed) {
+      return;
+    }
     _controllerEventChannel = EventChannel(
       'native_video_player_controller_$id',
     );
@@ -1037,6 +1116,35 @@ class NativeVideoPlayerController {
           },
           cancelOnError: false,
         );
+  }
+
+  /// Safety net: makes sure the controller event channel is registered and
+  /// subscribed once a platform view exists. By that point the plugin is
+  /// guaranteed to be attached (it created the platform view), so a setup
+  /// attempt that failed in the constructor can be retried here.
+  Future<void> _ensureControllerEventChannel() async {
+    if (_controllerEventSubscription != null || _isDisposed) {
+      return;
+    }
+    // Let any in-flight constructor setup finish first.
+    final pending = _controllerChannelSetupFuture;
+    if (pending != null) {
+      await pending;
+    }
+    if (_controllerEventSubscription != null || _isDisposed) {
+      return;
+    }
+    try {
+      await _pluginMethodChannel.invokeMethod<void>(
+        'setupControllerEventChannel',
+        {'controllerId': id},
+      );
+    } catch (e) {
+      // On iOS the platform-view init also registers the handler natively,
+      // so listening is safe once a view exists even if this call failed.
+      debugPrint('Controller event channel setup retry failed: $e');
+    }
+    _listenToControllerEventChannel();
   }
 
   /// Handles events from the controller-level event channel
@@ -2342,6 +2450,14 @@ class NativeVideoPlayerController {
     // Mark as disposed immediately to prevent new events from being added
     _isDisposed = true;
 
+    // Wait for any in-flight controller-channel setup so it cannot subscribe
+    // after teardown (its retries abort early now that _isDisposed is set).
+    try {
+      await _controllerChannelSetupFuture;
+    } catch (e) {
+      debugPrint('Controller channel setup failed during dispose: $e');
+    }
+
     // Pause playback first to avoid crashes during disposal
     if (_state.activityState.isPlaying) {
       await pause();
@@ -2386,9 +2502,13 @@ class NativeVideoPlayerController {
       AirPlayStateManager.instance.unregisterMethodChannel(_methodChannel!);
     }
 
-    // Teardown controller-level event channel on native side
+    // Teardown controller-level event channel on native side. This runs
+    // AFTER the subscription cancel above (so Dart's `cancel` hits a live
+    // handler) and BEFORE the native player disposal below (so no event can
+    // be emitted into a torn-down channel). Awaited so a recreate with the
+    // same controller ID starts from a clean slate.
     try {
-      const MethodChannel('native_video_player').invokeMethod<void>(
+      await _pluginMethodChannel.invokeMethod<void>(
         'teardownControllerEventChannel',
         {'controllerId': id},
       );
@@ -2396,8 +2516,21 @@ class NativeVideoPlayerController {
       debugPrint('Failed to teardown controller event channel: $e');
     }
 
-    // Dispose native player resources (removes shared player from manager)
-    await _methodChannel?.dispose();
+    // Dispose native player resources (removes shared player from manager).
+    // After releaseResources() there is no per-view method channel anymore,
+    // but the shared native player may still be alive — release it by
+    // controller ID via the plugin channel so it cannot leak.
+    if (_methodChannel != null) {
+      await _methodChannel?.dispose();
+    } else {
+      try {
+        await _pluginMethodChannel.invokeMethod<void>('disposeController', {
+          'controllerId': id,
+        });
+      } catch (e) {
+        debugPrint('Failed to dispose native player for controller $id: $e');
+      }
+    }
 
     // Close all stream controllers
     await _bufferedPositionController.close();

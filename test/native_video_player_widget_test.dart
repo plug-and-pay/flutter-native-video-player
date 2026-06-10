@@ -10,17 +10,10 @@ void main() {
   late MethodChannel methodChannel;
 
   setUp(() {
+    // Mocks must be installed BEFORE the controller is constructed: the
+    // constructor already talks to the platform to register the controller
+    // event channel.
     methodChannel = const MethodChannel('native_video_player');
-    controller = NativeVideoPlayerController(
-      id: 1,
-      autoPlay: true,
-      mediaInfo: NativeVideoPlayerMediaInfo(
-        title: 'Test Video',
-        subtitle: 'Test Subtitle',
-        artworkUrl: 'https://example.com/artwork.jpg',
-      ),
-    );
-
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(methodChannel, (MethodCall methodCall) async {
           switch (methodCall.method) {
@@ -34,6 +27,21 @@ void main() {
               return null;
           }
         });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockStreamHandler(
+          const EventChannel('native_video_player_controller_1'),
+          MockStreamHandler.inline(onListen: (arguments, events) {}),
+        );
+
+    controller = NativeVideoPlayerController(
+      id: 1,
+      autoPlay: true,
+      mediaInfo: NativeVideoPlayerMediaInfo(
+        title: 'Test Video',
+        subtitle: 'Test Subtitle',
+        artworkUrl: 'https://example.com/artwork.jpg',
+      ),
+    );
   });
 
   tearDown(() {
@@ -65,8 +73,8 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Verify platform view is created
-      expect(find.byType(AndroidView), findsOneWidget);
+      // Android uses hybrid composition via PlatformViewLink (not AndroidView)
+      expect(find.byType(PlatformViewLink), findsOneWidget);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),
   );
