@@ -32,7 +32,8 @@ void main() {
           'hls': {
             'cdns': {
               'akfire': {
-                'url': 'https://cdn.test/master.m3u8?exp=1781131250~x'
+                'url': 'https://cdn.test/master.m3u8?exp=1781131250~x',
+                'avc_url': 'https://cdn.test/avc.m3u8?exp=1781131250~x',
               },
               'fastly': {'url': 'https://cdn2.test/master.m3u8'},
             },
@@ -68,8 +69,11 @@ void main() {
 
       expect(video.provider, 'vimeo');
       expect(video.hlsUrl, startsWith('https://cdn.test/master.m3u8'));
+      expect(video.hlsAvcUrl, startsWith('https://cdn.test/avc.m3u8'));
       expect(video.progressiveUrl, contains('720.mp4'));
-      expect(video.playbackUrl, video.hlsUrl);
+      // Compatibility-first: the H.264 variant wins (AVPlayer rejects some
+      // default Vimeo variants with "Cannot Decode").
+      expect(video.playbackUrl, video.hlsAvcUrl);
       expect(video.title, 'Test video');
       expect(video.duration, const Duration(minutes: 2, seconds: 5));
       expect(video.thumbnails, hasLength(3));

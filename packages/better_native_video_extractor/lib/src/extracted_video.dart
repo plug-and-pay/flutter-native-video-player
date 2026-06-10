@@ -54,6 +54,7 @@ class ExtractedVideo {
     required this.provider,
     required this.videoId,
     this.hlsUrl,
+    this.hlsAvcUrl,
     this.progressiveUrl,
     this.title,
     this.duration,
@@ -69,8 +70,14 @@ class ExtractedVideo {
   final String videoId;
 
   /// HLS (m3u8) stream URL, when the platform provides one. Usually
-  /// tokenized — check [expiresAt] before reusing a cached value.
+  /// tokenized — check [expiresAt] before reusing a cached value. May point
+  /// at a variant with non-AVC codecs or external-subtitle muxing that some
+  /// players (AVPlayer) refuse with "Cannot Decode" — prefer [playbackUrl].
   final String? hlsUrl;
+
+  /// H.264-only HLS variant (Vimeo's `avc_url`), when provided. The safe
+  /// choice for maximum device compatibility.
+  final String? hlsAvcUrl;
 
   /// Progressive (MP4) URL when available.
   final String? progressiveUrl;
@@ -88,8 +95,11 @@ class ExtractedVideo {
   /// Scrub-preview sprite sheet (Vimeo `thumb_preview`), when provided.
   final ExtractedStoryboard? storyboard;
 
-  /// The best stream URL for playback (HLS preferred).
-  String? get playbackUrl => hlsUrl ?? progressiveUrl;
+  /// The best stream URL for playback: compatibility-first — the H.264 HLS
+  /// variant when available (AVPlayer rejects some of Vimeo's default
+  /// variants with "Cannot Decode"), then the default HLS, then progressive.
+  /// Players that can handle Vimeo's full ladder may read [hlsUrl] directly.
+  String? get playbackUrl => hlsAvcUrl ?? hlsUrl ?? progressiveUrl;
 
   /// The largest thumbnail, or null.
   ExtractedThumbnail? get bestThumbnail =>

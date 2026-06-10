@@ -83,10 +83,15 @@ class VimeoExtractor implements VideoSourceExtractor {
         as Map<String, dynamic>?;
 
     String? hlsUrl;
+    String? hlsAvcUrl;
     final cdns = (files?['hls'] as Map<String, dynamic>?)?['cdns']
         as Map<String, dynamic>?;
     if (cdns != null && cdns.isNotEmpty) {
-      hlsUrl = (cdns.values.first as Map<String, dynamic>)['url'] as String?;
+      final cdn = cdns.values.first as Map<String, dynamic>;
+      hlsUrl = cdn['url'] as String?;
+      // H.264-only variant; AVPlayer rejects some default variants
+      // ("Cannot Decode"), so this is what playbackUrl prefers.
+      hlsAvcUrl = cdn['avc_url'] as String?;
     }
 
     // Progressive MP4s (older/smaller videos expose these).
@@ -152,12 +157,13 @@ class VimeoExtractor implements VideoSourceExtractor {
       provider: 'vimeo',
       videoId: videoId,
       hlsUrl: hlsUrl,
+      hlsAvcUrl: hlsAvcUrl,
       progressiveUrl: progressiveUrl,
       title: video?['title'] as String?,
       duration:
           durationSeconds == null ? null : Duration(seconds: durationSeconds),
       thumbnails: thumbnails,
-      expiresAt: expiryFromUrl(hlsUrl ?? progressiveUrl),
+      expiresAt: expiryFromUrl(hlsAvcUrl ?? hlsUrl ?? progressiveUrl),
       storyboard: storyboard,
     );
   }
