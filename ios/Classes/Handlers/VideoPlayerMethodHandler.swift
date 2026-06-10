@@ -139,7 +139,7 @@ extension VideoPlayerView {
 
         // Viewport-based quality cap (only the default adaptive load path;
         // manual quality switches create their own uncapped items)
-        if qualityForViewport, let size = viewportSize,
+        if qualityForViewport, let size = viewportCapSize,
            fullscreenPlayerViewController == nil,
            !(player?.isExternalPlaybackActive ?? false) {
             playerItem.preferredMaximumResolution = size
@@ -813,6 +813,20 @@ extension VideoPlayerView {
         result(nil)
     }
 
+    /// The cap actually handed to AVPlayer: the view size plus one HLS ladder
+    /// step (~1.5x) of headroom. preferredMaximumResolution has "fit-under"
+    /// semantics (variants LARGER than the cap are excluded), unlike
+    /// Android's setViewportSize which picks the smallest variant that
+    /// COVERS the viewport. Without headroom a 1248px-wide tile would
+    /// exclude the 1280-wide 720p variant and drop to 480p — visibly softer.
+    /// With headroom the first variant at-or-above the view size stays
+    /// selectable, making the cap visually lossless while still never
+    /// decoding e.g. 1080p into a feed tile.
+    var viewportCapSize: CGSize? {
+        guard let size = viewportSize else { return nil }
+        return CGSize(width: size.width * 1.5, height: size.height * 1.5)
+    }
+
     /// Applies the stored viewport cap to the current item unless fullscreen
     /// or AirPlay external playback (which render beyond the inline view's
     /// size) is active. preferredMaximumResolution is a preference: AVPlayer
@@ -820,7 +834,7 @@ extension VideoPlayerView {
     /// playback. Manual quality selection loads a dedicated variant URL via a
     /// NEW player item and is therefore never constrained by this.
     func applyViewportCapIfAppropriate() {
-        guard qualityForViewport, let size = viewportSize else { return }
+        guard qualityForViewport, let size = viewportCapSize else { return }
         guard fullscreenPlayerViewController == nil else { return }
         guard !(player?.isExternalPlaybackActive ?? false) else { return }
         npLog("🎚️ Applying viewport quality cap: \(Int(size.width))x\(Int(size.height))")

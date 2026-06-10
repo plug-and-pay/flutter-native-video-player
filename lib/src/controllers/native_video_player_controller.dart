@@ -874,6 +874,8 @@ class NativeVideoPlayerController {
     'timeUpdateIntervalMs':
         NativeVideoPlayerConfig.global.timeUpdateInterval.inMilliseconds,
     'qualityForViewport': NativeVideoPlayerConfig.global.qualityForViewportSize,
+    'prioritizeActivePlayback':
+        NativeVideoPlayerConfig.global.prioritizeActivePlayback,
     if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
       'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
           .toMap(),

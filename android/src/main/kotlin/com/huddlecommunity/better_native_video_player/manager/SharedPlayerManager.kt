@@ -7,6 +7,8 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.PriorityTaskManager
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
@@ -41,6 +43,13 @@ object SharedPlayerManager {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // One PriorityTaskManager shared by every player created with
+    // prioritizeActivePlayback: playing players load at C.PRIORITY_PLAYBACK
+    // while paused ones are demoted, so a feed's background players stop
+    // competing for bandwidth/IO with the videos actually being watched.
+    // Priorities only coordinate between players sharing this instance.
+    private val sharedPriorityTaskManager = PriorityTaskManager()
+
     /**
      * Gets or creates a player for the given controller ID
      * Returns a Pair<ExoPlayer, Boolean> where the Boolean indicates if the player already existed (true) or was newly created (false)
@@ -48,25 +57,40 @@ object SharedPlayerManager {
      * [bufferConfig] (optional, from the Dart NativeVideoPlayerConfig) tunes
      * DefaultLoadControl and only applies when the player is first created
      * for this controller ID; null keeps ExoPlayer's defaults.
+     * [prioritizeActivePlayback] attaches the shared PriorityTaskManager.
      */
     fun getOrCreatePlayer(
         context: Context,
         controllerId: Int,
-        bufferConfig: Map<*, *>? = null
+        bufferConfig: Map<*, *>? = null,
+        prioritizeActivePlayback: Boolean = false
     ): Pair<ExoPlayer, Boolean> {
         val alreadyExisted = players.containsKey(controllerId)
         val player = players.getOrPut(controllerId) {
-            buildPlayer(context, bufferConfig)
+            buildPlayer(context, bufferConfig, prioritizeActivePlayback)
         }
         return Pair(player, alreadyExisted)
     }
 
     /**
-     * Builds an ExoPlayer, optionally with a tuned DefaultLoadControl.
+     * Builds an ExoPlayer, optionally with a tuned DefaultLoadControl and the
+     * shared PriorityTaskManager.
      */
-    fun buildPlayer(context: Context, bufferConfig: Map<*, *>? = null): ExoPlayer {
+    fun buildPlayer(
+        context: Context,
+        bufferConfig: Map<*, *>? = null,
+        prioritizeActivePlayback: Boolean = false
+    ): ExoPlayer {
         val builder = ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, false)
+        if (prioritizeActivePlayback) {
+            builder.setPriorityTaskManager(sharedPriorityTaskManager)
+            // Start demoted: loading-while-paused yields to playing players.
+            // PriorityTaskManager only blocks when a HIGHER-priority task is
+            // active, so a lone player is never slowed down. The observer
+            // promotes/demotes on play/pause transitions.
+            builder.setPriority(C.PRIORITY_PLAYBACK_PRELOAD)
+        }
         if (bufferConfig != null) {
             val minBufferMs = (bufferConfig["minBufferMs"] as? Number)?.toInt() ?: 50000
             val maxBufferMs = (bufferConfig["maxBufferMs"] as? Number)?.toInt() ?: 50000

@@ -120,13 +120,20 @@ class VideoPlayerView(
             NpLog.d(TAG, "📱 Stored media info during init: $title")
         }
 
-        // Get or create shared player. The optional buffer config (from the
-        // Dart NativeVideoPlayerConfig) only applies at first creation.
+        // Get or create shared player. The optional buffer config and
+        // playback prioritization (from the Dart NativeVideoPlayerConfig)
+        // only apply at first creation.
         val bufferConfig = args?.get("androidBufferConfig") as? Map<*, *>
+        val prioritizeActivePlayback =
+            args?.get("prioritizeActivePlayback") as? Boolean ?: false
         val isSharedPlayer: Boolean
         player = if (controllerId != null) {
-            val (sharedPlayer, alreadyExisted) =
-                SharedPlayerManager.getOrCreatePlayer(context, controllerId, bufferConfig)
+            val (sharedPlayer, alreadyExisted) = SharedPlayerManager.getOrCreatePlayer(
+                context,
+                controllerId,
+                bufferConfig,
+                prioritizeActivePlayback
+            )
             isSharedPlayer = alreadyExisted
             if (alreadyExisted) {
                 NpLog.d(TAG, "Using existing shared player for controller ID: $controllerId")
@@ -137,7 +144,7 @@ class VideoPlayerView(
         } else {
             NpLog.d(TAG, "No controller ID provided, creating new player")
             isSharedPlayer = false
-            SharedPlayerManager.buildPlayer(context, bufferConfig)
+            SharedPlayerManager.buildPlayer(context, bufferConfig, prioritizeActivePlayback)
         }
 
         // Set repeat mode for looping
@@ -282,7 +289,8 @@ class VideoPlayerView(
             getMediaInfo = { currentMediaInfo },
             controllerId = controllerId,
             viewId = viewId,
-            updateIntervalMs = timeUpdateIntervalMs
+            updateIntervalMs = timeUpdateIntervalMs,
+            prioritizeActivePlayback = prioritizeActivePlayback
         )
         player.addListener(observer)
 

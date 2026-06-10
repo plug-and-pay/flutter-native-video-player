@@ -51,4 +51,22 @@ void main() {
     expect(NativeVideoPlayerConfig.global.maxConcurrentPlayingPlayers, 3);
     expect(NativeVideoPlayerConfig.global.qualityForViewportSize, isTrue);
   });
+
+  test(
+    'prioritizeActivePlayback defaults off and is plumbed when set',
+    () async {
+      expect(NativeVideoPlayerConfig.global.prioritizeActivePlayback, isFalse);
+
+      final off = NativeVideoPlayerController(id: 77);
+      expect(off.creationParams['prioritizeActivePlayback'], isFalse);
+      await off.dispose();
+
+      NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
+        prioritizeActivePlayback: true,
+      );
+      final on = NativeVideoPlayerController(id: 77);
+      expect(on.creationParams['prioritizeActivePlayback'], isTrue);
+      await on.dispose();
+    },
+  );
 }

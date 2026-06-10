@@ -73,6 +73,29 @@ viewport ("NativeVideoPlayer: viewport 1248x702 reported for view N").
 Expect a LARGER relative win on real devices for network/battery, and on
 smaller tiles (Huddle feed cards) a deeper quality step-down.
 
+**Lossless revision (×1.5 headroom).** iOS `preferredMaximumResolution` has
+fit-under semantics (vs Android's cover semantics), so the raw cap above
+dropped a 1248px tile to the 480p rung — slightly soft. The shipped version
+applies the view size ×1.5 (one HLS ladder step) so the first variant
+at-or-above the tile stays selectable: visually lossless. Honest measured
+consequence on the simulator with FULL-WIDTH tiles: uncapped vs lossless-cap
+read nearly identical (CPU 37-43% vs 36-42%, mem ~430M both) because
+short-window ABR sits near 720p even uncapped at this tile width — the
+guaranteed win of the lossless cap is preventing 1080p decode in steady
+state, on smaller tiles (deeper step-down), and on real-device
+network/battery. Apps that prefer maximum savings over the last sliver of
+sharpness can be given a headroom knob later if wanted.
+
+**Tier 3a implemented** (`prioritizeActivePlayback`, default off): shared
+`PriorityTaskManager` + `setPriority(C.PRIORITY_PLAYBACK /
+PRIORITY_PLAYBACK_PRELOAD)` on play/pause transitions
+(SharedPlayerManager.buildPlayer + VideoPlayerObserver). Android-only
+effect; behavioral verification needs a physical device (emulator unusable
+on this machine). Pattern source: Media3 itself — no pub.dev player
+coordinates multi-player bandwidth (better_player has the capping APIs,
+`BetterPlayer.kt:546-556` / `BetterPlayer.m:577-582`, but app-driven and
+single-player).
+
 ## Tier 2 — lighter native views when controls are hidden (iOS first)
 
 - **iOS**: when `showNativeControls == false` (always true for Huddle), host

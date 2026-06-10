@@ -8,6 +8,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.C
+import androidx.media3.exoplayer.ExoPlayer
 
 /**
  * Observes ExoPlayer state changes and reports them via EventHandler
@@ -20,7 +21,8 @@ class VideoPlayerObserver(
     private val getMediaInfo: (() -> Map<String, Any>?)? = null,
     private val controllerId: Int? = null,
     private val viewId: Long? = null,
-    private val updateIntervalMs: Long = 500L
+    private val updateIntervalMs: Long = 500L,
+    private val prioritizeActivePlayback: Boolean = false
 ) : Player.Listener {
 
     companion object {
@@ -176,6 +178,16 @@ class VideoPlayerObserver(
             sendTimeUpdate()
             stopTicker()
         }
+
+        // With prioritizeActivePlayback, playing players win network/IO
+        // contention over paused ones (shared PriorityTaskManager attached in
+        // SharedPlayerManager.buildPlayer)
+        if (prioritizeActivePlayback) {
+            (player as? ExoPlayer)?.setPriority(
+                if (isPlaying) C.PRIORITY_PLAYBACK else C.PRIORITY_PLAYBACK_PRELOAD
+            )
+        }
+
         if (isPlaying) {
             // ALWAYS update media session/notification when playback starts
             // This ensures media controls show the correct info whether in normal view or PiP

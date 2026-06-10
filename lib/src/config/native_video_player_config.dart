@@ -21,6 +21,7 @@ class NativeVideoPlayerConfig {
     this.androidBufferConfig,
     this.iosBufferConfig,
     this.qualityForViewportSize = false,
+    this.prioritizeActivePlayback = false,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
@@ -72,6 +73,17 @@ class NativeVideoPlayerConfig {
   /// specific variant URL and is never constrained by this. Has no effect on
   /// single-variant sources (plain MP4).
   final bool qualityForViewportSize;
+
+  /// Lets actively playing players win network/IO contention over paused
+  /// ones (Android only; default: false = current behavior).
+  ///
+  /// All players created while this is enabled share one Media3
+  /// `PriorityTaskManager`: playing players load at `C.PRIORITY_PLAYBACK`,
+  /// paused/idle players are demoted to `C.PRIORITY_PLAYBACK_PRELOAD`, so a
+  /// feed's background players stop competing with the videos the user is
+  /// actually watching. Visual quality is unaffected; paused players simply
+  /// buffer later. Applies to players created after the config is set.
+  final bool prioritizeActivePlayback;
 }
 
 /// ExoPlayer `DefaultLoadControl` parameters (Android only).
