@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:better_native_video_player/better_native_video_player.dart';
+import 'package:better_native_video_player/cast.dart';
 import 'package:flutter/material.dart';
 
 /// Demo + Marionette harness for the plugin's Chromecast support:
