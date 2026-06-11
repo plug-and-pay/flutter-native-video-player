@@ -973,6 +973,7 @@ class NativeVideoPlayerController {
     'timeUpdateIntervalMs':
         NativeVideoPlayerConfig.global.timeUpdateInterval.inMilliseconds,
     'qualityForViewport': NativeVideoPlayerConfig.global.qualityForViewportSize,
+    'viewportCapHeadroom': NativeVideoPlayerConfig.global.viewportCapHeadroom,
     'prioritizeActivePlayback':
         NativeVideoPlayerConfig.global.prioritizeActivePlayback,
     'lightweightInlineViews':

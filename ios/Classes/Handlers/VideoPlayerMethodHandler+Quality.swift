@@ -165,18 +165,23 @@ extension VideoPlayerView {
         result(nil)
     }
 
-    /// The cap actually handed to AVPlayer: the view size plus one HLS ladder
-    /// step (~1.5x) of headroom. preferredMaximumResolution has "fit-under"
-    /// semantics (variants LARGER than the cap are excluded), unlike
-    /// Android's setViewportSize which picks the smallest variant that
-    /// COVERS the viewport. Without headroom a 1248px-wide tile would
-    /// exclude the 1280-wide 720p variant and drop to 480p — visibly softer.
-    /// With headroom the first variant at-or-above the view size stays
+    /// The cap actually handed to AVPlayer: the view size plus headroom
+    /// (NativeVideoPlayerConfig.viewportCapHeadroom, default 1.5 ≈ one HLS
+    /// ladder step). preferredMaximumResolution has "fit-under" semantics
+    /// (variants LARGER than the cap are excluded), unlike Android's
+    /// setViewportSize which picks the smallest variant that COVERS the
+    /// viewport. Without headroom a 1248px-wide tile would exclude the
+    /// 1280-wide 720p variant and drop to 480p — visibly softer. With the
+    /// default headroom the first variant at-or-above the view size stays
     /// selectable, making the cap visually lossless while still never
-    /// decoding e.g. 1080p into a feed tile.
+    /// decoding e.g. 1080p into a feed tile; apps preferring maximum
+    /// savings can set 1.0.
     var viewportCapSize: CGSize? {
         guard let size = viewportSize else { return nil }
-        return CGSize(width: size.width * 1.5, height: size.height * 1.5)
+        return CGSize(
+            width: size.width * viewportCapHeadroom,
+            height: size.height * viewportCapHeadroom
+        )
     }
 
     /// Applies the stored viewport cap to the current item unless fullscreen

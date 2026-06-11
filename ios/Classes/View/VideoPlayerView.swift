@@ -168,6 +168,10 @@ import QuartzCore
     var qualityForViewport: Bool = false
     var viewportSize: CGSize?
 
+    // Headroom multiplier for the viewport cap (see viewportCapSize):
+    // default 1.5 keeps the first variant at-or-above the tile selectable.
+    var viewportCapHeadroom: Double = 1.5
+
     // Optional AVPlayer buffer tuning (from the Dart NativeVideoPlayerConfig)
     var preferredForwardBufferDuration: Double?
     var automaticallyWaitsToMinimizeStalling: Bool = true
@@ -327,6 +331,7 @@ import QuartzCore
 
             // Viewport-based quality capping from args
             qualityForViewport = args["qualityForViewport"] as? Bool ?? false
+            viewportCapHeadroom = args["viewportCapHeadroom"] as? Double ?? 1.5
             if let bufferConfig = args["iosBufferConfig"] as? [String: Any] {
                 preferredForwardBufferDuration = bufferConfig["preferredForwardBufferDuration"] as? Double
                 automaticallyWaitsToMinimizeStalling =

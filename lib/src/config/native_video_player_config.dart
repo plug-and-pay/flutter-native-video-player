@@ -21,6 +21,7 @@ class NativeVideoPlayerConfig {
     this.androidBufferConfig,
     this.iosBufferConfig,
     this.qualityForViewportSize = false,
+    this.viewportCapHeadroom = 1.5,
     this.prioritizeActivePlayback = false,
     this.lightweightInlineViews = false,
     this.androidEnableDiskCache = false,
@@ -79,6 +80,20 @@ class NativeVideoPlayerConfig {
   /// specific variant URL and is never constrained by this. Has no effect on
   /// single-variant sources (plain MP4).
   final bool qualityForViewportSize;
+
+  /// Headroom multiplier for the iOS viewport quality cap (default 1.5 =
+  /// current behavior, visually lossless).
+  ///
+  /// iOS's `preferredMaximumResolution` has fit-under semantics: variants
+  /// LARGER than the cap are excluded, so capping at the exact tile size
+  /// would drop e.g. a 1248px-wide tile below the 1280-wide 720p variant —
+  /// visibly softer. The default keeps the first variant at-or-above the
+  /// tile selectable (one HLS ladder step of headroom). Set to 1.0 for
+  /// maximum savings at the cost of that last sliver of sharpness. Android
+  /// ignores this (its viewport API already picks the smallest variant
+  /// that covers the tile). Applies with [qualityForViewportSize] to views
+  /// created after the config is set.
+  final double viewportCapHeadroom;
 
   /// Lets actively playing players win network/IO contention over paused
   /// ones (Android only; default: false = current behavior).

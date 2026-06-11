@@ -43,6 +43,22 @@ void main() {
     await controller.dispose();
   });
 
+  test('viewportCapHeadroom defaults to 1.5 and is plumbed when set', () async {
+    expect(NativeVideoPlayerConfig.global.viewportCapHeadroom, 1.5);
+
+    final byDefault = NativeVideoPlayerController(id: 77);
+    expect(byDefault.creationParams['viewportCapHeadroom'], 1.5);
+    await byDefault.dispose();
+
+    NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
+      qualityForViewportSize: true,
+      viewportCapHeadroom: 1.0,
+    );
+    final lossy = NativeVideoPlayerController(id: 77);
+    expect(lossy.creationParams['viewportCapHeadroom'], 1.0);
+    await lossy.dispose();
+  });
+
   test('config copy keeps other fields independent', () {
     NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
       maxConcurrentPlayingPlayers: 3,
