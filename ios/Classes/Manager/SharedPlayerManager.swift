@@ -108,24 +108,23 @@ class SharedPlayerManager: NSObject {
     /// This ensures the view controller persists across platform view disposal so PiP delegate callbacks continue to work
     func getOrCreatePlayerAndViewController(for controllerId: Int) -> (AVPlayer, AVPlayerViewController, Bool) {
         assertMainThread()
-        if let existingPlayer = players[controllerId],
-           let existingViewController = playerViewControllers[controllerId] {
-            npLog("♻️ [SharedPlayerManager] Reusing existing player AND view controller for controller ID: \(controllerId)")
-            return (existingPlayer, existingViewController, true)
-        }
+        // Reuse the existing player even when no view controller exists yet
+        // (the controller may have been created by a lightweight view, which
+        // skips the shared AVPlayerViewController entirely).
+        let (player, playerExisted) = getOrCreatePlayer(for: controllerId)
 
-        // Create new player
-        let newPlayer = AVPlayer()
-        configurePlayerForBackgroundPlayback(newPlayer)
-        players[controllerId] = newPlayer
+        if let existingViewController = playerViewControllers[controllerId] {
+            npLog("♻️ [SharedPlayerManager] Reusing existing player AND view controller for controller ID: \(controllerId)")
+            return (player, existingViewController, playerExisted)
+        }
 
         // Create new view controller
         let newViewController = AVPlayerViewController()
-        newViewController.player = newPlayer
+        newViewController.player = player
         playerViewControllers[controllerId] = newViewController
 
-        npLog("✅ [SharedPlayerManager] Created new player AND view controller for controller ID: \(controllerId)")
-        return (newPlayer, newViewController, false)
+        npLog("✅ [SharedPlayerManager] Created \(playerExisted ? "view controller for existing player" : "new player AND view controller") for controller ID: \(controllerId)")
+        return (player, newViewController, playerExisted)
     }
 
     /// Sets PiP settings for a controller
@@ -561,7 +560,7 @@ class SharedPlayerManager: NSObject {
         npLog("📊 Current state: \(videoPlayerViews.count) active views registered")
         for (key, wrapper) in videoPlayerViews {
             if let view = wrapper.view {
-                npLog("   - ViewId \(key): Controller \(view.controllerId ?? -1), canStartAuto: \(view.canStartPictureInPictureAutomatically), current: \(view.playerViewController.canStartPictureInPictureAutomaticallyFromInline)")
+                npLog("   - ViewId \(key): Controller \(view.controllerId ?? -1), canStartAuto: \(view.canStartPictureInPictureAutomatically), current: \(view.isAutomaticInlinePiPEnabled)")
             }
         }
         
@@ -579,10 +578,9 @@ class SharedPlayerManager: NSObject {
                 var disabledCount = 0
                 for (viewKey, wrapper) in videoPlayerViews {
                     if let view = wrapper.view, view.controllerId == previousControllerId {
-                        let wasBefore = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
-                        view.playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
-                        let isAfter = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
-                        npLog("   → ViewId \(viewKey): \(wasBefore) → \(isAfter)")
+                        let wasBefore = view.isAutomaticInlinePiPEnabled
+                        view.setAutomaticInlinePiP(false)
+                        npLog("   → ViewId \(viewKey): \(wasBefore) → \(view.isAutomaticInlinePiPEnabled)")
                         disabledCount += 1
                     }
                 }
@@ -593,9 +591,9 @@ class SharedPlayerManager: NSObject {
             npLog("🎬 Enabling automatic PiP for controller \(controllerId)")
             
             // First, disable ALL views for this controller
-            for (viewKey, wrapper) in videoPlayerViews {
+            for (_, wrapper) in videoPlayerViews {
                 if let view = wrapper.view, view.controllerId == controllerId {
-                    view.playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
+                    view.setAutomaticInlinePiP(false)
                 }
             }
             
@@ -606,13 +604,13 @@ class SharedPlayerManager: NSObject {
                 if let wrapper = videoPlayerViews[key], let view = wrapper.view {
                     npLog("   🔍 Checking primary view \(primaryViewId):")
                     npLog("      - view.canStartPictureInPictureAutomatically: \(view.canStartPictureInPictureAutomatically)")
-                    npLog("      - playerViewController.allowsPictureInPicturePlayback: \(view.playerViewController.allowsPictureInPicturePlayback)")
+                    npLog("      - allowsInlinePictureInPicture: \(view.allowsInlinePictureInPicture)")
                     npLog("      - player rate: \(view.player?.rate ?? -1)")
 
                     if view.canStartPictureInPictureAutomatically {
-                        let wasBefore = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
-                        view.playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
-                        let isAfter = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
+                        let wasBefore = view.isAutomaticInlinePiPEnabled
+                        view.setAutomaticInlinePiP(true)
+                        let isAfter = view.isAutomaticInlinePiPEnabled
                         npLog("   → ViewId \(view.viewId): \(wasBefore) → \(isAfter) [PRIMARY]")
                         npLog("   ✅ Enabled on PRIMARY platform view for controller \(controllerId)")
                         enabledOnView = true
@@ -630,12 +628,12 @@ class SharedPlayerManager: NSObject {
             // This handles the case where the primary view was disposed but other views still exist
             if !enabledOnView {
                 npLog("   🔄 Looking for any available view for controller \(controllerId)")
-                for (viewKey, wrapper) in videoPlayerViews {
+                for (_, wrapper) in videoPlayerViews {
                     if let view = wrapper.view, view.controllerId == controllerId {
                         if view.canStartPictureInPictureAutomatically {
-                            let wasBefore = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
-                            view.playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
-                            let isAfter = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
+                            let wasBefore = view.isAutomaticInlinePiPEnabled
+                            view.setAutomaticInlinePiP(true)
+                            let isAfter = view.isAutomaticInlinePiPEnabled
                             npLog("   → ViewId \(view.viewId): \(wasBefore) → \(isAfter) [FALLBACK]")
                             npLog("   ✅ Enabled on fallback platform view for controller \(controllerId)")
                             // Set this as the new primary view
@@ -664,10 +662,9 @@ class SharedPlayerManager: NSObject {
             var disabledCount = 0
             for (viewKey, wrapper) in videoPlayerViews {
                 if let view = wrapper.view, view.controllerId == controllerId {
-                    let wasBefore = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
-                    view.playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
-                    let isAfter = view.playerViewController.canStartPictureInPictureAutomaticallyFromInline
-                    npLog("   → ViewId \(viewKey): \(wasBefore) → \(isAfter)")
+                    let wasBefore = view.isAutomaticInlinePiPEnabled
+                    view.setAutomaticInlinePiP(false)
+                    npLog("   → ViewId \(viewKey): \(wasBefore) → \(view.isAutomaticInlinePiPEnabled)")
                     disabledCount += 1
                 }
             }

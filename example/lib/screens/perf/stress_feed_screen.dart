@@ -56,6 +56,26 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
     super.dispose();
   }
 
+  /// Copies the global config with the given overrides (the config class is
+  /// immutable and has no copyWith; this keeps the toggles independent).
+  NativeVideoPlayerConfig _copyGlobalConfig({
+    int? maxConcurrentPlayingPlayers,
+    bool clearMaxConcurrent = false,
+    bool? qualityForViewportSize,
+    bool? lightweightInlineViews,
+  }) {
+    final global = NativeVideoPlayerConfig.global;
+    return NativeVideoPlayerConfig(
+      maxConcurrentPlayingPlayers: clearMaxConcurrent
+          ? null
+          : maxConcurrentPlayingPlayers ?? global.maxConcurrentPlayingPlayers,
+      qualityForViewportSize:
+          qualityForViewportSize ?? global.qualityForViewportSize,
+      lightweightInlineViews:
+          lightweightInlineViews ?? global.lightweightInlineViews,
+    );
+  }
+
   Future<void> _setAllPlaying(bool playing) async {
     for (final controller in _controllers.values) {
       if (playing) {
@@ -89,57 +109,69 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
       body: Column(
         children: [
           PerfHud(dumpLabel: 'stress_feed_n${widget.playerCount}'),
-          Row(
-            children: [
-              TextButton(
-                key: const ValueKey('feed_play_all'),
-                onPressed: () => _setAllPlaying(true),
-                child: const Text('Play all'),
-              ),
-              TextButton(
-                key: const ValueKey('feed_pause_all'),
-                onPressed: () => _setAllPlaying(false),
-                child: const Text('Pause all'),
-              ),
-              const Spacer(),
-              const Text('vp', style: TextStyle(fontSize: 12)),
-              // Viewport quality capping. Applies at platform-view creation:
-              // toggle, then leave and re-enter this screen.
-              Switch(
-                key: const ValueKey('feed_toggle_viewport_cap'),
-                value: NativeVideoPlayerConfig.global.qualityForViewportSize,
-                onChanged: (value) => setState(() {
-                  NativeVideoPlayerConfig.global = NativeVideoPlayerConfig(
-                    maxConcurrentPlayingPlayers: NativeVideoPlayerConfig
-                        .global
-                        .maxConcurrentPlayingPlayers,
-                    qualityForViewportSize: value,
-                  );
-                }),
-              ),
-              const Text('cap 2', style: TextStyle(fontSize: 12)),
-              Switch(
-                key: const ValueKey('feed_set_cap_2'),
-                value:
-                    NativeVideoPlayerConfig
-                        .global
-                        .maxConcurrentPlayingPlayers !=
-                    null,
-                onChanged: (value) => setState(() {
-                  NativeVideoPlayerConfig.global = NativeVideoPlayerConfig(
-                    maxConcurrentPlayingPlayers: value ? 2 : null,
-                    qualityForViewportSize:
-                        NativeVideoPlayerConfig.global.qualityForViewportSize,
-                  );
-                }),
-              ),
-              const Text('naive', style: TextStyle(fontSize: 12)),
-              Switch(
-                key: const ValueKey('feed_toggle_card_mode'),
-                value: _naiveRebuilds,
-                onChanged: (value) => setState(() => _naiveRebuilds = value),
-              ),
-            ],
+          // Horizontally scrollable: the toggle row no longer fits on
+          // narrower phones.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                TextButton(
+                  key: const ValueKey('feed_play_all'),
+                  onPressed: () => _setAllPlaying(true),
+                  child: const Text('Play all'),
+                ),
+                TextButton(
+                  key: const ValueKey('feed_pause_all'),
+                  onPressed: () => _setAllPlaying(false),
+                  child: const Text('Pause all'),
+                ),
+                const Text('vp', style: TextStyle(fontSize: 12)),
+                // Viewport quality capping. Applies at platform-view creation:
+                // toggle, then leave and re-enter this screen.
+                Switch(
+                  key: const ValueKey('feed_toggle_viewport_cap'),
+                  value: NativeVideoPlayerConfig.global.qualityForViewportSize,
+                  onChanged: (value) => setState(() {
+                    NativeVideoPlayerConfig.global = _copyGlobalConfig(
+                      qualityForViewportSize: value,
+                    );
+                  }),
+                ),
+                const Text('cap 2', style: TextStyle(fontSize: 12)),
+                Switch(
+                  key: const ValueKey('feed_set_cap_2'),
+                  value:
+                      NativeVideoPlayerConfig
+                          .global
+                          .maxConcurrentPlayingPlayers !=
+                      null,
+                  onChanged: (value) => setState(() {
+                    NativeVideoPlayerConfig.global = _copyGlobalConfig(
+                      maxConcurrentPlayingPlayers: value ? 2 : null,
+                      clearMaxConcurrent: !value,
+                    );
+                  }),
+                ),
+                const Text('light', style: TextStyle(fontSize: 12)),
+                // Lightweight views (Tier 2). Applies at platform-view
+                // creation: toggle, then leave and re-enter this screen.
+                Switch(
+                  key: const ValueKey('feed_toggle_light_views'),
+                  value: NativeVideoPlayerConfig.global.lightweightInlineViews,
+                  onChanged: (value) => setState(() {
+                    NativeVideoPlayerConfig.global = _copyGlobalConfig(
+                      lightweightInlineViews: value,
+                    );
+                  }),
+                ),
+                const Text('naive', style: TextStyle(fontSize: 12)),
+                Switch(
+                  key: const ValueKey('feed_toggle_card_mode'),
+                  value: _naiveRebuilds,
+                  onChanged: (value) => setState(() => _naiveRebuilds = value),
+                ),
+              ],
+            ),
           ),
           // All tiles are mounted eagerly (no ListView laziness): this screen
           // measures N players ACTUALLY running simultaneously.

@@ -912,6 +912,8 @@ class NativeVideoPlayerController {
     'qualityForViewport': NativeVideoPlayerConfig.global.qualityForViewportSize,
     'prioritizeActivePlayback':
         NativeVideoPlayerConfig.global.prioritizeActivePlayback,
+    'lightweightInlineViews':
+        NativeVideoPlayerConfig.global.lightweightInlineViews,
     if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
       'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
           .toMap(),

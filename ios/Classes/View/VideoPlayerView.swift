@@ -8,7 +8,30 @@ import QuartzCore
 // MARK: - Main Video Player View
 
 @objc public class VideoPlayerView: NSObject, FlutterPlatformView, FlutterStreamHandler {
-    var playerViewController: AVPlayerViewController
+    // Heavy display path. Lazy so lightweight views (lightweightInlineViews
+    // config + hidden controls) never pay for an AVPlayerViewController; if a
+    // stray code path still touches it in light mode, one is materialized
+    // bound to the same player so behavior degrades gracefully.
+    lazy var playerViewController: AVPlayerViewController = {
+        npLog("⚠️ Materializing AVPlayerViewController lazily for light view \(viewId)")
+        let viewController = AVPlayerViewController()
+        viewController.player = player
+        viewController.showsPlaybackControls = false
+        viewController.updatesNowPlayingInfoCenter = false
+        viewController.delegate = self
+        return viewController
+    }()
+
+    // Lightweight display path: a bare AVPlayerLayer surface (set only when
+    // the view was created with lightweightInlineViews + hidden controls).
+    var lightView: PlayerLayerView?
+    var usesLightView: Bool { lightView != nil }
+
+    // Whether PiP is allowed for this view (mirrors
+    // playerViewController.allowsPictureInPicturePlayback in heavy mode;
+    // gates inline PiP controller creation in light mode).
+    var allowsInlinePictureInPicture: Bool = true
+
     var player: AVPlayer?
     private var methodChannel: FlutterMethodChannel
     private var channelName: String
@@ -143,74 +166,110 @@ import QuartzCore
         let argsDict = args as? [String: Any]
         let isDartFullscreen = argsDict?["isDartFullscreen"] as? Bool ?? false
 
+        // Lightweight display mode: bare AVPlayerLayer instead of a per-tile
+        // AVPlayerViewController. Only when the app opted in AND this view
+        // hides native controls (the layer can't render controls).
+        let argsShowNativeControls = argsDict?["showNativeControls"] as? Bool ?? true
+        let useLightView =
+            (argsDict?["lightweightInlineViews"] as? Bool ?? false) && !argsShowNativeControls
+
+        // The view controller resolved for the heavy path; assigned to the
+        // lazy property after super.init() (lazy vars can't be set earlier).
+        var resolvedViewController: AVPlayerViewController?
+
         if let args = argsDict,
            let controllerIdValue = args["controllerId"] as? Int {
             controllerId = controllerIdValue
+            isDartFullscreenView = isDartFullscreen
 
-            // Get or create shared player AND view controller
-            // This ensures the view controller persists across platform view disposal
-            // so PiP delegate callbacks continue to work even when navigating away
-            let (sharedPlayer, sharedViewController, alreadyExisted) =
-                SharedPlayerManager.shared.getOrCreatePlayerAndViewController(for: controllerIdValue)
-
-            player = sharedPlayer
-            isSharedPlayer = alreadyExisted
-
-            if isDartFullscreen {
-                // Dart fullscreen host: use a dedicated AVPlayerViewController (same player) so the inline
-                // view never loses its shared view when this platform view is created or disposed.
-                let dedicatedVC = AVPlayerViewController()
-                dedicatedVC.player = sharedPlayer
-                playerViewController = dedicatedVC
-                isDartFullscreenView = true
-                npLog("✅ Created dedicated AVPlayerViewController for Dart fullscreen (controller ID: \(controllerIdValue))")
+            if useLightView {
+                // Light views render through their own AVPlayerLayer (one per
+                // view, most recently attached layer displays — same contract
+                // as the dedicated-VC-per-view scheme below). No shared
+                // AVPlayerViewController is created; native fullscreen builds
+                // its own on demand.
+                let (sharedPlayer, alreadyExisted) =
+                    SharedPlayerManager.shared.getOrCreatePlayer(for: controllerIdValue)
+                player = sharedPlayer
+                isSharedPlayer = alreadyExisted
+                npLog("✅ Using lightweight AVPlayerLayer view for controller ID: \(controllerIdValue) (shared: \(alreadyExisted), dartFullscreen: \(isDartFullscreen))")
             } else {
-                if alreadyExisted {
-                    // Second or later platform view for this controller (e.g. detail screen).
-                    // Use a dedicated AVPlayerViewController with the shared player so this
-                    // view has its own layer; the shared VC stays in SharedPlayerManager for PiP.
-                    // This avoids black screen when navigating list↔detail (one UIView per slot).
-                    let displayVC = AVPlayerViewController()
-                    displayVC.player = sharedPlayer
-                    playerViewController = displayVC
-                    npLog("✅ Created dedicated AVPlayerViewController for shared controller (controller ID: \(controllerIdValue)) - avoids black screen when navigating list↔detail")
+                // Get or create shared player AND view controller
+                // This ensures the view controller persists across platform view disposal
+                // so PiP delegate callbacks continue to work even when navigating away
+                let (sharedPlayer, sharedViewController, alreadyExisted) =
+                    SharedPlayerManager.shared.getOrCreatePlayerAndViewController(for: controllerIdValue)
+
+                player = sharedPlayer
+                isSharedPlayer = alreadyExisted
+
+                if isDartFullscreen {
+                    // Dart fullscreen host: use a dedicated AVPlayerViewController (same player) so the inline
+                    // view never loses its shared view when this platform view is created or disposed.
+                    let dedicatedVC = AVPlayerViewController()
+                    dedicatedVC.player = sharedPlayer
+                    resolvedViewController = dedicatedVC
+                    npLog("✅ Created dedicated AVPlayerViewController for Dart fullscreen (controller ID: \(controllerIdValue))")
                 } else {
-                    playerViewController = sharedViewController
-                    npLog("✅ Created new shared player AND view controller for controller ID: \(controllerIdValue)")
+                    if alreadyExisted {
+                        // Second or later platform view for this controller (e.g. detail screen).
+                        // Use a dedicated AVPlayerViewController with the shared player so this
+                        // view has its own layer; the shared VC stays in SharedPlayerManager for PiP.
+                        // This avoids black screen when navigating list↔detail (one UIView per slot).
+                        let displayVC = AVPlayerViewController()
+                        displayVC.player = sharedPlayer
+                        resolvedViewController = displayVC
+                        npLog("✅ Created dedicated AVPlayerViewController for shared controller (controller ID: \(controllerIdValue)) - avoids black screen when navigating list↔detail")
+                    } else {
+                        resolvedViewController = sharedViewController
+                        npLog("✅ Created new shared player AND view controller for controller ID: \(controllerIdValue)")
+                    }
                 }
             }
         } else {
             // Fallback: create new instances if no controller ID provided
-            npLog("No controller ID provided, creating new player and view controller")
-            playerViewController = AVPlayerViewController()
-            player = AVPlayer()
+            npLog("No controller ID provided, creating new player\(useLightView ? "" : " and view controller")")
+            let newPlayer = AVPlayer()
+            player = newPlayer
 
             // Configure for background playback
             if #available(iOS 15.0, *) {
-                player?.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+                newPlayer.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
                 npLog("✅ Set audiovisualBackgroundPlaybackPolicy for non-shared player")
             }
 
-            // Assign player to view controller
-            playerViewController.player = player
+            if !useLightView {
+                // Assign player to view controller
+                let viewController = AVPlayerViewController()
+                viewController.player = newPlayer
+                resolvedViewController = viewController
+            }
         }
 
         super.init()
 
-        // Configure playback controls
-        let showControls = (args as? [String: Any])?["showNativeControls"] as? Bool ?? true
-        playerViewController.showsPlaybackControls = showControls
-        playerViewController.delegate = self
+        if useLightView {
+            let light = PlayerLayerView()
+            light.playerLayer.player = player
+            lightView = light
+        } else {
+            if let resolvedViewController = resolvedViewController {
+                playerViewController = resolvedViewController
+            }
 
-        // Disable automatic Now Playing updates - we'll handle it manually
-        playerViewController.updatesNowPlayingInfoCenter = false
+            // Configure playback controls
+            playerViewController.showsPlaybackControls = argsShowNativeControls
+            playerViewController.delegate = self
+
+            // Disable automatic Now Playing updates - we'll handle it manually
+            playerViewController.updatesNowPlayingInfoCenter = false
+        }
 
         // Extract configuration from Flutter args
         if let args = args as? [String: Any] {
             // PiP configuration from args
             let argsAllowsPiP = args["allowsPictureInPicture"] as? Bool ?? true
             let argsCanStartAutomatically = args["canStartPictureInPictureAutomatically"] as? Bool ?? true
-            let argsShowNativeControls = args["showNativeControls"] as? Bool ?? true
 
             // HDR configuration from args
             enableHDR = args["enableHDR"] as? Bool ?? false
@@ -238,12 +297,12 @@ import QuartzCore
                 if let sharedSettings = SharedPlayerManager.shared.getPipSettings(for: controllerIdValue) {
                     // Use existing shared settings
                     self.canStartPictureInPictureAutomatically = sharedSettings.canStartPictureInPictureAutomatically
-                    playerViewController.allowsPictureInPicturePlayback = sharedSettings.allowsPictureInPicture
+                    applyAllowsPictureInPicture(sharedSettings.allowsPictureInPicture)
                     npLog("✅ Using shared PiP settings for controller \(controllerIdValue) - allows: \(sharedSettings.allowsPictureInPicture), autoStart: \(sharedSettings.canStartPictureInPictureAutomatically)")
                 } else {
                     // First view for this controller - store the settings
                     self.canStartPictureInPictureAutomatically = argsCanStartAutomatically
-                    playerViewController.allowsPictureInPicturePlayback = argsAllowsPiP
+                    applyAllowsPictureInPicture(argsAllowsPiP)
                     SharedPlayerManager.shared.setPipSettings(
                         for: controllerIdValue,
                         allowsPictureInPicture: argsAllowsPiP,
@@ -255,7 +314,7 @@ import QuartzCore
             } else {
                 // Non-shared player - use settings from args
                 self.canStartPictureInPictureAutomatically = argsCanStartAutomatically
-                playerViewController.allowsPictureInPicturePlayback = argsAllowsPiP
+                applyAllowsPictureInPicture(argsAllowsPiP)
                 npLog("✅ PiP settings for non-shared player - allows: \(argsAllowsPiP), autoStart: \(argsCanStartAutomatically)")
             }
 
@@ -263,7 +322,11 @@ import QuartzCore
                 // Start with automatic PiP DISABLED
                 // It will be enabled when this specific player starts playing (if allowed)
                 // This prevents conflicts when multiple players exist
-                playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
+                // (a light view starts without a PiP controller, which is the
+                // same disabled state)
+                if !usesLightView {
+                    playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
+                }
                 npLog("✅ PiP configured, automatic PiP will be enabled on play if allowed")
             } else {
                 npLog("⚠️ Automatic PiP requires iOS 14.2+, current device doesn't support it")
@@ -381,7 +444,91 @@ import QuartzCore
     }
 
     public func view() -> UIView {
-        return playerViewController.view
+        return lightView ?? playerViewController.view
+    }
+
+    // MARK: - Display-mode helpers (heavy AVPlayerViewController vs light AVPlayerLayer)
+
+    /// The inline display surface for this view, whichever mode it uses.
+    var inlineDisplayView: UIView {
+        return lightView ?? playerViewController.view
+    }
+
+    /// Makes the inline surface visible (used around PiP transitions).
+    func setInlineViewVisible() {
+        inlineDisplayView.isHidden = false
+        inlineDisplayView.alpha = 1.0
+    }
+
+    /// Re-attaches the player to this view's inline surface (after native
+    /// fullscreen handed the video layer back, etc.).
+    func rebindInlinePlayer() {
+        if let lightView = lightView {
+            lightView.playerLayer.player = nil
+            lightView.playerLayer.player = player
+        } else {
+            playerViewController.player = nil
+            playerViewController.player = player
+        }
+    }
+
+    /// Records whether PiP is allowed for this view and applies it to the
+    /// heavy view controller when one is in use.
+    func applyAllowsPictureInPicture(_ allows: Bool) {
+        allowsInlinePictureInPicture = allows
+        if !usesLightView {
+            playerViewController.allowsPictureInPicturePlayback = allows
+        }
+    }
+
+    /// Whether automatic inline PiP is currently enabled on this view's
+    /// display surface (without materializing anything).
+    var isAutomaticInlinePiPEnabled: Bool {
+        guard #available(iOS 14.2, *) else { return false }
+        if usesLightView {
+            return pipController?.canStartPictureInPictureAutomaticallyFromInline ?? false
+        }
+        return playerViewController.canStartPictureInPictureAutomaticallyFromInline
+    }
+
+    /// Enables/disables automatic inline PiP on this view's display surface.
+    /// Heavy mode flips the AVPlayerViewController flag; light mode manages
+    /// an AVPictureInPictureController bound to the AVPlayerLayer (created on
+    /// demand — disabling when none exists is a no-op).
+    @available(iOS 14.2, *)
+    func setAutomaticInlinePiP(_ enabled: Bool) {
+        if usesLightView {
+            if enabled {
+                // Mirror the heavy path, where allowsPictureInPicturePlayback
+                // gates the view controller's automatic PiP machinery.
+                guard allowsInlinePictureInPicture else {
+                    npLog("⚠️ Not enabling automatic PiP on light view \(viewId) - PiP not allowed")
+                    return
+                }
+                ensureInlinePipController()?.canStartPictureInPictureAutomaticallyFromInline = true
+            } else {
+                pipController?.canStartPictureInPictureAutomaticallyFromInline = false
+            }
+        } else {
+            playerViewController.canStartPictureInPictureAutomaticallyFromInline = enabled
+        }
+    }
+
+    /// Returns the view's AVPictureInPictureController, creating it from the
+    /// player layer if needed (light-mode PiP vehicle; also used by manual
+    /// PiP). Returns nil when PiP is unsupported or not allowed.
+    @available(iOS 14.0, *)
+    @discardableResult
+    func ensureInlinePipController() -> AVPictureInPictureController? {
+        if let existing = pipController { return existing }
+        guard AVPictureInPictureController.isPictureInPictureSupported(),
+              let playerLayer = findPlayerLayer() else { return nil }
+        let created: AVPictureInPictureController? = AVPictureInPictureController(playerLayer: playerLayer)
+        guard let controller = created else { return nil }
+        controller.delegate = self
+        pipController = controller
+        npLog("✅ Created inline PiP controller for view \(viewId) (light: \(usesLightView))")
+        return controller
     }
 
     // MARK: - Audio Session Management
@@ -795,7 +942,7 @@ import QuartzCore
                 npLog("🎬 View being disposed (primary: \(wasPrimaryView), autoEnabled: \(wasAutoEnabled), playing: \(isPlaying)) - transferring automatic PiP to another view")
 
                 // Disable automatic PiP on this view before unregistering
-                playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
+                setAutomaticInlinePiP(false)
 
                 // Unregister this view first so it won't be found
                 SharedPlayerManager.shared.unregisterVideoPlayerView(viewId: viewId)
@@ -875,9 +1022,13 @@ import QuartzCore
             }
         }
 
+        // Light views always detach their layer so a remaining surface (an
+        // inline tile's layer, or a shared VC) resumes rendering deterministically.
+        lightView?.playerLayer.player = nil
+
         // For Dart fullscreen platform view, release the dedicated VC's player so it tears down.
         // The shared player and shared VC (inline view) are left untouched.
-        if isDartFullscreenView {
+        if isDartFullscreenView && !usesLightView {
             playerViewController.player = nil
             npLog("✅ Dart fullscreen platform view disposed - released dedicated AVPlayerViewController")
         }

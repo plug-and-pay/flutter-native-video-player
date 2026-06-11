@@ -15,8 +15,16 @@ extension VideoPlayerView {
             return
         }
 
-        // Set controls visibility for embedded player
-        playerViewController.showsPlaybackControls = show
+        // Set controls visibility for embedded player. A light view cannot
+        // render native controls (documented lightweightInlineViews
+        // limitation: recreate the view with showNativeControls instead).
+        if usesLightView {
+            if show {
+                npLog("⚠️ setShowNativeControls(true) ignored - view \(viewId) is a lightweight AVPlayerLayer view")
+            }
+        } else {
+            playerViewController.showsPlaybackControls = show
+        }
 
         // Also set for fullscreen player if it exists
         if let fullscreenVC = fullscreenPlayerViewController {

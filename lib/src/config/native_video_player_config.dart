@@ -22,6 +22,7 @@ class NativeVideoPlayerConfig {
     this.iosBufferConfig,
     this.qualityForViewportSize = false,
     this.prioritizeActivePlayback = false,
+    this.lightweightInlineViews = false,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
@@ -84,6 +85,32 @@ class NativeVideoPlayerConfig {
   /// actually watching. Visual quality is unaffected; paused players simply
   /// buffer later. Applies to players created after the config is set.
   final bool prioritizeActivePlayback;
+
+  /// Hosts a bare video surface instead of the full native player UI for
+  /// views created with native controls hidden (default: false = current
+  /// behavior).
+  ///
+  /// Every inline tile normally carries a complete `AVPlayerViewController`
+  /// (iOS) or Media3 `PlayerView` (Android) — controls UI, gesture
+  /// recognizers, internal observation — even when the app always draws its
+  /// own controls via `overlayBuilder`. With this enabled, views whose
+  /// native controls are hidden (`showNativeControls: false` or a custom
+  /// overlay) host a plain `AVPlayerLayer` / `SurfaceView` instead, which is
+  /// noticeably cheaper to create, lay out, and tear down in scroll feeds.
+  ///
+  /// Everything else keeps working: PiP (iOS inline PiP runs on the layer
+  /// via `AVPictureInPictureController`; Android PiP is activity-level),
+  /// Now Playing / media session, native fullscreen (which always creates
+  /// its own full controller on demand), subtitles, and the native sidecar
+  /// caption rendering used during PiP/fullscreen. Applies to platform views
+  /// created after the config is set.
+  ///
+  /// Limitation: `setShowNativeControls(true)` at runtime is ignored for a
+  /// view created lightweight — recreate the player view with
+  /// `showNativeControls: true` instead. On iOS, PiP started from a
+  /// lightweight view ends if that platform view is disposed while PiP is
+  /// active (keep the tile mounted, or use `releaseResources()` semantics).
+  final bool lightweightInlineViews;
 }
 
 /// ExoPlayer `DefaultLoadControl` parameters (Android only).

@@ -69,4 +69,19 @@ void main() {
       await on.dispose();
     },
   );
+
+  test('lightweightInlineViews defaults off and is plumbed when set', () async {
+    expect(NativeVideoPlayerConfig.global.lightweightInlineViews, isFalse);
+
+    final off = NativeVideoPlayerController(id: 77);
+    expect(off.creationParams['lightweightInlineViews'], isFalse);
+    await off.dispose();
+
+    NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
+      lightweightInlineViews: true,
+    );
+    final on = NativeVideoPlayerController(id: 77);
+    expect(on.creationParams['lightweightInlineViews'], isTrue);
+    await on.dispose();
+  });
 }

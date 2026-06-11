@@ -237,8 +237,7 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
             }
 
             DispatchQueue.main.async {
-                self.playerViewController.player = nil
-                self.playerViewController.player = self.player
+                self.rebindInlinePlayer()
                 // Back inline: restore the viewport quality cap
                 self.applyViewportCapIfAppropriate()
             }
@@ -265,8 +264,7 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
         }
 
         // Ensure player view stays visible and keeps playing
-        playerViewController.view.isHidden = false
-        playerViewController.view.alpha = 1.0
+        setInlineViewVisible()
 
         // Ensure this view owns the remote commands when entering PiP
         // This is critical because the PiP window needs working media controls
@@ -304,11 +302,10 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
 
     public func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         npLog("🎬 Custom PiP controller did start")
-        
+
         // Make sure the player view is still visible after PiP starts
-        playerViewController.view.isHidden = false
-        playerViewController.view.alpha = 1.0
-        
+        setInlineViewVisible()
+
         // Ensure video continues playing
         if let player = player, player.rate == 0 && player.currentItem?.status == .readyToPlay {
             player.play()
@@ -369,8 +366,7 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
         }
 
         // Ensure player view is visible after exiting PiP
-        playerViewController.view.isHidden = false
-        playerViewController.view.alpha = 1.0
+        setInlineViewVisible()
 
         // IMPORTANT: Clear manual PiP flag FIRST before re-enabling anything
         // This allows the automatic PiP system to work again
@@ -381,7 +377,8 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
 
         // CRITICAL: Re-enable AVPlayerViewController's PiP management immediately
         // This was disabled when manual PiP started to prevent conflicts
-        if let controllerIdValue = controllerId {
+        // (light views have no AVPlayerViewController to re-enable)
+        if let controllerIdValue = controllerId, !usesLightView {
             if let pipSettings = SharedPlayerManager.shared.getPipSettings(for: controllerIdValue) {
                 playerViewController.allowsPictureInPicturePlayback = pipSettings.allowsPictureInPicture
                 npLog("   → Re-enabled AVPlayerViewController PiP: \(pipSettings.allowsPictureInPicture)")
@@ -482,10 +479,9 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
 
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
         npLog("❌ Custom PiP controller failed to start: \(error.localizedDescription)")
-        
+
         // Ensure view is visible if PiP fails
-        playerViewController.view.isHidden = false
-        playerViewController.view.alpha = 1.0
+        setInlineViewVisible()
     }
     
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
@@ -510,8 +506,7 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
         if eventSink != nil {
             npLog("✅ View \(viewId) is still active - restoring UI normally")
             // Restore the player view
-            playerViewController.view.isHidden = false
-            playerViewController.view.alpha = 1.0
+            setInlineViewVisible()
 
             // CRITICAL: Re-establish Now Playing info when restoring from background
             // Use cached media info (most reliable) or fall back to current view's media info
@@ -539,8 +534,7 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
             npLog("✅ Found alternative view \(alternativeView.viewId) for controller \(controllerIdValue)")
 
             // Restore UI on the alternative view
-            alternativeView.playerViewController.view.isHidden = false
-            alternativeView.playerViewController.view.alpha = 1.0
+            alternativeView.setInlineViewVisible()
 
             // CRITICAL: Re-establish Now Playing info and remote command ownership
             // Use cached media info (most reliable) or fall back to alternative view's media info

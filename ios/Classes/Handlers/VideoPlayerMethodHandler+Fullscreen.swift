@@ -85,8 +85,7 @@ extension VideoPlayerView {
 
                 // Re-bind the player to the embedded view on the next run loop after the transition has fully finished
                 DispatchQueue.main.async {
-                    self.playerViewController.player = nil
-                    self.playerViewController.player = self.player
+                    self.rebindInlinePlayer()
                 }
 
                 self.sendEvent("fullscreenChange", data: ["isFullscreen": false])

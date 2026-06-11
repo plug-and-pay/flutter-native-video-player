@@ -5,6 +5,7 @@ import android.app.Dialog
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -14,9 +15,13 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerEventHandler
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerMethodHandler
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler
@@ -43,7 +48,22 @@ class VideoPlayerView(
         private const val TAG = "VideoPlayerView"
     }
 
-    private val playerView: PlayerView
+    // Heavy display path: full Media3 PlayerView (inflates the complete
+    // controller UI even with useController = false). Null when the
+    // lightweight path is active.
+    private val playerView: PlayerView?
+
+    // Lightweight display path (lightweightInlineViews config + hidden
+    // controls): bare SurfaceView in an AspectRatioFrameLayout, plus a
+    // SubtitleView wired to the player's cues so captions (including the
+    // native sidecar track used during PiP/fullscreen) keep rendering.
+    private val lightSurfaceView: SurfaceView?
+    private val lightListener: Player.Listener?
+
+    // The view that displays video, whichever path is active; moved between
+    // the inline container and the fullscreen dialog.
+    private val videoContentView: View
+
     private val player: ExoPlayer
     private val controllerId: Int?
 
@@ -155,44 +175,90 @@ class VideoPlayerView(
         }
         NpLog.d(TAG, "Repeat mode set to: ${if (enableLooping) "REPEAT_MODE_ONE (looping enabled)" else "REPEAT_MODE_OFF (looping disabled)"}")
 
-        // Create PlayerView and attach player
+        // Create the display view: a full PlayerView, or — when the app
+        // opted into lightweightInlineViews and this view hides native
+        // controls — a bare SurfaceView + SubtitleView in an
+        // AspectRatioFrameLayout (PlayerView inflates its complete controller
+        // UI even when useController is false).
         val showNativeControls = args?.get("showNativeControls") as? Boolean ?: true
-        playerView = PlayerView(context).apply {
-            this.player = this@VideoPlayerView.player
-            useController = showNativeControls
-            controllerShowTimeoutMs = 5000
-            controllerHideOnTouch = true
-
-            // Hide unnecessary buttons: settings, next, previous
-            setShowNextButton(false)
-            setShowPreviousButton(false)
-            // Note: There's no direct method to hide settings button, but we can hide it via layout
-
-            // Configure HDR rendering
-            if (!enableHDR) {
-                NpLog.d(TAG, "🎨 HDR disabled for PlayerView - ExoPlayer will tone-map to SDR")
-                // ExoPlayer handles tone-mapping automatically, but we can hint at the surface level
-                // Note: More explicit control would require custom RenderersFactory
-            } else {
-                NpLog.d(TAG, "🎨 HDR enabled for PlayerView")
+        val useLightView =
+            (args?.get("lightweightInlineViews") as? Boolean ?: false) && !showNativeControls
+        if (useLightView) {
+            playerView = null
+            val contentFrame = AspectRatioFrameLayout(context).apply {
+                setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
             }
+            val surfaceView = SurfaceView(context)
+            contentFrame.addView(
+                surfaceView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+            val subtitleView = SubtitleView(context).apply {
+                setUserDefaultStyle()
+                setUserDefaultTextSize()
+            }
+            contentFrame.addView(
+                subtitleView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+            player.setVideoSurfaceView(surfaceView)
 
-            NpLog.d(TAG, "PlayerView configured")
+            // Seed state for shared players already mid-playback, then track it
+            applyLightAspectRatio(contentFrame, player.videoSize)
+            subtitleView.setCues(player.currentCues.cues)
+            val listener = object : Player.Listener {
+                override fun onVideoSizeChanged(videoSize: VideoSize) {
+                    applyLightAspectRatio(contentFrame, videoSize)
+                }
+
+                override fun onCues(cueGroup: CueGroup) {
+                    subtitleView.setCues(cueGroup.cues)
+                }
+            }
+            player.addListener(listener)
+            lightSurfaceView = surfaceView
+            lightListener = listener
+            videoContentView = contentFrame
+            NpLog.d(TAG, "Lightweight SurfaceView configured (controls hidden)")
+        } else {
+            lightSurfaceView = null
+            lightListener = null
+            playerView = PlayerView(context).apply {
+                this.player = this@VideoPlayerView.player
+                useController = showNativeControls
+                controllerShowTimeoutMs = 5000
+                controllerHideOnTouch = true
+
+                // Hide unnecessary buttons: settings, next, previous
+                setShowNextButton(false)
+                setShowPreviousButton(false)
+                // Note: There's no direct method to hide settings button, but we can hide it via layout
+
+                // Configure HDR rendering
+                if (!enableHDR) {
+                    NpLog.d(TAG, "🎨 HDR disabled for PlayerView - ExoPlayer will tone-map to SDR")
+                    // ExoPlayer handles tone-mapping automatically, but we can hint at the surface level
+                    // Note: More explicit control would require custom RenderersFactory
+                } else {
+                    NpLog.d(TAG, "🎨 HDR enabled for PlayerView")
+                }
+
+                NpLog.d(TAG, "PlayerView configured")
+            }
+            videoContentView = playerView
         }
 
         // For shared players that already existed, ensure surface is properly connected
         // This is crucial when returning to a video after calling releaseResources()
         if (isSharedPlayer) {
             NpLog.d(TAG, "Ensuring surface connection for existing shared player")
-            playerView.post {
-                // Force reconnection by detaching and reattaching the player
-                val currentPlayer = playerView.player
-                if (currentPlayer != null) {
-                    playerView.player = null
-                    playerView.player = currentPlayer
-                    NpLog.d(TAG, "Surface reconnected for shared player on init")
-                }
-            }
+            videoContentView.post { rebindVideoOutput() }
         }
 
         // Create container view that holds the player view
@@ -202,7 +268,7 @@ class VideoPlayerView(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
-            addView(playerView, FrameLayout.LayoutParams(
+            addView(videoContentView, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             ))
@@ -221,8 +287,9 @@ class VideoPlayerView(
         }
 
         // Set up fullscreen button listener after PlayerView is configured
-        playerView.post {
-            playerView.setFullscreenButtonClickListener { enteringFullScreen ->
+        // (the lightweight path has no controller, hence no fullscreen button)
+        playerView?.let { pv -> pv.post {
+            pv.setFullscreenButtonClickListener { enteringFullScreen ->
                 NpLog.d(TAG, "Fullscreen button clicked, wants to enter: $enteringFullScreen, current state: $isFullScreen")
                 
                 // The button sends us the state it wants to ENTER
@@ -245,7 +312,7 @@ class VideoPlayerView(
                 
                 handleFullscreenToggleNative(shouldEnter)
             }
-        }
+        } }
 
         // Setup event handler (pass isSharedPlayer flag)
         eventHandler = VideoPlayerEventHandler(isSharedPlayer = isSharedPlayer)
@@ -364,7 +431,14 @@ class VideoPlayerView(
         when (call.method) {
             "setShowNativeControls" -> {
                 val show = call.argument<Boolean>("show") ?: true
-                playerView.useController = show
+                if (playerView != null) {
+                    playerView.useController = show
+                } else if (show) {
+                    // Documented lightweightInlineViews limitation: a bare
+                    // SurfaceView cannot render controls; recreate the view
+                    // with showNativeControls instead.
+                    NpLog.w(TAG, "setShowNativeControls(true) ignored - view $viewId is a lightweight SurfaceView")
+                }
                 result.success(null)
             }
             "ensureSurfaceConnected" -> {
@@ -465,10 +539,10 @@ class VideoPlayerView(
 
         // Update internal state
         isFullScreen = enteringFullScreen
-        
+
         // Update the fullscreen button icon to reflect the new state
         // Use a delay to ensure the view transition has completed
-        playerView.postDelayed({
+        playerView?.postDelayed({
             updateFullscreenButtonState(enteringFullScreen)
         }, 100)
     }
@@ -527,17 +601,17 @@ class VideoPlayerView(
         }
 
         // Remove player view from container (important: remove from parent first!)
-        (playerView.parent as? ViewGroup)?.removeView(playerView)
+        (videoContentView.parent as? ViewGroup)?.removeView(videoContentView)
 
         // Create fullscreen dialog with black background and no title bar
         fullscreenDialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
-            setContentView(playerView)
+            setContentView(videoContentView)
 
             // Handle back button to exit fullscreen
             setOnKeyListener { _, keyCode, event ->
                 if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
                     // Trigger the fullscreen toggle to exit (it will handle state and events)
-                    playerView.post {
+                    videoContentView.post {
                         handleFullscreenToggleNative(false)
                     }
                     true
@@ -617,7 +691,7 @@ class VideoPlayerView(
 
         fullscreenDialog?.let { dialog ->
             // Remove player view from dialog
-            (playerView.parent as? ViewGroup)?.removeView(playerView)
+            (videoContentView.parent as? ViewGroup)?.removeView(videoContentView)
 
             // Dismiss dialog
             dialog.dismiss()
@@ -625,24 +699,16 @@ class VideoPlayerView(
         }
 
         // Add player view back to container
-        if (playerView.parent == null) {
-            containerView.addView(playerView, FrameLayout.LayoutParams(
+        if (videoContentView.parent == null) {
+            containerView.addView(videoContentView, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             ))
         }
 
-        // Force the PlayerView to reattach its surface to the player
+        // Force the display view to reattach its surface to the player
         // This is necessary because moving the view between parents can disconnect the surface
-        playerView.post {
-            // Temporarily detach and reattach the player to ensure surface is connected
-            val currentPlayer = playerView.player
-            if (currentPlayer != null) {
-                playerView.player = null
-                playerView.player = currentPlayer
-                NpLog.d(TAG, "Reattached player to surface after exiting fullscreen")
-            }
-        }
+        videoContentView.post { rebindVideoOutput() }
 
         // Restore system UI on the activity window
         activity.window?.let { activityWindow ->
@@ -666,6 +732,7 @@ class VideoPlayerView(
      * This is needed when fullscreen is toggled from Flutter rather than from the button itself
      */
     private fun updateFullscreenButtonState(isFullscreen: Boolean) {
+        val playerView = playerView ?: return
         try {
             // Access the fullscreen button using reflection
             // The button is part of the PlayerView's controller
@@ -749,7 +816,7 @@ class VideoPlayerView(
     }
 
     /**
-     * Reconnects the player's surface to the PlayerView
+     * Reconnects the player's surface to this view's display surface
      * This is called when another platform view using the same shared player is disposed
      */
     private fun reconnectSurface() {
@@ -759,17 +826,39 @@ class VideoPlayerView(
         }
 
         NpLog.d(TAG, "Reconnecting surface for view $viewId (notified by another view disposal)")
-        playerView.post {
-            // Temporarily detach and reattach the player to ensure surface is connected
+        videoContentView.post { rebindVideoOutput() }
+    }
+
+    /**
+     * Detaches and reattaches the player's video output so the surface
+     * reconnects, whichever display path is active.
+     */
+    private fun rebindVideoOutput() {
+        val playerView = playerView
+        if (playerView != null) {
             val currentPlayer = playerView.player
             if (currentPlayer != null) {
                 playerView.player = null
                 playerView.player = currentPlayer
-                NpLog.d(TAG, "Surface reconnected successfully for view $viewId")
+                NpLog.d(TAG, "Surface reconnected (PlayerView) for view $viewId")
             } else {
                 NpLog.w(TAG, "Cannot reconnect surface - player is null")
             }
+        } else {
+            val surfaceView = lightSurfaceView ?: return
+            player.clearVideoSurfaceView(surfaceView)
+            player.setVideoSurfaceView(surfaceView)
+            NpLog.d(TAG, "Surface reconnected (SurfaceView) for view $viewId")
         }
+    }
+
+    /**
+     * Sizes the lightweight content frame to the video's aspect ratio (what
+     * PlayerView's internal AspectRatioFrameLayout does in the heavy path).
+     */
+    private fun applyLightAspectRatio(frame: AspectRatioFrameLayout, videoSize: VideoSize) {
+        if (videoSize.width == 0 || videoSize.height == 0) return
+        frame.setAspectRatio(videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height)
     }
 
     override fun dispose() {
@@ -795,13 +884,14 @@ class VideoPlayerView(
         fullscreenDialog = null
 
         // Remove fullscreen button listener to prevent clicks during disposal
-        playerView.setFullscreenButtonClickListener(null)
+        playerView?.setFullscreenButtonClickListener(null)
 
         NpLog.d(TAG, "dispose() - controllerId: $controllerId")
 
         // Remove listeners and stop periodic updates
         player.removeListener(observer)
         observer.release()
+        lightListener?.let { player.removeListener(it) }
 
         // Clean up channels
         // First call onCancel to properly clean up the event sink
@@ -822,12 +912,13 @@ class VideoPlayerView(
         if (controllerId != null) {
             NpLog.d(TAG, "Platform view disposed but player and notification handler kept alive for controller ID: $controllerId")
 
-            // IMPORTANT: For shared players, detach the player from this PlayerView to prevent
-            // disconnecting the surface. Another platform view may still be using the player.
-            // If we don't detach here, disposing this view will disconnect the player's surface,
-            // leaving other views without video frames.
-            playerView.player = null
-            NpLog.d(TAG, "Detached player from PlayerView to preserve surface for other views")
+            // IMPORTANT: For shared players, detach the player from this view's display
+            // surface to prevent disconnecting it. Another platform view may still be
+            // using the player. If we don't detach here, disposing this view will
+            // disconnect the player's surface, leaving other views without video frames.
+            playerView?.player = null
+            lightSurfaceView?.let { player.clearVideoSurfaceView(it) }
+            NpLog.d(TAG, "Detached player from display surface to preserve it for other views")
 
             // Unregister this view and notify remaining views to reconnect their surfaces
             SharedPlayerManager.unregisterView(controllerId, viewId)

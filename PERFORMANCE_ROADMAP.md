@@ -146,6 +146,49 @@ single-player).
   `AspectRatioFrameLayout`. Less per-tile inflation and view hierarchy.
   Effort: ~1-2 days. Risk: low-medium (resize/aspect handling moves to us).
 
+### Tier 2 results (implemented on `perf/tier2-light-views`)
+
+Shipped as `NativeVideoPlayerConfig.lightweightInlineViews` (default off);
+applies when a platform view is created with native controls hidden. iOS
+hosts a bare `PlayerLayerView` (AVPlayerLayer-backed UIView; no shared
+AVPlayerViewController is created for the controller) with PiP running on a
+per-view `AVPictureInPictureController(playerLayer:)` — the SharedPlayerManager
+auto-PiP plumbing now goes through mode-aware accessors. Android hosts
+`SurfaceView` + `SubtitleView` in an `AspectRatioFrameLayout` (cues +
+aspect tracked via a `Player.Listener`), so the sidecar-caption
+PiP/fullscreen handoff keeps rendering without `PlayerView`.
+
+Measured A/B/A in one session (iOS simulator, N=6 stress feed, HLS+MP4 mix,
+~21s windows, Marionette-driven, per-pid top sampling):
+
+| Metric | light OFF | light ON | light OFF (re-check) |
+|---|---|---|---|
+| Janky frames (>16ms) | 101/271 (37%) | **55/234 (24%)** | 100/262 (38%) |
+| Frame total avg | 9.08 ms | **6.63 ms** | 8.52 ms |
+| App CPU | 45-52% | 36-44% | 36-44% |
+| Memory | 552-560 MB | 545-555 MB | 549-561 MB |
+
+The jank/frame-time win tracks the toggle exactly across A/B/A; the CPU
+delta did NOT reproduce in the re-check window (session drift — call CPU
+neutral on the simulator) and memory is flat. The 30-tile scroll feed read
+roughly neutral on the simulator (53% → 51% janky; decode dominates there);
+the creation/teardown win should be re-measured on a real device.
+Functional pass with light views ON, both platforms: stress feed N=6,
+nav-loop ×10 (shared-controller surface handoff), lifecycle stress ×30,
+MPE 0 throughout; light path positively confirmed via heap(1) on iOS
+(47 live PlayerLayerView, no per-tile AVPlayerViewController) and logcat on
+Android (emulator). Limitation (documented in the config): runtime
+`setShowNativeControls(true)` is ignored for a view created lightweight.
+
+**Finding while verifying (pre-existing, NOT Tier 2):** every iOS platform
+view — heavy or light — is permanently retained by its per-view
+EventChannel handler (`eventChannel.setStreamHandler(self)` is never
+deregistered; the engine's handler block strongly captures the view, so
+deinit is unreachable). The AVPlayer itself is released on dispose; the
+leak is a per-view husk incl. live NotificationCenter observers. Confirmed
+with `leaks --trace` on both view modes and present on master/1.0.1.
+Fix tracked separately (needs a Dart-side view-disposed hook).
+
 ## Tier 3 — playing-priority + smarter loading
 
 - **Android `PriorityTaskManager`** (present in media3-common 1.5.0): give
