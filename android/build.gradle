@@ -1,5 +1,5 @@
 group = "com.huddlecommunity.native_video_player"
-version = "0.1.0"
+version = "1.0.0"
 
 buildscript {
     ext.kotlin_version = "2.1.0"

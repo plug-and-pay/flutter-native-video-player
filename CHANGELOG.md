@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-06-11
+
+First stable release. Everything below is additive — no breaking changes to
+the existing controller/widget API.
+
+### Added
+- **Sidecar subtitles**: load external VTT/SRT files (URL, local file, or raw content) via `load(sidecarSubtitles:)` or `setSidecarSubtitles()`, rendered in a fully styleable Flutter overlay (`NativeVideoPlayerSubtitleStyle`). Sidecar and embedded HLS tracks are merged into one list (`getAvailableSubtitleTracks()` / `setSubtitleTrack()`). On Android, sidecar sources are also sideloaded natively so captions stay visible in PiP and native fullscreen.
+- **Audio track selection**: `getAvailableAudioTracks()` / `setAudioTrack()` for multi-audio HLS streams, with an `audioTrackChanged` control event.
+- **Chromecast** (separate `package:better_native_video_player/cast.dart` entrypoint): pure-Dart CASTV2 session — load with metadata and caption tracks, play/pause/seek/stop, volume/mute, caption switching, looping, and a live `statusStream` reflecting receiver-side changes. Device discovery uses the system Bonjour browser on iOS (works on physical devices without the restricted multicast entitlement) and pure-Dart mDNS elsewhere.
+- **Offline downloads**: `VideoDownloadController` with progress streams, persistent index, cancel/remove, and `localPathFor()` for offline playback.
+- **Resume positions**: `load(startAt:)` applied natively before the first frame, plus `PositionCheckpoints` for throttled position persistence.
+- **A-B playback ranges**: `setPlaybackRange(start, end, loop:)` / `clearPlaybackRange()`.
+- **Playlists**: `NativeVideoPlayerPlaylist` with auto-advance and per-item startAt.
+- **Playback analytics**: `PlaybackAnalytics` QoE event stream (startup time, stalls, watched time, quality switches, completion).
+- **Background playback guard**: `BackgroundPlaybackGuard` pauses on background and resumes on foreground (PiP/AirPlay exempt).
+- **Scrub-preview storyboards**: `StoryboardThumbnails` parses WebVTT storyboards and uniform sprite grids (Vimeo/Bunny style); example ships a drag-to-preview seek bar.
+- **Performance configuration**: `NativeVideoPlayerConfig` with concurrent-playback caps, viewport-based HLS quality capping, buffer presets, and Android playback prioritization.
+- **Companion package** `better_native_video_extractor` (in-repo): WebView-free Vimeo/YouTube extraction (Referer support, thumbnails, storyboards, expiry-aware cache, extraction-failure event stream).
+- Example app: AirPlay + subtitles test bench, Chromecast remote-control screen, downloads screen, audio/sidecar/extractor/playlist/player-features demos.
+
+### Fixed
+- Chromecast discovery crashed with an unhandled `SocketException` on physical iPhones; scans now run natively (iOS) and failures surface as a catchable `CastDiscoveryException` with actionable guidance.
+- Chromecast seek snapping the position back to zero (receiver statuses without `currentTime` were treated as position 0; seeking exactly at the duration finished the stream).
+- Vimeo playback compatibility: the extractor prefers the H.264 `avc_url` HLS variant (AVPlayer could fail to decode the default variant).
+
+### Changed
+- Internal refactors for maintainability: the iOS method handler is split into topical files and the Dart controller's event plumbing into a part file. No public API changes.
+
 ## [0.4.11] - 2026-01-27
 
 ### Added

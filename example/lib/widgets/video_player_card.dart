@@ -55,21 +55,9 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
       _controller!.addControlListener(_handleControlEvent);
 
       // Listen to PiP state changes and show snackbar
-      _pipStreamSubscription = _controller!.isPipEnabledStream.listen((
-        isPipEnabled,
-      ) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isPipEnabled ? '📺 PiP Enabled' : '📺 PiP Disabled',
-              ),
-              backgroundColor: isPipEnabled ? Colors.green : Colors.orange,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      });
+      _pipStreamSubscription = _controller!.isPipEnabledStream.listen(
+        (isPipEnabled) {},
+      );
 
       // Set initial status
       setState(() {
