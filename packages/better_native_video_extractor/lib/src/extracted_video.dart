@@ -121,7 +121,7 @@ class ExtractedVideo {
 }
 
 /// Failure during extraction; carries enough context to decide on a
-/// fallback (e.g. Huddle's queued-WebView last resort).
+/// fallback (e.g. a WebView-based last resort in the consuming app).
 class VideoExtractionException implements Exception {
   const VideoExtractionException(this.provider, this.message,
       {this.statusCode});

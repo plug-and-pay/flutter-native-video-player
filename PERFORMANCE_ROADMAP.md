@@ -26,8 +26,8 @@ from 2/s to ~1/5s; Android tickers no longer run while paused; one AirPlay
 route detector instead of N+1. Test suite: 11/31 passing on master (20
 hung) → 72/72 now.
 
-Biggest REMAINING lever for Huddle specifically: the per-video Vimeo
-WebView extraction — see HUDDLE_FINDINGS.md; replacing it with the
+Biggest REMAINING lever for Vimeo-based apps: the per-video
+WebView extraction; replacing it with the
 verified plain-HTTP config fetch removes five browser engines from a
 five-video feed, which outweighs every player-side win above.
 
@@ -46,7 +46,7 @@ sources, in this order:
 2. **Per-view native UI weight.** Every inline tile carries a full
    `AVPlayerViewController` (controls UI, gesture recognizers, internal
    observation) on iOS and a Media3 `PlayerView` (inflated controller
-   layout) on Android — even though Huddle always uses `overlayBuilder`, so
+   layout) on Android — even when the app always uses `overlayBuilder`, so
    the native controls are permanently hidden.
 3. **Platform-view composition.** Inherent to UiKitView/hybrid-composition;
    only a texture-mode rearchitecture removes it.
@@ -81,7 +81,7 @@ saturation from N full-quality software decodes), and on devices it directly
 relieves the hardware decode session pressure. Effort: ~1-2 days both
 platforms incl. tests. Risk: low — pure ABR constraint, no lifecycle change.
 Caveat: only helps HLS/adaptive sources; a single-file MP4 has nothing to
-down-select (document this; Huddle's content is HLS).
+down-select (document this; most feed content is HLS).
 
 ### Tier 1 results (implemented on `perf/viewport-quality-capping`)
 
@@ -102,7 +102,7 @@ a few segments to settle onto the lower variant after load. MPE stayed 0;
 all six tiles kept playing. Verified end-to-end: each tile logs its reported
 viewport ("NativeVideoPlayer: viewport 1248x702 reported for view N").
 Expect a LARGER relative win on real devices for network/battery, and on
-smaller tiles (Huddle feed cards) a deeper quality step-down.
+smaller tiles (feed cards) a deeper quality step-down.
 
 **Lossless revision (×1.5 headroom).** iOS `preferredMaximumResolution` has
 fit-under semantics (vs Android's cover semantics), so the raw cap above
@@ -129,7 +129,7 @@ single-player).
 
 ## Tier 2 — lighter native views when controls are hidden (iOS first)
 
-- **iOS**: when `showNativeControls == false` (always true for Huddle), host
+- **iOS**: when `showNativeControls == false` (the common feed setup), host
   a plain `UIView` + `AVPlayerLayer` instead of a dedicated
   `AVPlayerViewController` per inline tile. PiP keeps working:
   `AVPictureInPictureController(playerLayer:)` (iOS 9+) supports
@@ -174,7 +174,7 @@ compatible — and `platformview/`), so a dual-mode plugin is a proven shape.
 
 - **Android texture mode**: near capability-neutral — PiP is activity-level
   (the `floating` package PiPs the whole activity, rendering mode
-  irrelevant), media notifications unaffected, and Huddle never shows native
+  irrelevant), media notifications unaffected, and feed apps rarely show native
   controls inline. Removes hybrid-composition cost per tile entirely; feed
   tiles become ordinary Flutter textures (RepaintBoundary, raster cache,
   cheap clipping/transforms all work).

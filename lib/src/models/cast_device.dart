@@ -15,10 +15,8 @@ class CastDiscoveryException implements Exception {
 
 /// A Google Cast (Chromecast) receiver found on the local network.
 ///
-/// Discovery-only: the plugin lists devices so apps can show a picker; the
-/// cast session itself (CASTV2 protocol, LOAD messages) stays app-side —
-/// e.g. via the `cast` package — see HUDDLE_FINDINGS.md for the protocol
-/// guidance (subtitle tracks, media-controls routing).
+/// Returned by `CastDeviceDiscovery.discover()`; pass it to
+/// `CastSession.connect()` to start controlling the receiver.
 @immutable
 class CastDevice {
   const CastDevice({

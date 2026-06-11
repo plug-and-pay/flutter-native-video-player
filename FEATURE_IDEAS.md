@@ -1,8 +1,8 @@
 # Feature proposals — better_native_video_player
 
 Candidate features people ask video players for (sourced from this repo's
-issue themes, better_player/video_player issue trackers, and Huddle's
-usage), ranked by expected value for Huddle-style feed apps.
+issue themes, better_player/video_player issue trackers, and feed apps'
+usage), ranked by expected value for feed-style apps.
 
 **Status update (2026-06-11, `feat/extractor-and-player-features`):**
 implemented — #2 analytics (`PlaybackAnalytics`), #3 startAt + checkpoints
@@ -15,7 +15,7 @@ toggle (`BackgroundPlaybackGuard`), #10 playlist
 thumbnails, storyboard, expiry cache; YouTube) — the "app-side" placement
 argued for below, just maintained in-repo. Deliberately NOT implemented:
 #1 prefetch (perf Tier 3b, needs device A/B), #5 in-plugin Chromecast
-(app-level guidance written in HUDDLE_FINDINGS.md instead: receiver
+(app-level guidance: receiver
 subtitle tracks + native-controls routing), #6 offline downloads,
 #9 DRM token refresh (device/SDK-dependent, not verifiable here).
 
@@ -24,16 +24,16 @@ subtitle tracks + native-controls routing), #6 offline downloads,
 1. **Prefetch API** (`precache(url)` — roadmap Tier 3b). Warm the next feed
    items' manifests/first segments so scrolling to them starts instantly.
    Android: Media3 `CacheDataSource`/`PreloadMediaSource`; iOS: AVAsset
-   preheating (MP4) or manifest-only warmup (HLS). Pairs with Huddle's
+   preheating (MP4) or manifest-only warmup (HLS). Pairs with a feed's
    feed and the Vimeo HTTP extraction (resolve + prefetch together).
 2. **Playback analytics events** — a single `analyticsStream` emitting
    structured events (startup time, first-frame, stall start/end + count,
    bitrate/variant switches, watched-duration heartbeats, completion).
    Both platforms already observe everything needed (KVO / Player.Listener);
-   this exposes it. Huddle gets engagement/QoE metrics nearly for free.
+   this exposes it. Apps get engagement/QoE metrics nearly for free.
 3. **Resume-position convenience** — `load(..., startAt: Duration)` plus an
    optional `onPositionCheckpoint` callback (every N seconds, last value on
-   dispose). Huddle implements this app-side today; plugin-level support
+   dispose). Apps typically implement this app-side; plugin-level support
    removes the racy seek-after-load dance.
 4. **Scrubbing thumbnail previews** — accept a storyboard source (WebVTT
    storyboard / sprite sheet / BIF) and expose `thumbnailAt(Duration)` for
@@ -61,7 +61,7 @@ subtitle tracks + native-controls routing), #6 offline downloads,
 9. **Per-source HTTP header refresh / DRM token renewal callback** — lets
    apps hand the plugin a `Future<String> Function()` token provider so
    401s on segment/license requests trigger a refresh instead of an error.
-   Valuable for tenant-auth'd streams like Huddle's.
+   Valuable for tenant-authenticated streams.
 10. **Playlist/queue API** — `loadPlaylist([...])` with auto-advance and a
     `currentIndexStream`. Medium effort; interacts with the shared-player
     lifecycle, design carefully.
@@ -71,5 +71,5 @@ subtitle tracks + native-controls routing), #6 offline downloads,
 - iOS-native sidecar subtitle injection (no sane AVPlayer API; already
   solved via the Flutter overlay + Android sideload).
 - In-plugin Vimeo/YouTube extractors — site extraction churns and belongs
-  app-side or server-side (see HUDDLE_FINDINGS.md for the Vimeo HTTP
+  app-side or server-side (Vimeo HTTP
   approach), not in a player plugin.

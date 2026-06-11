@@ -26,9 +26,8 @@ class VideoExtractionFailure {
 /// Expiry-aware cache around a [VideoSourceExtractor].
 ///
 /// - Returns cached results while their tokenized URL is still fresh
-///   (Vimeo: ~15 min via the `exp=` token; a [safetyMargin] is subtracted —
-///   the same idea as Huddle's 12-of-15-minute TTL, but driven by the
-///   actual token instead of a guessed constant).
+///   (Vimeo: ~15 min via the `exp=` token; a [safetyMargin] is subtracted,
+///   driven by the actual token instead of a guessed constant TTL).
 /// - Coalesces concurrent extractions of the same video (a feed building
 ///   five cards for one video performs ONE request).
 /// - Failed extractions still throw at the call site AND are emitted on
