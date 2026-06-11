@@ -45,6 +45,9 @@ extension VideoPlayerView {
            let milliseconds = args["milliseconds"] as? Int {
             let seconds = Double(milliseconds) / 1000.0
             player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 1000)) { _ in
+                // Texture views must render the seeked frame even while
+                // paused (the engine shows the last copied buffer otherwise)
+                self.textureRenderer?.expectFrame()
                 self.sendEvent("seek", data: ["position": milliseconds])
                 self.updateNowPlayingPlaybackTime()
             }

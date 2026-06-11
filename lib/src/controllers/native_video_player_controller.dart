@@ -368,6 +368,32 @@ class NativeVideoPlayerController {
   /// exit uses the matching path even without a custom overlay).
   bool _usedDartFullscreen = false;
 
+  /// Internal: asks the mounted widget to swap a texture-rendered tile to a
+  /// platform view (iOS manual-PiP path — PiP needs an on-screen
+  /// AVPlayerLayer). The widget completes the completer once the platform
+  /// view took over and the texture half is disposed.
+  final StreamController<Completer<bool>> _surfaceSwapRequests =
+      StreamController<Completer<bool>>.broadcast();
+
+  /// Internal: listened to by [NativeVideoPlayer] widgets in texture mode.
+  Stream<Completer<bool>> get surfaceSwapRequests =>
+      _surfaceSwapRequests.stream;
+
+  Future<bool> _requestSurfaceSwap() async {
+    if (!_surfaceSwapRequests.hasListener) {
+      debugPrint('Surface swap requested but no widget is listening');
+      return false;
+    }
+    final completer = Completer<bool>();
+    _surfaceSwapRequests.add(completer);
+    try {
+      return await completer.future.timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      debugPrint('Surface swap timed out');
+      return false;
+    }
+  }
+
   final StreamController<bool> _isFullscreenController =
       StreamController<bool>.broadcast();
   final StreamController<NativeVideoPlayerQuality> _qualityChangedController =
@@ -1704,6 +1730,19 @@ class NativeVideoPlayerController {
       }
     }
 
+    // iOS: PiP needs an on-screen AVPlayerLayer. A texture-rendered tile
+    // has none — swap it to a platform view first (same shared player and
+    // position, visually seamless); the tile stays a platform view after.
+    if (_primaryViewIsTexture) {
+      final swapped = await _requestSurfaceSwap();
+      if (!swapped) {
+        debugPrint(
+          'PiP unavailable: texture tile could not swap to a platform view',
+        );
+        return false;
+      }
+    }
+
     // Use method channel for iOS
     if (_methodChannel == null) {
       return false;
@@ -2264,6 +2303,7 @@ class NativeVideoPlayerController {
     await _qualitiesController.close();
     await _isOverlayLockedController.close();
     await _videoSizeController.close();
+    await _surfaceSwapRequests.close();
 
     // Clear platform view references
     _platformViewIds.clear();

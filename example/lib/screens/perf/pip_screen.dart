@@ -30,6 +30,10 @@ class _PipScreenState extends State<PipScreen> {
       autoPlay: true,
       lockToLandscape: false,
       showNativeControls: false,
+      // Manual-PiP testbed: with automatic PiP off, iosTextureMode applies
+      // to this tile, so 'Enter PiP' exercises the texture→platform-view
+      // live swap. (Automatic PiP is covered by the gallery cards.)
+      canStartPictureInPictureAutomatically: false,
       mediaInfo: const NativeVideoPlayerMediaInfo(
         title: 'PiP test video',
         subtitle: 'Picture-in-Picture harness',

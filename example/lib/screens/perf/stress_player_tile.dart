@@ -53,6 +53,9 @@ class _StressPlayerTileState extends State<StressPlayerTile> {
       autoPlay: widget.autoPlay,
       lockToLandscape: false,
       showNativeControls: false,
+      // Stress tiles don't exercise automatic PiP (the PiP harness does);
+      // disabling it lets iosTextureMode apply to these tiles.
+      canStartPictureInPictureAutomatically: false,
       mediaInfo: NativeVideoPlayerMediaInfo(
         title: widget.video.title,
         subtitle: widget.video.description,

@@ -377,8 +377,8 @@ extension VideoPlayerView: AVPictureInPictureControllerDelegate {
 
         // CRITICAL: Re-enable AVPlayerViewController's PiP management immediately
         // This was disabled when manual PiP started to prevent conflicts
-        // (light views have no AVPlayerViewController to re-enable)
-        if let controllerIdValue = controllerId, !usesLightView {
+        // (light/texture views have no AVPlayerViewController to re-enable)
+        if let controllerIdValue = controllerId, usesViewControllerDisplay {
             if let pipSettings = SharedPlayerManager.shared.getPipSettings(for: controllerIdValue) {
                 playerViewController.allowsPictureInPicturePlayback = pipSettings.allowsPictureInPicture
                 npLog("   → Re-enabled AVPlayerViewController PiP: \(pipSettings.allowsPictureInPicture)")

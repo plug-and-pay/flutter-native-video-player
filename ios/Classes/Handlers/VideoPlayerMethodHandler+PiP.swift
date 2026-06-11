@@ -21,6 +21,18 @@ extension VideoPlayerView {
 
     func handleEnterPictureInPicture(result: @escaping FlutterResult) {
         if #available(iOS 14.0, *) {
+            // Texture views have no on-screen AVPlayerLayer to PiP from. The
+            // Dart controller swaps the tile to a platform view BEFORE
+            // calling this; reaching here means that swap was bypassed.
+            if usesTextureView {
+                npLog("❌ PiP requested on texture view \(viewId)")
+                result(FlutterError(
+                    code: "TEXTURE_MODE",
+                    message: "Picture-in-Picture is not available on a texture-rendered view.",
+                    details: nil))
+                return
+            }
+
             // Check if video is loaded and ready
             guard let player = player, let currentItem = player.currentItem else {
                 npLog("❌ No video loaded for PiP")
@@ -52,7 +64,7 @@ extension VideoPlayerView {
             // This prevents the AVPlayerViewController from starting its own PiP simultaneously
             // NOTE: We do this AFTER the checks, so it doesn't interfere with the next manual PiP attempt
             // (a light view has no AVPlayerViewController competing for the layer)
-            if !usesLightView {
+            if usesViewControllerDisplay {
                 playerViewController.allowsPictureInPicturePlayback = false
                 npLog("   → Temporarily disabled AVPlayerViewController PiP during manual start")
 
@@ -63,25 +75,40 @@ extension VideoPlayerView {
                 }
             }
 
-            // Get or create the PiP controller for this player layer
-            // Reuse existing controller if available, or create new one
-            if ensureInlinePipController() == nil {
-                npLog("❌ Could not create PiP controller (no player layer?)")
-                if let controllerIdValue = controllerId {
-                    SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
-                }
-                result(FlutterError(code: "NO_LAYER", message: "Could not find player layer", details: nil))
-                return
-            }
-
             // Start PiP using the controller
-            // Wait for the controller to be ready with retries
+            // Wait for the controller to be ready with retries. The
+            // controller creation itself is also retried: when a tile was
+            // just (re)created — e.g. the texture→platform-view PiP swap —
+            // the AVPlayerLayer only exists after the view's first layout.
             var attempt = 0
-            let maxAttempts = 3
+            let maxAttempts = 5
 
             func tryStartPip() {
                 attempt += 1
                 npLog("🎬 Attempt \(attempt)/\(maxAttempts) to start PiP")
+
+                let hadController = pipController != nil
+                if ensureInlinePipController() == nil, attempt < maxAttempts {
+                    npLog("   → No player layer yet, retrying in 0.2s...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                        guard self != nil else { return }
+                        tryStartPip()
+                    }
+                    return
+                }
+                if !hadController, pipController != nil, attempt < maxAttempts {
+                    // A just-created AVPictureInPictureController needs a
+                    // beat before startPictureInPicture takes effect —
+                    // starting in the same run-loop turn is silently
+                    // ignored (observed on iOS 26 after the texture→light
+                    // PiP swap). Give it one retry interval.
+                    npLog("   → PiP controller freshly created, starting on next attempt...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                        guard self != nil else { return }
+                        tryStartPip()
+                    }
+                    return
+                }
 
                 if let pipController = pipController {
                     npLog("   → isPictureInPicturePossible: \(pipController.isPictureInPicturePossible)")
@@ -102,7 +129,7 @@ extension VideoPlayerView {
                         if let controllerIdValue = controllerId {
                             SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
                             // Re-enable AVPlayerViewController PiP since we're not starting
-                            if !usesLightView {
+                            if usesViewControllerDisplay {
                                 playerViewController.allowsPictureInPicturePlayback = true
                             }
                         }
@@ -110,6 +137,9 @@ extension VideoPlayerView {
                     }
                 } else {
                     npLog("❌ PiP controller is nil")
+                    if let controllerIdValue = controllerId {
+                        SharedPlayerManager.shared.setManualPiPActive(controllerIdValue, active: false)
+                    }
                     result(FlutterError(code: "NO_CONTROLLER", message: "PiP controller is not available", details: nil))
                 }
             }
@@ -129,6 +159,11 @@ extension VideoPlayerView {
 
     /// Finds the AVPlayerLayer in the view hierarchy
     func findPlayerLayer() -> AVPlayerLayer? {
+        // Texture views have no on-screen layer (the fix-layer is zero-sized
+        // and unusable for PiP)
+        if usesTextureView {
+            return nil
+        }
         // Light views own their layer directly
         if let lightView = lightView {
             return lightView.playerLayer

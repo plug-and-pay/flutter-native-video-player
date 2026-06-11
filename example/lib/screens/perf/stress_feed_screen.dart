@@ -66,6 +66,7 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
     bool? androidEnableDiskCache,
     bool? prioritizeActivePlayback,
     bool? androidTextureMode,
+    bool? iosTextureMode,
   }) {
     final global = NativeVideoPlayerConfig.global;
     return NativeVideoPlayerConfig(
@@ -81,6 +82,7 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
       prioritizeActivePlayback:
           prioritizeActivePlayback ?? global.prioritizeActivePlayback,
       androidTextureMode: androidTextureMode ?? global.androidTextureMode,
+      iosTextureMode: iosTextureMode ?? global.iosTextureMode,
     );
   }
 
@@ -195,14 +197,19 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
                   onChanged: (value) => setState(() => _naiveRebuilds = value),
                 ),
                 const Text('tex', style: TextStyle(fontSize: 12)),
-                // Texture rendering (Tier 4, Android). Applies at view
-                // creation: toggle, then leave and re-enter this screen.
+                // Texture rendering (Tier 4, both platforms). Applies at
+                // view creation: toggle, then leave and re-enter. Note: the
+                // stress tiles allow automatic PiP, so on iOS they keep
+                // platform views unless auto PiP is off for the controller.
                 Switch(
                   key: const ValueKey('feed_toggle_texture'),
-                  value: NativeVideoPlayerConfig.global.androidTextureMode,
+                  value:
+                      NativeVideoPlayerConfig.global.androidTextureMode ||
+                      NativeVideoPlayerConfig.global.iosTextureMode,
                   onChanged: (value) => setState(() {
                     NativeVideoPlayerConfig.global = _copyGlobalConfig(
                       androidTextureMode: value,
+                      iosTextureMode: value,
                     );
                   }),
                 ),

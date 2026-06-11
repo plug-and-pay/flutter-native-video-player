@@ -17,8 +17,25 @@ import UIKit
     private static var controllerEventChannels: [Int: ControllerChannelEntry] = [:]
     private static var messenger: FlutterBinaryMessenger?
 
+    // Texture rendering mode: the engine never owns texture-backed views
+    // (they are not platform views), so the plugin retains them STRONGLY
+    // until 'viewDisposed' / hot-restart cleanup — the same ownership
+    // lesson as the EventChannel-handler leak fix. The weak registry above
+    // still serves method routing for them.
+    private static var textureRegistry: FlutterTextureRegistry?
+    private static var textureViews: [Int64: VideoPlayerView] = [:]
+
+    private static func disposeAllTextureBackedViews() {
+        for (viewId, view) in textureViews {
+            view.tearDownChannels()
+            npLog("🧹 Disposed texture-backed view \(viewId) (hot restart/teardown)")
+        }
+        textureViews.removeAll()
+    }
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         messenger = registrar.messenger()
+        textureRegistry = registrar.textures()
         npLog("Registering NativeVideoPlayerPlugin")
         let factory = VideoPlayerViewFactory(messenger: registrar.messenger())
         registrar.register(factory, withId: "native_video_player")
@@ -75,12 +92,67 @@ import UIKit
                 // Sent by the Dart widget when its platform view is disposed.
                 // Releases the per-view channel handlers: the EventChannel
                 // stream handler strongly retains the view, so this is what
-                // makes the view's deinit reachable.
+                // makes the view's deinit reachable. For texture-backed
+                // views it also drops the plugin's strong reference.
                 if let args = call.arguments as? [String: Any],
                    let viewId = args["viewId"] as? Int64 {
                     registeredViews[viewId]?.view?.tearDownChannels()
                     registeredViews.removeValue(forKey: viewId)
+                    textureViews.removeValue(forKey: viewId)
                 }
+                result(nil)
+                return
+            }
+
+            if call.method == "createTextureView" {
+                // Texture rendering mode (iosTextureMode): the Dart widget
+                // allocated the viewId from platformViewsRegistry and sends
+                // the same creationParams a platform view would get.
+                guard let registry = textureRegistry else {
+                    result(FlutterError(code: "NO_ENGINE", message: "Texture registry unavailable", details: nil))
+                    return
+                }
+                guard var args = call.arguments as? [String: Any],
+                      let viewId = args["viewId"] as? Int64,
+                      let messenger = messenger else {
+                    result(FlutterError(code: "INVALID_ARGUMENT", message: "viewId is required", details: nil))
+                    return
+                }
+                args["isTextureView"] = true
+                // The view's init registers its channels and routing entry
+                // BEFORE this call returns, so the Dart subscribe-retry
+                // always finds a live handler.
+                let view = VideoPlayerView(
+                    frame: .zero,
+                    viewIdentifier: viewId,
+                    arguments: args,
+                    binaryMessenger: messenger
+                )
+                guard let player = view.player else {
+                    result(FlutterError(code: "NO_PLAYER", message: "Player unavailable", details: nil))
+                    return
+                }
+                let renderer = TexturePlayerRenderer(player: player, registry: registry)
+                renderer.onVideoSizeChanged = { [weak view] size in
+                    view?.sendEvent("videoSize", data: [
+                        "width": Double(size.width),
+                        "height": Double(size.height),
+                        "rotationCorrection": 0,
+                    ])
+                }
+                view.textureRenderer = renderer
+                renderer.register(with: registry)
+                registerView(view, withId: viewId)
+                textureViews[viewId] = view
+                result(["textureId": renderer.textureId])
+                return
+            }
+
+            if call.method == "disposeAllTextureViews" {
+                // Hot-restart hygiene: the Dart isolate forgot its texture
+                // views but they survive natively — called once per isolate
+                // before the first createTextureView.
+                disposeAllTextureBackedViews()
                 result(nil)
                 return
             }

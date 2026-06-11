@@ -27,6 +27,7 @@ class NativeVideoPlayerConfig {
     this.androidDiskCacheMaxBytes = 100 * 1024 * 1024,
     this.androidPrecacheBytes = 2 * 1024 * 1024,
     this.androidTextureMode = false,
+    this.iosTextureMode = false,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
@@ -162,6 +163,35 @@ class NativeVideoPlayerConfig {
   /// apply (the Flutter overlay renders captions). Applies to views created
   /// after the config is set. Requires Flutter 3.27+.
   final bool androidTextureMode;
+
+  /// Renders eligible iOS players as Flutter engine textures instead of
+  /// platform views (default: false = current behavior).
+  ///
+  /// Frames are copied through an `AVPlayerItemVideoOutput` into engine
+  /// textures (the video_player approach, incl. its HDR tone-map and
+  /// encrypted-HLS fixes), removing the per-tile platform-view composition
+  /// cost. This trades composition work for a per-frame pixel-buffer
+  /// hand-off — measure on your content; the win shows in scroll feeds.
+  ///
+  /// PiP contract (PiP requires an on-screen `AVPlayerLayer`, which texture
+  /// views don't have):
+  /// - Tiles whose controller has `canStartPictureInPictureAutomatically`
+  ///   AND `allowsPictureInPicture` (both default true) keep using platform
+  ///   views, so automatic PiP on backgrounding works unchanged. The
+  ///   texture path therefore only applies to controllers created with
+  ///   automatic PiP disabled.
+  /// - Manual `enterPictureInPicture()` on a texture tile transparently
+  ///   swaps the tile to a platform view first (same shared player and
+  ///   position — visually seamless), then enters PiP; the tile stays a
+  ///   platform view afterwards.
+  ///
+  /// Other fallbacks: views with native controls and Dart-fullscreen hosts
+  /// keep using platform views; `enterFullScreen()` uses the Dart
+  /// fullscreen route. Limitations: FairPlay DRM content cannot render to
+  /// textures (use platform views); during AirPlay external playback the
+  /// texture shows the last local frame instead of the native placard.
+  /// Applies to views created after the config is set.
+  final bool iosTextureMode;
 }
 
 /// ExoPlayer `DefaultLoadControl` parameters (Android only).

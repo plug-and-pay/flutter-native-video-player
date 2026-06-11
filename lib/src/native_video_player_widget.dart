@@ -81,16 +81,30 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     // Pass the overlay builder to the controller
     widget.controller.setOverlayBuilder(widget.overlayBuilder);
 
-    // Texture rendering mode (Android): decided per view at creation, after
-    // the overlay determined the effective showNativeControls. Views with
+    // Texture rendering mode: decided per view at creation, after the
+    // overlay determined the effective showNativeControls. Views with
     // native controls and Dart-fullscreen hosts keep using platform views.
+    // On iOS, controllers with automatic PiP additionally keep platform
+    // views (auto PiP needs an on-screen AVPlayerLayer at background time);
+    // manual PiP on a texture tile live-swaps to a platform view instead.
+    final controlsHidden =
+        widget.controller.creationParams['showNativeControls'] == false;
+    final iosAutoPip =
+        widget.controller.allowsPictureInPicture &&
+        widget.controller.canStartPictureInPictureAutomatically;
     _useTextureBackend =
         !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.android &&
-        NativeVideoPlayerConfig.global.androidTextureMode &&
         !widget.isFullscreenContext &&
-        widget.controller.creationParams['showNativeControls'] == false;
+        controlsHidden &&
+        ((defaultTargetPlatform == TargetPlatform.android &&
+                NativeVideoPlayerConfig.global.androidTextureMode) ||
+            (defaultTargetPlatform == TargetPlatform.iOS &&
+                NativeVideoPlayerConfig.global.iosTextureMode &&
+                !iosAutoPip));
     if (_useTextureBackend) {
+      _swapRequestSubscription = widget.controller.surfaceSwapRequests.listen(
+        _handleSurfaceSwapRequest,
+      );
       unawaited(_createTextureBackend());
     }
 
@@ -219,9 +233,17 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     if (_platformViewId != null) {
       widget.controller.onPlatformViewDisposed(_platformViewId!);
     }
+    // A swap that never completed still owns the old texture view.
+    if (_swapOldTextureViewId != null) {
+      widget.controller.onPlatformViewDisposed(_swapOldTextureViewId!);
+      _swapOldTextureViewId = null;
+    }
 
     widget.controller.removeControlListener(_handleControlEvent);
     _overlayLockSubscription?.cancel();
+    _swapRequestSubscription?.cancel();
+    _pendingSwapCompleter?.complete(false);
+    _pendingSwapCompleter = null;
     _hideTimer?.cancel();
     _overlayAnimationController.dispose();
     super.dispose();
@@ -234,6 +256,9 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     // The first layout usually happens before the platform view exists, so
     // report the viewport size now that there is a native receiver.
     _maybeReportViewportSize();
+    // If this platform view replaces a texture tile (iOS manual-PiP swap),
+    // finish the handoff now that the new surface is live.
+    _completeSurfaceSwapIfPending();
   }
 
   /// Last layout constraints seen by the LayoutBuilder around the platform
@@ -300,8 +325,18 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     if (widget.isFullscreenContext) {
       params['isDartFullscreen'] = true;
     }
+    if (_forceLightPlatformView) {
+      // PiP swap target: a lightweight AVPlayerLayer view, the path PiP is
+      // verified on (a custom AVPictureInPictureController on a layer owned
+      // by AVPlayerViewController can silently fail to start).
+      params['lightweightInlineViews'] = true;
+    }
     return params;
   }
+
+  /// Forces the platform view built after a PiP surface swap onto the
+  /// lightweight AVPlayerLayer path.
+  bool _forceLightPlatformView = false;
 
   /// The platform view is built once and cached: rebuilding this State (e.g.
   /// overlay visibility setState) must never re-run UiKitView /
@@ -310,11 +345,62 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
 
   Widget _platformView() => _cachedPlatformView ??= _buildPlatformView();
 
-  /// Texture rendering mode (androidTextureMode): decided in initState.
+  /// Texture rendering mode (androidTextureMode/iosTextureMode): decided in
+  /// initState; flips off permanently when a PiP swap converts this tile to
+  /// a platform view.
   bool _useTextureBackend = false;
 
   /// Engine texture id once the native backend exists.
   int? _textureId;
+
+  /// In-flight PiP surface swap (iOS): the texture view being replaced and
+  /// the completer to resolve once the platform view took over.
+  StreamSubscription<Completer<bool>>? _swapRequestSubscription;
+  Completer<bool>? _pendingSwapCompleter;
+  int? _swapOldTextureViewId;
+
+  /// Converts this texture tile to a platform view (iOS manual-PiP path).
+  /// The platform view attaches the same shared player — most recently
+  /// attached layer displays, so the handoff is visually seamless; the old
+  /// texture half is disposed once the platform view reports created.
+  void _handleSurfaceSwapRequest(Completer<bool> completer) {
+    if (!mounted || !_useTextureBackend) {
+      completer.complete(!_useTextureBackend && mounted);
+      return;
+    }
+    if (_pendingSwapCompleter != null) {
+      completer.complete(false);
+      return;
+    }
+    _pendingSwapCompleter = completer;
+    _swapOldTextureViewId = _platformViewId;
+    _forceLightPlatformView = true;
+    setState(() {
+      _useTextureBackend = false;
+      _textureId = null;
+      // build() now constructs the platform view; _onPlatformViewCreated
+      // completes the swap.
+    });
+  }
+
+  void _completeSurfaceSwapIfPending() {
+    final completer = _pendingSwapCompleter;
+    if (completer == null) return;
+    _pendingSwapCompleter = null;
+
+    final oldViewId = _swapOldTextureViewId;
+    _swapOldTextureViewId = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Dispose the texture half only after the platform view rendered a
+      // frame (no black-frame gap).
+      if (oldViewId != null) {
+        widget.controller.onPlatformViewDisposed(oldViewId);
+      }
+      if (!completer.isCompleted) {
+        completer.complete(true);
+      }
+    });
+  }
 
   /// One-time hot-restart hygiene per isolate: native texture backends
   /// survive a hot restart while the Dart side forgets them.

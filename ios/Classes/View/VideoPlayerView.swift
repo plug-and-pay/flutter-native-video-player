@@ -27,6 +27,25 @@ import QuartzCore
     var lightView: PlayerLayerView?
     var usesLightView: Bool { lightView != nil }
 
+    // Texture display path (iosTextureMode): frames are copied into a
+    // Flutter engine texture; there is no on-screen native view at all.
+    // Created via the plugin's 'createTextureView' (not the platform-view
+    // factory). PiP and native-control features route to documented
+    // fallbacks (the Dart side swaps such views to platform views first).
+    // The flag is set in init; the renderer is attached by the plugin right
+    // after (it owns the texture registry), so guards must use the flag.
+    var textureRenderer: TexturePlayerRenderer?
+    private(set) var isTextureBacked = false
+    var usesTextureView: Bool { isTextureBacked }
+
+    /// True when this view displays through an AVPlayerViewController (the
+    /// only mode where touching the lazy `playerViewController` is correct).
+    var usesViewControllerDisplay: Bool { !usesLightView && !usesTextureView }
+
+    // Placeholder returned from view() for texture-backed instances; the
+    // engine never embeds it (texture views are not platform views).
+    private lazy var texturePlaceholderView = UIView()
+
     // Whether PiP is allowed for this view (mirrors
     // playerViewController.allowsPictureInPicturePlayback in heavy mode;
     // gates inline PiP controller creation in light mode).
@@ -183,7 +202,11 @@ import QuartzCore
         // AVPlayerViewController. Only when the app opted in AND this view
         // hides native controls (the layer can't render controls).
         let argsShowNativeControls = argsDict?["showNativeControls"] as? Bool ?? true
-        let useLightView =
+        // Texture display mode: set only by the plugin's createTextureView
+        // path (the Dart widget already applied the controls/PiP/fullscreen
+        // eligibility rules).
+        let useTextureView = argsDict?["isTextureView"] as? Bool ?? false
+        let useLightView = !useTextureView &&
             (argsDict?["lightweightInlineViews"] as? Bool ?? false) && !argsShowNativeControls
 
         // The view controller resolved for the heavy path; assigned to the
@@ -195,17 +218,18 @@ import QuartzCore
             controllerId = controllerIdValue
             isDartFullscreenView = isDartFullscreen
 
-            if useLightView {
+            if useLightView || useTextureView {
                 // Light views render through their own AVPlayerLayer (one per
                 // view, most recently attached layer displays — same contract
-                // as the dedicated-VC-per-view scheme below). No shared
-                // AVPlayerViewController is created; native fullscreen builds
-                // its own on demand.
+                // as the dedicated-VC-per-view scheme below); texture views
+                // have no native surface at all. Neither creates a shared
+                // AVPlayerViewController; native fullscreen builds its own
+                // on demand.
                 let (sharedPlayer, alreadyExisted) =
                     SharedPlayerManager.shared.getOrCreatePlayer(for: controllerIdValue)
                 player = sharedPlayer
                 isSharedPlayer = alreadyExisted
-                npLog("✅ Using lightweight AVPlayerLayer view for controller ID: \(controllerIdValue) (shared: \(alreadyExisted), dartFullscreen: \(isDartFullscreen))")
+                npLog("✅ Using \(useTextureView ? "texture" : "lightweight AVPlayerLayer") view for controller ID: \(controllerIdValue) (shared: \(alreadyExisted), dartFullscreen: \(isDartFullscreen))")
             } else {
                 // Get or create shared player AND view controller
                 // This ensures the view controller persists across platform view disposal
@@ -251,7 +275,7 @@ import QuartzCore
                 npLog("✅ Set audiovisualBackgroundPlaybackPolicy for non-shared player")
             }
 
-            if !useLightView {
+            if !useLightView && !useTextureView {
                 // Assign player to view controller
                 let viewController = AVPlayerViewController()
                 viewController.player = newPlayer
@@ -261,7 +285,12 @@ import QuartzCore
 
         super.init()
 
-        if useLightView {
+        isTextureBacked = useTextureView
+        if useTextureView {
+            // The renderer is registered with the engine by the plugin
+            // (which owns the texture registry) right after this init.
+            // It follows player.currentItem on its own.
+        } else if useLightView {
             let light = PlayerLayerView()
             light.playerLayer.player = player
             lightView = light
@@ -335,9 +364,9 @@ import QuartzCore
                 // Start with automatic PiP DISABLED
                 // It will be enabled when this specific player starts playing (if allowed)
                 // This prevents conflicts when multiple players exist
-                // (a light view starts without a PiP controller, which is the
-                // same disabled state)
-                if !usesLightView {
+                // (light/texture views start without a PiP controller, which
+                // is the same disabled state)
+                if usesViewControllerDisplay {
                     playerViewController.canStartPictureInPictureAutomaticallyFromInline = false
                 }
                 npLog("✅ PiP configured, automatic PiP will be enabled on play if allowed")
@@ -458,13 +487,17 @@ import QuartzCore
     }
 
     public func view() -> UIView {
+        if usesTextureView { return texturePlaceholderView }
         return lightView ?? playerViewController.view
     }
 
-    // MARK: - Display-mode helpers (heavy AVPlayerViewController vs light AVPlayerLayer)
+    // MARK: - Display-mode helpers (AVPlayerViewController / AVPlayerLayer / texture)
 
     /// The inline display surface for this view, whichever mode it uses.
+    /// (Texture views render in the engine; the placeholder is never in a
+    /// hierarchy, so visibility toggles on it are harmless no-ops.)
     var inlineDisplayView: UIView {
+        if usesTextureView { return texturePlaceholderView }
         return lightView ?? playerViewController.view
     }
 
@@ -477,7 +510,11 @@ import QuartzCore
     /// Re-attaches the player to this view's inline surface (after native
     /// fullscreen handed the video layer back, etc.).
     func rebindInlinePlayer() {
-        if let lightView = lightView {
+        if usesTextureView {
+            // The video output stays attached across fullscreen; just make
+            // sure the next frame renders even while paused.
+            textureRenderer?.expectFrame()
+        } else if let lightView = lightView {
             lightView.playerLayer.player = nil
             lightView.playerLayer.player = player
         } else {
@@ -490,7 +527,7 @@ import QuartzCore
     /// heavy view controller when one is in use.
     func applyAllowsPictureInPicture(_ allows: Bool) {
         allowsInlinePictureInPicture = allows
-        if !usesLightView {
+        if usesViewControllerDisplay {
             playerViewController.allowsPictureInPicturePlayback = allows
         }
     }
@@ -499,6 +536,7 @@ import QuartzCore
     /// display surface (without materializing anything).
     var isAutomaticInlinePiPEnabled: Bool {
         guard #available(iOS 14.2, *) else { return false }
+        if usesTextureView { return false }
         if usesLightView {
             return pipController?.canStartPictureInPictureAutomaticallyFromInline ?? false
         }
@@ -511,6 +549,16 @@ import QuartzCore
     /// demand — disabling when none exists is a no-op).
     @available(iOS 14.2, *)
     func setAutomaticInlinePiP(_ enabled: Bool) {
+        if usesTextureView {
+            // No on-screen AVPlayerLayer exists: automatic PiP cannot work
+            // from a texture view. The Dart side never creates texture views
+            // for auto-PiP controllers; this is reachable only through
+            // SharedPlayerManager's fan-out loops.
+            if enabled {
+                npLog("⚠️ Automatic PiP not available on texture view \(viewId)")
+            }
+            return
+        }
         if usesLightView {
             if enabled {
                 // Mirror the heavy path, where allowsPictureInPicturePlayback
@@ -561,6 +609,9 @@ import QuartzCore
         eventChannel?.setStreamHandler(nil)
         eventChannel = nil
         methodChannel.setMethodCallHandler(nil)
+        // Texture resources die with the view's disposal hook too: stop the
+        // display link, detach the video output, release the engine texture.
+        textureRenderer?.shutdown()
     }
 
     // MARK: - Audio Session Management
@@ -1051,9 +1102,12 @@ import QuartzCore
         // inline tile's layer, or a shared VC) resumes rendering deterministically.
         lightView?.playerLayer.player = nil
 
+        // Texture resources (display link, video output, engine texture).
+        textureRenderer?.shutdown()
+
         // For Dart fullscreen platform view, release the dedicated VC's player so it tears down.
         // The shared player and shared VC (inline view) are left untouched.
-        if isDartFullscreenView && !usesLightView {
+        if isDartFullscreenView && usesViewControllerDisplay {
             playerViewController.player = nil
             npLog("✅ Dart fullscreen platform view disposed - released dedicated AVPlayerViewController")
         }

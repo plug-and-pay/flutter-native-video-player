@@ -124,6 +124,10 @@ extension VideoPlayerView {
             case "timeControlStatus":
                 guard let player = player else { return }
 
+                // The texture frame pump only runs while playing (plus
+                // one-shot expectFrame renders while paused)
+                textureRenderer?.setRunning(player.timeControlStatus == .playing)
+
                 switch player.timeControlStatus {
                 case .playing:
                     // ALWAYS update Now Playing info when playback starts
