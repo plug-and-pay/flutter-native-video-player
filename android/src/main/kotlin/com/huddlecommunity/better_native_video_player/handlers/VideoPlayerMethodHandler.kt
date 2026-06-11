@@ -79,8 +79,11 @@ class VideoPlayerMethodHandler(
         url: String,
         hasDrm: Boolean
     ): DataSource.Factory {
-        if (!enableDiskCache || hasDrm) return upstream
-        if (!url.startsWith("http", ignoreCase = true)) return upstream
+        if (!enableDiskCache || hasDrm || !url.startsWith("http", ignoreCase = true)) {
+            NpLog.d(TAG, "Disk cache bypass (enabled=$enableDiskCache, drm=$hasDrm) for $url")
+            return upstream
+        }
+        NpLog.d(TAG, "Disk cache wrap for $url")
         return VideoCacheManager.buildCacheFactory(context, upstream, diskCacheMaxBytes)
     }
 

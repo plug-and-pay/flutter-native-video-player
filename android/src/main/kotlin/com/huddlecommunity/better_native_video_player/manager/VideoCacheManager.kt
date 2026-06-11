@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
@@ -116,9 +115,9 @@ object VideoCacheManager {
         val appContext = context.applicationContext
         precacheExecutor.execute {
             val result = runCatching { doPrecache(appContext, url, headers, precacheBytes, cacheMaxBytes) }
-            val cancelledAtCap = result.exceptionOrNull() is InterruptedException
-            val ok = result.isSuccess || cancelledAtCap
-            val message = if (ok) null else result.exceptionOrNull()?.message
+            Thread.interrupted() // clear a cancel's interrupt flag; the thread is reused
+            val ok = result.isSuccess || isBudgetCancellation(result.exceptionOrNull())
+            val message = if (ok) null else result.exceptionOrNull().toString()
             if (!ok) {
                 NpLog.w(TAG, "Precache failed for $url: $message")
             } else {
@@ -126,6 +125,26 @@ object VideoCacheManager {
             }
             mainHandler.post { callback(ok, message) }
         }
+    }
+
+    /**
+     * Cancelling a download at the byte budget surfaces differently per
+     * path (CacheWriter: InterruptedException/InterruptedIOException;
+     * SegmentDownloader: CancellationException) — all of them mean "the
+     * warm-start data is in the cache", i.e. success.
+     */
+    private fun isBudgetCancellation(error: Throwable?): Boolean {
+        var cause = error
+        while (cause != null) {
+            if (cause is InterruptedException ||
+                cause is java.io.InterruptedIOException ||
+                cause is java.util.concurrent.CancellationException
+            ) {
+                return true
+            }
+            cause = cause.cause
+        }
+        return false
     }
 
     private fun doPrecache(
@@ -142,15 +161,14 @@ object VideoCacheManager {
         val upstream = DefaultHttpDataSource.Factory().apply {
             headers?.let { setDefaultRequestProperties(it) }
         }
-        // Precache yields to active playback: the priority manager only
-        // blocks when a higher-priority task is registered, which only
-        // happens with prioritizeActivePlayback on — a no-op otherwise.
+        // No PriorityTaskManager here: proceedOrThrow aborts (rather than
+        // waits) for non-highest priorities, and a manual CacheWriter has no
+        // retry loop around it — the byte budget keeps contention with
+        // active playback negligible anyway.
         val factory = CacheDataSource.Factory()
             .setCache(cache!!)
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-            .setUpstreamPriorityTaskManager(SharedPlayerManager.priorityTaskManager)
-            .setUpstreamPriority(C.PRIORITY_DOWNLOAD)
 
         if (VideoPlayerMethodHandler.isHlsUrl(url)) {
             // Runnable::run executes segment fetches inline on this precache
@@ -159,14 +177,13 @@ object VideoCacheManager {
             val downloader = HlsDownloader(MediaItem.fromUri(url), factory, Runnable::run)
             synchronized(activeDownloads) { activeDownloads.add(downloader) }
             try {
+                // Cancelling at the budget surfaces as a cancellation
+                // exception, classified as success by the caller.
                 downloader.download { _, bytesDownloaded, _ ->
                     if (bytesDownloaded >= precacheBytes) {
                         downloader.cancel()
                     }
                 }
-            } catch (e: InterruptedException) {
-                // Budget reached - the warm-start data is in the cache.
-                Thread.interrupted() // clear the flag for the next precache
             } finally {
                 synchronized(activeDownloads) { activeDownloads.remove(downloader) }
             }
