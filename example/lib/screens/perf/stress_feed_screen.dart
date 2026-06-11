@@ -64,6 +64,7 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
     bool? qualityForViewportSize,
     bool? lightweightInlineViews,
     bool? androidEnableDiskCache,
+    bool? prioritizeActivePlayback,
   }) {
     final global = NativeVideoPlayerConfig.global;
     return NativeVideoPlayerConfig(
@@ -76,6 +77,8 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
           lightweightInlineViews ?? global.lightweightInlineViews,
       androidEnableDiskCache:
           androidEnableDiskCache ?? global.androidEnableDiskCache,
+      prioritizeActivePlayback:
+          prioritizeActivePlayback ?? global.prioritizeActivePlayback,
     );
   }
 
@@ -188,6 +191,19 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
                   key: const ValueKey('feed_toggle_card_mode'),
                   value: _naiveRebuilds,
                   onChanged: (value) => setState(() => _naiveRebuilds = value),
+                ),
+                const Text('3a', style: TextStyle(fontSize: 12)),
+                // Playback prioritization (Tier 3a, Android). Applies at
+                // player creation: toggle, then leave and re-enter.
+                Switch(
+                  key: const ValueKey('feed_toggle_prioritize'),
+                  value:
+                      NativeVideoPlayerConfig.global.prioritizeActivePlayback,
+                  onChanged: (value) => setState(() {
+                    NativeVideoPlayerConfig.global = _copyGlobalConfig(
+                      prioritizeActivePlayback: value,
+                    );
+                  }),
                 ),
                 const Text('cache', style: TextStyle(fontSize: 12)),
                 // Android disk cache (Tier 3b). Applies at platform-view

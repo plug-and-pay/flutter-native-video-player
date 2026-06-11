@@ -186,6 +186,10 @@ class VideoPlayerObserver(
             (player as? ExoPlayer)?.setPriority(
                 if (isPlaying) C.PRIORITY_PLAYBACK else C.PRIORITY_PLAYBACK_PRELOAD
             )
+            NpLog.d(
+                TAG,
+                "Playback priority -> ${if (isPlaying) "PLAYBACK" else "PLAYBACK_PRELOAD"} (view $viewId)"
+            )
         }
 
         if (isPlaying) {

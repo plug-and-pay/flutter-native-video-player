@@ -29,7 +29,7 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         private const val VIEW_TYPE = "native_video_player"
 
         // Store registered views
-        private val registeredViews = mutableMapOf<Long, VideoPlayerView>()
+        private val registeredViews = mutableMapOf<Long, VideoPlayerBackend>()
 
         // Store current activity
         private var currentActivity: Activity? = null
@@ -43,7 +43,7 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         // controller constructor) and torn down on controller dispose.
         private val controllerEventChannels = mutableMapOf<Int, EventChannel>()
 
-        fun registerView(view: VideoPlayerView, viewId: Long) {
+        fun registerView(view: VideoPlayerBackend, viewId: Long) {
             NpLog.d(TAG, "Registering view with id: $viewId")
             registeredViews[viewId] = view
         }
@@ -59,7 +59,8 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
          * Get all registered video player views
          * Used by MainActivity to trigger automatic PiP on user leave hint
          */
-        fun getAllViews(): Collection<VideoPlayerView> = registeredViews.values
+        fun getAllViews(): Collection<VideoPlayerView> =
+            registeredViews.values.filterIsInstance<VideoPlayerView>()
 
         /**
          * Registers the StreamHandler for `native_video_player_controller_<id>`.

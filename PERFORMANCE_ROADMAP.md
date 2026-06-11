@@ -252,6 +252,22 @@ real device win is heap/network, exactly as predicted).
   cost on a real device. Effort: ~1-2 days. Risk: medium (lifecycle bugs —
   the exact class of bug this branch just fixed; needs the stress harness).
 
+  **MEASURED → SKIPPED (2026-06-11).** Galaxy S21, debug, 20 full
+  dispose→create cycles: the entire backend construction (platform view +
+  ExoPlayer + handlers + channels) takes **median 25ms** (17–43ms) — and
+  the ExoPlayer build is only a fraction of that. Against realistic
+  load-to-first-frame times (hundreds of ms, network + codec init
+  dominated), pooling could save single-digit milliseconds per tile at the
+  cost of reintroducing the lifecycle-bug class this branch eliminated.
+  Out of scope permanently unless a future device measurement contradicts
+  this.
+
+  **Tier 3a verified on device (2026-06-11).** Galaxy S21, N=4 feed,
+  prioritizeActivePlayback ON: logcat shows every player demote to
+  PLAYBACK_PRELOAD on pause-all and promote to PLAYBACK on play-all
+  ("Playback priority -> ..." per view), through the refactored
+  PlayerBackendSession.
+
 ## Tier 4 — opt-in texture rendering (the architectural step)
 
 The official `video_player_android` 2.9.5 ships BOTH render paths side by

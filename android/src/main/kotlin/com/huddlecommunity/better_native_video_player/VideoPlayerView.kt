@@ -22,13 +22,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
-import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerEventHandler
-import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerMethodHandler
-import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler
-import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerObserver
-import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
-import com.huddlecommunity.better_native_video_player.manager.VideoCacheManager
-import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.platform.PlatformView
@@ -42,12 +35,19 @@ class VideoPlayerView(
     private val context: Context,
     private val viewId: Long,
     private val args: Map<String, Any>?,
-    private val binaryMessenger: io.flutter.plugin.common.BinaryMessenger
-) : PlatformView {
+    binaryMessenger: io.flutter.plugin.common.BinaryMessenger
+) : PlatformView, VideoPlayerBackend {
 
     companion object {
         private const val TAG = "VideoPlayerView"
     }
+
+    override val backendViewId: Long get() = viewId
+
+    // The display-independent half (player, handlers, channels, viewport
+    // capping, common dispose) lives in the session; this class keeps the
+    // Android View display path and native fullscreen.
+    private val session: PlayerBackendSession
 
     // Heavy display path: full Media3 PlayerView (inflates the complete
     // controller UI even with useController = false). Null when the
@@ -65,24 +65,12 @@ class VideoPlayerView(
     // the inline container and the fullscreen dialog.
     private val videoContentView: View
 
-    private val player: ExoPlayer
-    private val controllerId: Int?
+    private val player: ExoPlayer get() = session.player
+    private val controllerId: Int? get() = session.controllerId
 
     // Container that holds the player view
     // This is what Flutter sees - the player view can be moved in/out of it
     private val containerView: FrameLayout
-
-    // Handlers
-    private val eventHandler: VideoPlayerEventHandler
-    private val notificationHandler: VideoPlayerNotificationHandler
-    private val methodHandler: VideoPlayerMethodHandler
-    private val observer: VideoPlayerObserver
-    
-    // Store media info for updating notification when playback starts
-    private var currentMediaInfo: Map<String, Any>? = null
-
-    // Channels
-    private val eventChannel: EventChannel
 
     // Track fullscreen state
     private var isFullScreen: Boolean = false
@@ -97,91 +85,36 @@ class VideoPlayerView(
     private var originalSystemUiVisibility: Int = 0
     private var originalOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
-    // Store native controls setting
-    private var showNativeControlsOriginal: Boolean = true
-
-    // HDR setting
-    private var enableHDR: Boolean = false
-
-    // Viewport-based quality capping (NativeVideoPlayerConfig.qualityForViewportSize)
-    private var qualityForViewport: Boolean = false
-    private var lastViewportWidth: Int = 0
-    private var lastViewportHeight: Int = 0
-
-
     init {
         NpLog.d(TAG, "Creating VideoPlayerView with id: $viewId")
-
-        // Extract controller ID from args
-        controllerId = args?.get("controllerId") as? Int
 
         // Extract initial fullscreen state from args
         isFullScreen = args?.get("isFullScreen") as? Boolean ?: false
         NpLog.d(TAG, "Initial fullscreen state: $isFullScreen")
 
-        // Extract native controls setting from args
-        showNativeControlsOriginal = args?.get("showNativeControls") as? Boolean ?: true
-
-        // Extract HDR setting from args
-        enableHDR = args?.get("enableHDR") as? Boolean ?: false
-
-        // Viewport-based quality capping from args
-        qualityForViewport = args?.get("qualityForViewport") as? Boolean ?: false
-        NpLog.d(TAG, "HDR setting: $enableHDR")
-
-        // Extract looping setting from args
-        val enableLooping = args?.get("enableLooping") as? Boolean ?: false
-        NpLog.d(TAG, "Looping setting: $enableLooping")
-        
-        // Extract and store media info from args (if provided during initialization)
-        // This ensures we have the correct media info even for shared players
-        currentMediaInfo = args?.get("mediaInfo") as? Map<String, Any>
-        currentMediaInfo?.let { mediaInfo ->
-            val title = mediaInfo["title"] as? String
-            NpLog.d(TAG, "📱 Stored media info during init: $title")
-        }
-
-        // Get or create shared player. The optional buffer config and
-        // playback prioritization (from the Dart NativeVideoPlayerConfig)
-        // only apply at first creation.
-        val bufferConfig = args?.get("androidBufferConfig") as? Map<*, *>
-        val prioritizeActivePlayback =
-            args?.get("prioritizeActivePlayback") as? Boolean ?: false
-        val isSharedPlayer: Boolean
-        player = if (controllerId != null) {
-            val (sharedPlayer, alreadyExisted) = SharedPlayerManager.getOrCreatePlayer(
-                context,
-                controllerId,
-                bufferConfig,
-                prioritizeActivePlayback
-            )
-            isSharedPlayer = alreadyExisted
-            if (alreadyExisted) {
-                NpLog.d(TAG, "Using existing shared player for controller ID: $controllerId")
-            } else {
-                NpLog.d(TAG, "Creating new shared player for controller ID: $controllerId")
+        session = PlayerBackendSession(
+            context = context,
+            viewId = viewId,
+            args = args,
+            binaryMessenger = binaryMessenger,
+            onSiblingDisposed = {
+                reconnectSurface()
+                // Emit current state after reconnecting to ensure UI stays in sync
+                session.emitCurrentState()
             }
-            sharedPlayer
-        } else {
-            NpLog.d(TAG, "No controller ID provided, creating new player")
-            isSharedPlayer = false
-            SharedPlayerManager.buildPlayer(context, bufferConfig, prioritizeActivePlayback)
-        }
+        )
 
-        // Set repeat mode for looping
-        player.repeatMode = if (enableLooping) {
-            Player.REPEAT_MODE_ONE
-        } else {
-            Player.REPEAT_MODE_OFF
+        // Set fullscreen callback for method handler
+        session.methodHandler.onFullscreenRequest = { enterFullscreen ->
+            handleFullscreenToggleNative(enterFullscreen)
         }
-        NpLog.d(TAG, "Repeat mode set to: ${if (enableLooping) "REPEAT_MODE_ONE (looping enabled)" else "REPEAT_MODE_OFF (looping disabled)"}")
 
         // Create the display view: a full PlayerView, or — when the app
         // opted into lightweightInlineViews and this view hides native
         // controls — a bare SurfaceView + SubtitleView in an
         // AspectRatioFrameLayout (PlayerView inflates its complete controller
         // UI even when useController is false).
-        val showNativeControls = args?.get("showNativeControls") as? Boolean ?: true
+        val showNativeControls = session.showNativeControls
         val useLightView =
             (args?.get("lightweightInlineViews") as? Boolean ?: false) && !showNativeControls
         if (useLightView) {
@@ -242,7 +175,7 @@ class VideoPlayerView(
                 // Note: There's no direct method to hide settings button, but we can hide it via layout
 
                 // Configure HDR rendering
-                if (!enableHDR) {
+                if (!session.enableHDR) {
                     NpLog.d(TAG, "🎨 HDR disabled for PlayerView - ExoPlayer will tone-map to SDR")
                     // ExoPlayer handles tone-mapping automatically, but we can hint at the surface level
                     // Note: More explicit control would require custom RenderersFactory
@@ -257,7 +190,7 @@ class VideoPlayerView(
 
         // For shared players that already existed, ensure surface is properly connected
         // This is crucial when returning to a video after calling releaseResources()
-        if (isSharedPlayer) {
+        if (session.isSharedPlayer) {
             NpLog.d(TAG, "Ensuring surface connection for existing shared player")
             videoContentView.post { rebindVideoOutput() }
         }
@@ -277,7 +210,7 @@ class VideoPlayerView(
 
         // For shared players, also reconnect when this view is attached to a window.
         // Surface may not be ready in init; attaching ensures we rebind once the view is in the hierarchy.
-        if (isSharedPlayer) {
+        if (session.isSharedPlayer) {
             containerView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                 override fun onViewAttachedToWindow(v: View) {
                     containerView.removeOnAttachStateChangeListener(this)
@@ -315,109 +248,8 @@ class VideoPlayerView(
             }
         } }
 
-        // Setup event handler (pass isSharedPlayer flag)
-        eventHandler = VideoPlayerEventHandler(isSharedPlayer = isSharedPlayer)
-
-        // Setup notification handler (shared for shared players)
-        notificationHandler = if (controllerId != null) {
-            val handler = SharedPlayerManager.getOrCreateNotificationHandler(context, controllerId, player, eventHandler)
-            // Update event handler for shared notification handler (in case it's being reused)
-            handler.updateEventHandler(eventHandler)
-            handler
-        } else {
-            VideoPlayerNotificationHandler(context, player, eventHandler)
-        }
-
-        // Setup method handler with callback to update media info
-        methodHandler = VideoPlayerMethodHandler(
-            context = context,
-            player = player,
-            eventHandler = eventHandler,
-            notificationHandler = notificationHandler,
-            updateMediaInfo = { mediaInfo -> currentMediaInfo = mediaInfo },
-            controllerId = controllerId,
-            enableHDR = enableHDR,
-            enableDiskCache = args?.get("androidEnableDiskCache") as? Boolean ?: false,
-            diskCacheMaxBytes = (args?.get("androidDiskCacheMaxBytes") as? Number)?.toLong()
-                ?: VideoCacheManager.DEFAULT_MAX_BYTES
-        )
-
-        // Set fullscreen callback for method handler
-        methodHandler.onFullscreenRequest = { enterFullscreen ->
-            handleFullscreenToggleNative(enterFullscreen)
-        }
-
-        // PiP is now handled by the floating package on the Dart side
-        // Callbacks removed as they're no longer needed
-
-        // Setup observer with notification handler and media info getter
-        val timeUpdateIntervalMs =
-            (args?.get("timeUpdateIntervalMs") as? Number)?.toLong() ?: 500L
-        observer = VideoPlayerObserver(
-            player = player,
-            eventHandler = eventHandler,
-            notificationHandler = notificationHandler,
-            getMediaInfo = { currentMediaInfo },
-            controllerId = controllerId,
-            viewId = viewId,
-            updateIntervalMs = timeUpdateIntervalMs,
-            prioritizeActivePlayback = prioritizeActivePlayback
-        )
-        player.addListener(observer)
-
-        // Register this view with SharedPlayerManager if using a shared player
-        // This allows other views to notify us when they're disposed
-        if (controllerId != null) {
-            SharedPlayerManager.registerView(controllerId, viewId) {
-                reconnectSurface()
-                // Emit current state after reconnecting to ensure UI stays in sync
-                emitCurrentState()
-            }
-        }
-
-        // Setup event channel
-        val eventChannelName = "native_video_player_$viewId"
-        eventChannel = EventChannel(binaryMessenger, eventChannelName)
-        eventChannel.setStreamHandler(eventHandler)
-
-        // Set up callback to send the current playback state when the event listener is attached
-        // This ensures the Flutter side knows the initial state (idle, playing, paused, etc.)
-        // This applies to both new and shared players
-        eventHandler.setInitialStateCallback {
-            NpLog.d(TAG, "Sending initial state - isPlaying: ${player.isPlaying}, playbackState: ${player.playbackState}, duration: ${player.duration}")
-
-            // For shared players or players with media already loaded, send loaded event first
-            if (player.playbackState != ExoPlayer.STATE_IDLE && player.duration >= 0) {
-                NpLog.d(TAG, "Sending loaded event with duration: ${player.duration}")
-                eventHandler.sendEvent("loaded", mapOf(
-                    "duration" to player.duration.toInt()
-                ), synchronous = true)
-            }
-
-            // Send buffering event if currently buffering
-            if (player.playbackState == Player.STATE_BUFFERING) {
-                NpLog.d(TAG, "Sending buffering event")
-                eventHandler.sendEvent("buffering", synchronous = true)
-            }
-            // Then send the current playback state, but only if not buffering
-            // During initial buffering, isPlaying might be true (playWhenReady=true)
-            // but the video hasn't actually started playing yet
-            else if (player.isPlaying) {
-                NpLog.d(TAG, "Sending play event")
-                eventHandler.sendEvent("play", synchronous = true)
-            } else if (player.playbackState != Player.STATE_IDLE) {
-                NpLog.d(TAG, "Sending pause event")
-                eventHandler.sendEvent("pause", synchronous = true)
-            } else {
-                // Player is in IDLE state - send idle event to ensure UI shows correct state
-                // Use synchronous=true to ensure this is the first event received
-                NpLog.d(TAG, "Player is in IDLE state, sending idle event (synchronous)")
-                eventHandler.sendEvent("idle", synchronous = true)
-            }
-        }
-
-        // Method channel is handled at the plugin level
-        // No need to set up individual method channels for each view
+        // Handlers, observer, event channel and SharedPlayerManager
+        // registration all live in the session (created above).
 
         NpLog.d(TAG, "VideoPlayerView initialized")
     }
@@ -431,7 +263,7 @@ class VideoPlayerView(
     /**
      * Handles method calls from Flutter
      */
-    fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
+    override fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "setShowNativeControls" -> {
                 val show = call.argument<Boolean>("show") ?: true
@@ -453,58 +285,14 @@ class VideoPlayerView(
             "setViewportSize" -> {
                 val width = (call.argument<Number>("width"))?.toInt() ?: 0
                 val height = (call.argument<Number>("height"))?.toInt() ?: 0
-                setViewportSize(width, height)
+                session.setViewportSize(width, height, isFullScreen)
                 result.success(null)
             }
             else -> {
-                methodHandler.handleMethodCall(call, result)
+                session.methodHandler.handleMethodCall(call, result)
             }
         }
     }
-
-    /**
-     * Caps adaptive quality selection to the platform view's physical pixel
-     * size (qualityForViewport config). Without this, DefaultTrackSelector's
-     * viewport defaults to the physical DISPLAY size, so every feed tile
-     * selects full-screen quality. The cap is player-level and the player can
-     * be shared by multiple views: the most recent reporter wins, which is
-     * correct for list→detail (the larger detail view reports later).
-     */
-    fun setViewportSize(width: Int, height: Int) {
-        if (!qualityForViewport || width <= 0 || height <= 0) return
-        lastViewportWidth = width
-        lastViewportHeight = height
-        if (!isFullScreen) {
-            applyViewportConstraints(width, height)
-        }
-    }
-
-    private fun applyViewportConstraints(width: Int, height: Int) {
-        NpLog.d(TAG, "Applying viewport quality cap: ${width}x$height")
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .setViewportSize(width, height, true)
-            .build()
-    }
-
-    /** Lifts the viewport quality cap (used while in native fullscreen). */
-    private fun clearViewportConstraints() {
-        if (!qualityForViewport) return
-        NpLog.d(TAG, "Clearing viewport quality cap (fullscreen)")
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .clearViewportSizeConstraints()
-            .build()
-    }
-
-    /** Re-applies the last reported viewport cap (after leaving fullscreen). */
-    private fun restoreViewportConstraints() {
-        if (!qualityForViewport) return
-        if (lastViewportWidth > 0 && lastViewportHeight > 0) {
-            applyViewportConstraints(lastViewportWidth, lastViewportHeight)
-        }
-    }
-
 
     /**
      * Handles fullscreen toggle natively by moving the player view between container and fullscreen dialog
@@ -528,17 +316,17 @@ class VideoPlayerView(
 
         if (enteringFullScreen) {
             // Fullscreen shows the full display: lift the viewport quality cap
-            clearViewportConstraints()
+            session.clearViewportConstraints()
             enterFullscreenNative(activity)
 
             // Notify Flutter that fullscreen was entered
-            eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to true))
+            session.eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to true))
         } else {
             exitFullscreenNative(activity)
-            restoreViewportConstraints()
+            session.restoreViewportConstraints()
 
             // Notify Flutter that fullscreen was exited
-            eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to false))
+            session.eventHandler.sendEvent("fullscreenChange", mapOf("isFullscreen" to false))
         }
 
         // Update internal state
@@ -786,40 +574,6 @@ class VideoPlayerView(
     // All PiP-related methods have been removed
 
     /**
-     * Emits all current player states to ensure UI is in sync
-     * This is useful after events like exiting PiP where the UI needs to refresh
-     */
-    private fun emitCurrentState() {
-        NpLog.d(TAG, "Emitting current state after PiP exit")
-
-        // Emit current time and duration
-        val currentPosition = player.currentPosition
-        val duration = player.duration
-
-        if (duration > 0) {
-            // Get buffered position
-            val bufferedPosition = player.bufferedPosition
-
-            eventHandler.sendEvent("timeUpdate", mapOf(
-                "position" to currentPosition.toInt(),
-                "duration" to duration.toInt(),
-                "bufferedPosition" to bufferedPosition.toInt(),
-                "isBuffering" to (player.playbackState == ExoPlayer.STATE_BUFFERING)
-            ))
-            NpLog.d(TAG, "Emitted timeUpdate with duration: ${duration}ms")
-        }
-
-        // Emit current playback state
-        if (player.isPlaying) {
-            NpLog.d(TAG, "Emitting play state")
-            eventHandler.sendEvent("play")
-        } else if (player.playbackState != ExoPlayer.STATE_IDLE) {
-            NpLog.d(TAG, "Emitting pause state")
-            eventHandler.sendEvent("pause")
-        }
-    }
-
-    /**
      * Reconnects the player's surface to this view's display surface
      * This is called when another platform view using the same shared player is disposed
      */
@@ -892,30 +646,10 @@ class VideoPlayerView(
 
         NpLog.d(TAG, "dispose() - controllerId: $controllerId")
 
-        // Remove listeners and stop periodic updates
-        player.removeListener(observer)
-        observer.release()
+        // Remove the light display path's own listener before the common dispose
         lightListener?.let { player.removeListener(it) }
 
-        // Clean up channels
-        // First call onCancel to properly clean up the event sink
-        // This prevents MissingPluginException when Flutter tries to cancel the subscription
-        try {
-            eventHandler.onCancel(null)
-        } catch (e: Exception) {
-            NpLog.w(TAG, "Error calling onCancel on event handler: ${e.message}")
-        }
-        // Then set the stream handler to null
-        eventChannel.setStreamHandler(null)
-
-        // Clear media info
-        currentMediaInfo = null
-
-        // Note: player and notification handler are NOT released here if they're shared
-        // The shared player and notification handler will be kept alive for reuse
-        if (controllerId != null) {
-            NpLog.d(TAG, "Platform view disposed but player and notification handler kept alive for controller ID: $controllerId")
-
+        session.disposeCommon(detachOutput = {
             // IMPORTANT: For shared players, detach the player from this view's display
             // surface to prevent disconnecting it. Another platform view may still be
             // using the player. If we don't detach here, disposing this view will
@@ -923,14 +657,7 @@ class VideoPlayerView(
             playerView?.player = null
             lightSurfaceView?.let { player.clearVideoSurfaceView(it) }
             NpLog.d(TAG, "Detached player from display surface to preserve it for other views")
-
-            // Unregister this view and notify remaining views to reconnect their surfaces
-            SharedPlayerManager.unregisterView(controllerId, viewId)
-        } else {
-            // Only release if not shared (for non-shared players, fully clean up media session)
-            notificationHandler.release()
-            player.release()
-        }
+        })
     }
 }
 
