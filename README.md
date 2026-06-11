@@ -28,6 +28,8 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 - ✅ **Playlists**: sequential playback with auto-advance on one controller
 - ✅ **Playback analytics**: startup time, stall count/duration, watched time, quality switches as a single event stream
 - ✅ **Scrub-preview storyboards**: parse WebVTT storyboards and sprite-sheet grids (Vimeo/Bunny style) for thumbnail previews
+- ✅ **Chromecast**: pure-Dart device discovery + full cast session (load with metadata/captions, play/pause/seek, volume, loop, live status stream) — no Cast SDK
+- ✅ **Offline downloads**: `VideoDownloadController` with progress streams, persistence, cancel/remove, and local playback
 - ✅ **Performance tuning**: global config for concurrent-playback caps, viewport-based quality capping, buffer presets
 - ✅ **Separated event streams**: Activity events (play/pause/buffering) and Control events (quality/speed/PiP/fullscreen)
 - ✅ **Individual property streams**: Dedicated streams for position, duration, speed, state, fullscreen, PiP, AirPlay, and quality
@@ -287,6 +289,16 @@ Add the following to your `Info.plist`:
 <key>UIBackgroundModes</key>
 <array>
     <string>audio</string>
+</array>
+
+<!-- Only if you use Chromecast discovery (CastDeviceDiscovery): iOS 14+
+     requires these for mDNS on the local network. The first scan triggers
+     the Local Network permission prompt. -->
+<key>NSLocalNetworkUsageDescription</key>
+<string>Used to find Cast devices on your network.</string>
+<key>NSBonjourServices</key>
+<array>
+    <string>_googlecast._tcp</string>
 </array>
 ```
 
@@ -922,6 +934,117 @@ await controller.load(url: video.playbackUrl!);
 Image.network(video.bestThumbnail!.url);
 ```
 
+#### Chromecast (Google Cast)
+
+Pure-Dart Chromecast support (CASTV2 over TLS — no Cast SDK, no platform code). It lives in a **separate entrypoint** so its `CastDevice`/`CastSession` names can't collide with other packages — import it with a prefix:
+
+```dart
+import 'package:better_native_video_player/cast.dart' as nvp_cast;
+```
+
+Discover devices on the local network (mDNS):
+
+```dart
+try {
+  final devices = await nvp_cast.CastDeviceDiscovery.discover();
+  for (final d in devices) {
+    print('${d.displayName} (${d.model}) at ${d.host}:${d.port}');
+  }
+} on nvp_cast.CastDiscoveryException catch (e) {
+  // Wrong network or missing Local Network permission (see iOS Setup) —
+  // never crashes the app, just surfaces actionable guidance.
+  print(e.message);
+}
+```
+
+Connect and load media with metadata and caption tracks:
+
+```dart
+final session = await nvp_cast.CastSession.connect(devices.first);
+
+await session.loadMedia(
+  contentUrl: 'https://example.com/video.mp4', // receiver fetches this itself:
+  contentType: 'video/mp4',                    // must be HTTPS/CORS-readable
+  title: 'Big Buck Bunny',
+  subtitle: 'Blender Foundation',
+  imageUrl: 'https://example.com/poster.jpg',  // shows on the TV + cast dialogs
+  textTracks: [
+    nvp_cast.CastTextTrack(
+      trackId: 1,
+      url: 'https://example.com/subs_en.vtt',
+      language: 'en',
+      name: 'English',
+    ),
+  ],
+  activeTrackIds: [1],                         // start with captions on
+  startAt: const Duration(seconds: 30),
+);
+```
+
+Full transport control, including receiver-side state sync:
+
+```dart
+await session.play();
+await session.pause();
+await session.seek(const Duration(minutes: 2));
+await session.setVolume(0.4);   // receiver volume 0..1
+await session.setMuted(true);
+await session.setActiveTracks([1]); // captions on; [] = off
+session.setLooping(true);       // reloads the media when the receiver finishes
+
+// React to ANY change on the receiver — including changes made on the TV
+// or by other senders (Google Home app, voice commands):
+session.statusStream.listen((s) {
+  print('${s.playerState} ${s.position}/${s.duration} '
+      'vol ${(s.volumeLevel * 100).round()}% tracks ${s.activeTrackIds}');
+});
+
+await session.close();
+```
+
+Use `statusStream` to mirror the cast state in your own player UI (position slider, play/pause icon, volume) so the app always reflects what the TV is doing. See `example/lib/screens/perf/cast_screen.dart` for a complete picker + remote-control screen.
+
+**Note:** the receiver downloads `contentUrl`, `imageUrl`, and track URLs itself — they must be reachable from the Chromecast (public HTTPS, CORS headers for VTT tracks). `file://` and app-local paths won't work.
+
+#### Offline Downloads
+
+`VideoDownloadController` downloads videos for offline playback with progress reporting and a persistent index. The plugin deliberately doesn't depend on `path_provider` — you pass the directory:
+
+```dart
+final dir = await getApplicationDocumentsDirectory(); // path_provider
+final downloads = VideoDownloadController(
+  directoryPath: '${dir.path}/video_downloads',
+);
+
+// Start a download — the stream emits progress and closes on a terminal
+// status (completed / failed / canceled):
+downloads.download(
+  id: 'lesson-42',
+  url: 'https://example.com/video.mp4',
+  headers: {'Authorization': 'Bearer ...'}, // optional
+).listen((p) {
+  // p.fraction is 0..1 (null when the server sends no Content-Length)
+  print('${p.status} ${p.receivedBytes}/${p.totalBytes}');
+});
+```
+
+Manage and play downloaded files:
+
+```dart
+final all = await downloads.listDownloads();      // List<VideoDownload>
+final isDone = await downloads.isDownloaded('lesson-42');
+final path = await downloads.localPathFor('lesson-42');
+
+if (path != null) {
+  await controller.load(url: 'file://$path');     // plays fully offline
+}
+
+await downloads.cancel('lesson-42');              // stop an active download
+await downloads.remove('lesson-42');              // delete file + index entry
+```
+
+Calling `download()` again for an already-downloaded id immediately emits `completed`; calling it while the same id is downloading returns the existing stream (no duplicate work). Partial files are written as `.part` and only renamed on success, so an interrupted download never leaves a corrupt "completed" file.
+
 #### Separated Event Handling
 
 The plugin separates events into two categories for better control:
@@ -1537,6 +1660,11 @@ NativeVideoPlayer(
 | `PositionCheckpoints` | Throttled resume-position reporting with final flush on dispose |
 | `BackgroundPlaybackGuard` | Pause on app background, resume on return (PiP/AirPlay exempt) |
 | `StoryboardThumbnails` | Scrub-preview thumbnails from storyboard VTT or sprite grids |
+| `VideoDownloadController` | Offline downloads: progress stream, persistent index, cancel/remove |
+| `CastDeviceDiscovery` ¹ | Chromecast discovery via mDNS (`_googlecast._tcp`) |
+| `CastSession` ¹ | Full Chromecast control: load/captions/transport/volume/loop + status stream |
+
+¹ Exported from `package:better_native_video_player/cast.dart` (separate entrypoint — import with a prefix).
 
 ## Architecture
 
@@ -1767,6 +1895,10 @@ See the `example` folder for a complete working example demonstrating:
 - **Separated Event Handling**: Activity and control events with detailed logging
 - **Custom Media Info**: Now Playing integration with metadata
 - **Buffered Position Indicator**: Visual representation of how much video has been preloaded
+- **Chromecast**: device scan, connect, load with captions, full remote control with live status (`screens/perf/cast_screen.dart`)
+- **Offline Downloads**: progress bar, cancel/remove, offline playback (`screens/perf/download_screen.dart`)
+- **Sidecar Subtitles & Audio Tracks**: external VTT/SRT styling demo and multi-audio HLS selection
+- **Player Features**: startAt/resume, A-B loop, playlist auto-advance, analytics, Vimeo extractor demos
 
 ### Running the Example
 
