@@ -6,6 +6,7 @@ import android.content.pm.ApplicationInfo
 import androidx.media3.common.util.UnstableApi
 import com.huddlecommunity.better_native_video_player.handlers.ControllerEventChannelHandler
 import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
+import com.huddlecommunity.better_native_video_player.manager.VideoCacheManager
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -168,6 +169,31 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
                     result.success(null)
                     return@setMethodCallHandler
                 }
+                "precacheVideo" -> {
+                    // Global (no viewId): warms the opt-in disk cache so a
+                    // later load starts without network round-trips. Works
+                    // before any player exists.
+                    val args = call.arguments as? Map<*, *>
+                    val url = args?.get("url") as? String
+                    if (url == null) {
+                        result.error("INVALID_ARGUMENT", "url is required", null)
+                        return@setMethodCallHandler
+                    }
+                    @Suppress("UNCHECKED_CAST")
+                    val headers = args["headers"] as? Map<String, String>
+                    val precacheBytes = (args["precacheBytes"] as? Number)?.toLong()
+                        ?: VideoCacheManager.DEFAULT_PRECACHE_BYTES
+                    val cacheMaxBytes = (args["cacheMaxBytes"] as? Number)?.toLong()
+                        ?: VideoCacheManager.DEFAULT_MAX_BYTES
+                    VideoCacheManager.precache(
+                        applicationContext,
+                        url,
+                        headers,
+                        precacheBytes,
+                        cacheMaxBytes
+                    ) { ok, _ -> result.success(ok) }
+                    return@setMethodCallHandler
+                }
             }
 
             val args = call.arguments as? Map<*, *>
@@ -229,6 +255,11 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         NpLog.d(TAG, "NativeVideoPlayerPlugin detached - cleaning up all players")
+
+        // Stop in-flight precache downloads. The disk cache itself stays
+        // open: SimpleCache is process-lifetime (it throws if the same
+        // directory is reopened, e.g. after a Flutter hot restart).
+        VideoCacheManager.cancelAllPrecache()
 
         // Tear down all controller-level event channels before dropping the messenger
         controllerEventChannels.values.forEach { it.setStreamHandler(null) }

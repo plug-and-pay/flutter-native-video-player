@@ -23,6 +23,9 @@ class NativeVideoPlayerConfig {
     this.qualityForViewportSize = false,
     this.prioritizeActivePlayback = false,
     this.lightweightInlineViews = false,
+    this.androidEnableDiskCache = false,
+    this.androidDiskCacheMaxBytes = 100 * 1024 * 1024,
+    this.androidPrecacheBytes = 2 * 1024 * 1024,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
@@ -111,6 +114,32 @@ class NativeVideoPlayerConfig {
   /// lightweight view ends if that platform view is disposed while PiP is
   /// active (keep the tile mounted, or use `releaseResources()` semantics).
   final bool lightweightInlineViews;
+
+  /// Caches remote media on disk so revisited feed items skip the network
+  /// (Android only; default: false = current behavior).
+  ///
+  /// Uses a single Media3 `SimpleCache` with LRU eviction shared by all
+  /// players. Cache reads/writes happen transparently during playback, and
+  /// [NativeVideoPlayerCache.precache] can warm the cache for upcoming feed
+  /// items before any player exists. DRM-protected streams and local
+  /// sources always bypass the cache.
+  ///
+  /// The cache is created at first use and lives for the process; size
+  /// changes after that (see [androidDiskCacheMaxBytes]) apply on the next
+  /// app start. iOS is unsupported: AVPlayer has no practical inline HLS
+  /// cache (`AVAssetDownloadTask` is an offline-download API) — `precache`
+  /// is a no-op there.
+  final bool androidEnableDiskCache;
+
+  /// Maximum disk cache size in bytes (default 100 MB). Applies when the
+  /// cache is first created in the process; LRU eviction keeps the cache
+  /// under this bound.
+  final int androidDiskCacheMaxBytes;
+
+  /// Default byte budget for [NativeVideoPlayerCache.precache] (default
+  /// 2 MB): progressive sources cache their first bytes, HLS warms the
+  /// playlists plus leading segments up to this budget.
+  final int androidPrecacheBytes;
 }
 
 /// ExoPlayer `DefaultLoadControl` parameters (Android only).

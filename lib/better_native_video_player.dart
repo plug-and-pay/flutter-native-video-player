@@ -32,6 +32,7 @@ export 'src/native_video_player_widget.dart';
 export 'src/platform/platform_utils.dart';
 export 'src/services/airplay_state_manager.dart';
 export 'src/services/background_playback_guard.dart';
+export 'src/services/native_video_player_cache.dart';
 export 'src/services/video_download_controller.dart';
 export 'src/services/native_video_player_playlist.dart';
 export 'src/services/playback_analytics.dart';

@@ -50,6 +50,10 @@ object SharedPlayerManager {
     // Priorities only coordinate between players sharing this instance.
     private val sharedPriorityTaskManager = PriorityTaskManager()
 
+    // Exposed so precache downloads (VideoCacheManager) can register at
+    // C.PRIORITY_DOWNLOAD and yield to active playback when Tier 3a is on.
+    val priorityTaskManager: PriorityTaskManager get() = sharedPriorityTaskManager
+
     /**
      * Gets or creates a player for the given controller ID
      * Returns a Pair<ExoPlayer, Boolean> where the Boolean indicates if the player already existed (true) or was newly created (false)

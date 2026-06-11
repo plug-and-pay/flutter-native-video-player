@@ -63,6 +63,7 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
     bool clearMaxConcurrent = false,
     bool? qualityForViewportSize,
     bool? lightweightInlineViews,
+    bool? androidEnableDiskCache,
   }) {
     final global = NativeVideoPlayerConfig.global;
     return NativeVideoPlayerConfig(
@@ -73,6 +74,24 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
           qualityForViewportSize ?? global.qualityForViewportSize,
       lightweightInlineViews:
           lightweightInlineViews ?? global.lightweightInlineViews,
+      androidEnableDiskCache:
+          androidEnableDiskCache ?? global.androidEnableDiskCache,
+    );
+  }
+
+  Future<void> _precacheStressVideos() async {
+    var warmed = 0;
+    for (final video in _videos) {
+      if (await NativeVideoPlayerCache.precache(video.url)) {
+        warmed++;
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Precached $warmed/${_videos.length} videos'),
+        duration: const Duration(seconds: 1),
+      ),
     );
   }
 
@@ -169,6 +188,23 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
                   key: const ValueKey('feed_toggle_card_mode'),
                   value: _naiveRebuilds,
                   onChanged: (value) => setState(() => _naiveRebuilds = value),
+                ),
+                const Text('cache', style: TextStyle(fontSize: 12)),
+                // Android disk cache (Tier 3b). Applies at platform-view
+                // creation: toggle, then leave and re-enter this screen.
+                Switch(
+                  key: const ValueKey('feed_toggle_disk_cache'),
+                  value: NativeVideoPlayerConfig.global.androidEnableDiskCache,
+                  onChanged: (value) => setState(() {
+                    NativeVideoPlayerConfig.global = _copyGlobalConfig(
+                      androidEnableDiskCache: value,
+                    );
+                  }),
+                ),
+                TextButton(
+                  key: const ValueKey('feed_precache'),
+                  onPressed: _precacheStressVideos,
+                  child: const Text('Precache'),
                 ),
               ],
             ),

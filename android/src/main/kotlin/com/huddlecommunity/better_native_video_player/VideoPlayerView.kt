@@ -27,6 +27,7 @@ import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerMethod
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerObserver
 import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
+import com.huddlecommunity.better_native_video_player.manager.VideoCacheManager
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -335,7 +336,10 @@ class VideoPlayerView(
             notificationHandler = notificationHandler,
             updateMediaInfo = { mediaInfo -> currentMediaInfo = mediaInfo },
             controllerId = controllerId,
-            enableHDR = enableHDR
+            enableHDR = enableHDR,
+            enableDiskCache = args?.get("androidEnableDiskCache") as? Boolean ?: false,
+            diskCacheMaxBytes = (args?.get("androidDiskCacheMaxBytes") as? Number)?.toLong()
+                ?: VideoCacheManager.DEFAULT_MAX_BYTES
         )
 
         // Set fullscreen callback for method handler

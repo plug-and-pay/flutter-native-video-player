@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
+import com.huddlecommunity.better_native_video_player.manager.VideoCacheManager
 
 /**
  * Handles method calls from Flutter for video player control
@@ -44,10 +45,43 @@ class VideoPlayerMethodHandler(
     private val notificationHandler: VideoPlayerNotificationHandler,
     private val updateMediaInfo: ((Map<String, Any>?) -> Unit)? = null,
     private val controllerId: Int? = null,
-    private val enableHDR: Boolean = false
+    private val enableHDR: Boolean = false,
+    private val enableDiskCache: Boolean = false,
+    private val diskCacheMaxBytes: Long = VideoCacheManager.DEFAULT_MAX_BYTES
 ) {
     companion object {
         private const val TAG = "VideoPlayerMethod"
+
+        /**
+         * Determines if a URL is an HLS stream (.m3u8 extension or common
+         * HLS patterns). Shared with VideoCacheManager.precache, which must
+         * warm playlists+segments for HLS rather than raw bytes.
+         */
+        internal fun isHlsUrl(url: String): Boolean {
+            val lowerUrl = url.lowercase()
+            // .m3u8 extension (most reliable indicator)
+            if (lowerUrl.contains(".m3u8")) {
+                return true
+            }
+            // /hls/ as a path segment (not substring, avoiding false
+            // positives like "english")
+            return Regex("/hls/").containsMatchIn(lowerUrl)
+        }
+    }
+
+    /**
+     * Wraps [upstream] with the shared disk cache when enabled. DRM streams
+     * and non-http sources (file://, content://, extracted assets) always
+     * bypass the cache.
+     */
+    private fun maybeWrapWithCache(
+        upstream: DataSource.Factory,
+        url: String,
+        hasDrm: Boolean
+    ): DataSource.Factory {
+        if (!enableDiskCache || hasDrm) return upstream
+        if (!url.startsWith("http", ignoreCase = true)) return upstream
+        return VideoCacheManager.buildCacheFactory(context, upstream, diskCacheMaxBytes)
     }
 
     private val audioManager: AudioManager =
@@ -219,13 +253,19 @@ class VideoPlayerMethodHandler(
         // Build data source factory
         // For remote URLs with custom headers, use HTTP-specific data source
         // For local files, use DefaultDataSource which supports file:// URIs
-        val finalDataSourceFactory = if (!isLocalFile && headers != null) {
+        val upstreamDataSourceFactory = if (!isLocalFile && headers != null) {
             DefaultHttpDataSource.Factory().apply {
                 setDefaultRequestProperties(headers)
             }
         } else {
             DefaultDataSource.Factory(context)
         }
+        // Opt-in disk cache wrap. hasDrm mirrors the condition under which a
+        // DrmConfiguration is set on the MediaItem below — protected content
+        // must never be written to the cache.
+        val hasDrm = drmConfig?.get("licenseUrl") != null
+        val finalDataSourceFactory =
+            maybeWrapWithCache(upstreamDataSourceFactory, url, hasDrm)
 
         // Build MediaItem with metadata
         val mediaItemBuilder = MediaItem.Builder()
@@ -685,8 +725,10 @@ class VideoPlayerMethodHandler(
             val currentPosition = player.currentPosition
 
             // Build new media source
-            // Use DefaultDataSource for consistency with load method
-            val dataSourceFactory = DefaultDataSource.Factory(context)
+            // Use DefaultDataSource for consistency with load method (cache
+            // wrap so variant revisits hit the disk cache; never DRM here)
+            val dataSourceFactory =
+                maybeWrapWithCache(DefaultDataSource.Factory(context), url, hasDrm = false)
             val mediaItem = MediaItem.fromUri(url)
             val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(mediaItem)
@@ -695,7 +737,7 @@ class VideoPlayerMethodHandler(
             player.setMediaSource(mediaSource)
             player.prepare()
             player.seekTo(currentPosition)
-            
+
             // Only resume playback if it was playing before
             if (wasPlaying) {
                 player.play()
@@ -728,8 +770,10 @@ class VideoPlayerMethodHandler(
         val currentPosition = player.currentPosition
 
         // Build new media source
-        // Use DefaultDataSource for consistency with load method
-        val dataSourceFactory = DefaultDataSource.Factory(context)
+        // Use DefaultDataSource for consistency with load method (cache wrap
+        // so variant revisits hit the disk cache; never DRM here)
+        val dataSourceFactory =
+            maybeWrapWithCache(DefaultDataSource.Factory(context), url, hasDrm = false)
         val mediaItem = MediaItem.fromUri(url)
         val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
             .createMediaSource(mediaItem)
@@ -891,27 +935,6 @@ class VideoPlayerMethodHandler(
     private fun checkAndSendAirPlayAvailability() {
         NpLog.d(TAG, "📡 AirPlay availability check: false (Android)")
         eventHandler.sendEvent("airPlayAvailabilityChanged", mapOf("isAvailable" to false))
-    }
-
-    /**
-     * Determines if a URL is an HLS stream
-     * Checks for .m3u8 extension or common HLS patterns
-     */
-    private fun isHlsUrl(url: String): Boolean {
-        val lowerUrl = url.lowercase()
-        // Check for .m3u8 extension (most reliable indicator)
-        if (lowerUrl.contains(".m3u8")) {
-            return true
-        }
-        // Check for /hls/ as a path segment (not substring to avoid false positives like "english")
-        if (Regex("/hls/").containsMatchIn(lowerUrl)) {
-            return true
-        }
-        // Check for manifest in path
-        if (lowerUrl.contains("manifest.m3u8")) {
-            return true
-        }
-        return false
     }
 
     // MARK: - Subtitle Track Handling
