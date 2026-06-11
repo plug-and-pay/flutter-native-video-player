@@ -4,6 +4,8 @@ import 'package:better_native_video_extractor/better_native_video_extractor.dart
 import 'package:better_native_video_player/better_native_video_player.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/storyboard_scrub_bar.dart';
+
 /// Demo + Marionette harness for the WebView-free Vimeo extractor package:
 /// extract metadata (title/duration/thumbnail/HLS URL + expiry) over plain
 /// HTTP, show the thumbnail, then play the extracted stream natively.
@@ -22,7 +24,10 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
   final _urlField = TextEditingController(text: 'https://vimeo.com/76979871');
 
   ExtractedVideo? _video;
+  StoryboardThumbnails? _storyboard;
+  StreamSubscription<VideoExtractionFailure>? _failureSub;
   String? _error;
+  String? _failureEvent;
   bool _busy = false;
   bool _playerVisible = false;
 
@@ -35,6 +40,11 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
       lockToLandscape: false,
       showNativeControls: false,
     );
+    // One listener catches EVERY failed extraction through this cache —
+    // the place to hook a crash reporter / analytics in a real app.
+    _failureSub = _cache.failures.listen((failure) {
+      if (mounted) setState(() => _failureEvent = failure.toString());
+    });
   }
 
   Future<void> _extract() async {
@@ -46,7 +56,28 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
       // The cache coalesces concurrent calls and honors the URL's exp=
       // token, exactly like a feed should use it.
       final video = await _cache.extract(_urlField.text);
-      if (mounted) setState(() => _video = video);
+      // Map the extractor's sprite-sheet storyboard onto the plugin's
+      // thumbnail API so the scrub bar can preview while dragging.
+      StoryboardThumbnails? storyboard;
+      final sb = video.storyboard;
+      final duration = video.duration;
+      if (sb != null && duration != null && sb.frames > 0) {
+        storyboard = StoryboardThumbnails.fromUniformGrid(
+          spriteUrls: [sb.url],
+          frameInterval: duration ~/ sb.frames,
+          columns: sb.columns,
+          frameWidth: sb.frameWidth,
+          frameHeight: sb.frameHeight,
+          framesPerSprite: sb.frames,
+          totalFrames: sb.frames,
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _video = video;
+          _storyboard = storyboard;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -68,6 +99,7 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
 
   @override
   void dispose() {
+    unawaited(_failureSub?.cancel());
     _urlField.dispose();
     unawaited(_controller.dispose());
     super.dispose();
@@ -100,6 +132,12 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
               key: const ValueKey('extractor_error'),
               style: const TextStyle(color: Colors.red),
             ),
+          if (_failureEvent != null)
+            Text(
+              'event: $_failureEvent',
+              key: const ValueKey('extractor_failure_event'),
+              style: const TextStyle(color: Colors.orange, fontSize: 12),
+            ),
           if (video != null) ...[
             ListTile(
               title: Text(
@@ -109,7 +147,8 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
               subtitle: Text(
                 'duration: ${video.duration} — '
                 'expires: ${video.expiresAt?.toLocal()} — '
-                'thumbs: ${video.thumbnails.length}',
+                'thumbs: ${video.thumbnails.length} — '
+                'storyboard: ${video.storyboard?.frames ?? 0} frames',
                 key: const ValueKey('extractor_meta'),
               ),
             ),
@@ -127,7 +166,7 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
               child: const Text('Play extracted stream'),
             ),
           ],
-          if (_playerVisible)
+          if (_playerVisible) ...[
             AspectRatio(
               aspectRatio: 16 / 9,
               child: Container(
@@ -135,6 +174,13 @@ class _ExtractorScreenState extends State<ExtractorScreen> {
                 child: NativeVideoPlayer(controller: _controller),
               ),
             ),
+            // Drag to scrub — the Vimeo storyboard sprite shows a frame
+            // preview of the target position while dragging.
+            StoryboardScrubBar(
+              controller: _controller,
+              storyboard: _storyboard,
+            ),
+          ],
         ],
       ),
     );

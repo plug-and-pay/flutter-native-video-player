@@ -188,6 +188,45 @@ void main() {
       await cache.extract('1'); // within margin -> stale -> re-extract
       expect(calls, 2);
     });
+
+    test('failed extraction throws AND emits on failures stream', () async {
+      final cache = VideoExtractionCache(
+        _FakeExtractor(() async {
+          throw const VideoExtractionException('vimeo', 'config 403');
+        }),
+      );
+      final events = <VideoExtractionFailure>[];
+      final sub = cache.failures.listen(events.add);
+
+      await expectLater(
+        cache.extract('https://vimeo.com/123'),
+        throwsA(isA<VideoExtractionException>()),
+      );
+      await Future<void>.delayed(Duration.zero); // let the event deliver
+
+      expect(events, hasLength(1));
+      expect(events.single.videoUrlOrId, 'https://vimeo.com/123');
+      expect(events.single.error, isA<VideoExtractionException>());
+      await sub.cancel();
+      cache.dispose();
+    });
+
+    test('successful extraction emits nothing on failures', () async {
+      final cache = VideoExtractionCache(
+        _FakeExtractor(() async => const ExtractedVideo(
+              provider: 'vimeo',
+              videoId: '1',
+              hlsUrl: 'url',
+            )),
+      );
+      final events = <VideoExtractionFailure>[];
+      final sub = cache.failures.listen(events.add);
+      await cache.extract('1');
+      await Future<void>.delayed(Duration.zero);
+      expect(events, isEmpty);
+      await sub.cancel();
+      cache.dispose();
+    });
   });
 }
 

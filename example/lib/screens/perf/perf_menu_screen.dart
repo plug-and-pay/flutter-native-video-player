@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'airplay_subtitle_screen.dart';
 import 'audio_track_screen.dart';
 import 'cast_screen.dart';
 import 'download_screen.dart';
@@ -97,6 +98,11 @@ class PerfMenuScreen extends StatelessWidget {
             key: const ValueKey('feature_cast'),
             title: const Text('Chromecast (discover + control)'),
             onTap: () => _push(context, const CastScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_airplay_subs'),
+            title: const Text('AirPlay + subtitles (VTT)'),
+            onTap: () => _push(context, const AirPlaySubtitleScreen()),
           ),
         ],
       ),
