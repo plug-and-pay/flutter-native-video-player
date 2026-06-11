@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:multicast_dns/multicast_dns.dart';
 
@@ -7,8 +8,14 @@ import '../models/cast_device.dart';
 /// Discovers Google Cast (Chromecast) receivers on the local network via
 /// mDNS (`_googlecast._tcp`). Pure Dart — no Cast SDK.
 ///
-/// iOS 14+ real devices require Info.plist entries before the OS lets the
-/// app send multicast queries:
+/// Real-device requirements (iOS 14+):
+/// - The phone must be on the SAME Wi-Fi as the Cast devices (cellular
+///   yields `SocketException: No route to host`).
+/// - Info.plist needs `NSLocalNetworkUsageDescription` and
+///   `NSBonjourServices` containing `_googlecast._tcp`.
+/// - The user must accept the Local Network permission prompt (first scan
+///   triggers it; after a denial: Settings > Privacy & Security > Local
+///   Network).
 ///
 /// ```xml
 /// <key>NSLocalNetworkUsageDescription</key>
@@ -22,9 +29,54 @@ class CastDeviceDiscovery {
   static const String _service = '_googlecast._tcp.local';
 
   /// One-shot scan; resolves after [timeout] with every device seen.
+  ///
+  /// Throws [CastDiscoveryException] when the network blocks multicast
+  /// (wrong network / missing Local Network permission) instead of leaking
+  /// raw [SocketException]s — including ones the mDNS client raises from
+  /// its internal retry timers, which would otherwise crash as unhandled.
   static Future<List<CastDevice>> discover({
     Duration timeout = const Duration(seconds: 5),
-  }) async {
+  }) {
+    // multicast_dns re-sends queries from internal timers; their failures
+    // surface OUTSIDE the caller's await chain. The guarded zone catches
+    // those strays so a denied permission can't crash the app.
+    final completer = Completer<List<CastDevice>>();
+    runZonedGuarded(
+      () async {
+        try {
+          final devices = await _discover(timeout: timeout);
+          if (!completer.isCompleted) completer.complete(devices);
+        } catch (e, s) {
+          if (!completer.isCompleted) {
+            completer.completeError(_wrap(e), s);
+          }
+        }
+      },
+      (error, stack) {
+        if (!completer.isCompleted) {
+          completer.completeError(_wrap(error), stack);
+        }
+        // Late stray errors after completion are intentionally swallowed —
+        // the scan outcome has already been delivered.
+      },
+    );
+    return completer.future;
+  }
+
+  static Object _wrap(Object error) {
+    if (error is SocketException) {
+      return CastDiscoveryException(
+        'Could not send the mDNS query (${error.osError?.message ?? error.message}). '
+        'Check that the device is on the same Wi-Fi as the Cast devices and '
+        'that the Local Network permission is granted '
+        '(iOS: Settings > Privacy & Security > Local Network).',
+        error,
+      );
+    }
+    return error;
+  }
+
+  static Future<List<CastDevice>> _discover({required Duration timeout}) async {
     final client = MDnsClient();
     final found = <String, CastDevice>{};
     await client.start();

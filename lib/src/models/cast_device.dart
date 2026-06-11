@@ -1,5 +1,18 @@
 import 'package:flutter/foundation.dart';
 
+/// Thrown when the mDNS scan cannot reach the local network — on real iOS
+/// devices this almost always means cellular-only connectivity or a denied
+/// Local Network permission rather than "no Cast devices nearby".
+class CastDiscoveryException implements Exception {
+  const CastDiscoveryException(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => 'CastDiscoveryException: $message';
+}
+
 /// A Google Cast (Chromecast) receiver found on the local network.
 ///
 /// Discovery-only: the plugin lists devices so apps can show a picker; the
