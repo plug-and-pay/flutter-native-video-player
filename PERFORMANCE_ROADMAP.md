@@ -195,6 +195,43 @@ was added. Verified with heap(1): VideoPlayerView returns to baseline
 after open/close churn in both modes (AVPlayerViewController and
 AVPictureInPictureController counts hit zero).
 
+### Real-device results (2026-06-11, profile mode, Marionette-driven)
+
+**iPhone 13 Pro Max (iOS 26.5), profile:** modern-iPhone frame stats are a
+solved problem at this content size — N=6 stress feed steady state reads
+**0 janky frames** (0/257, frame total avg 2.04ms) and the 30-tile scroll
+**0/868 at 1.28ms**; with Tier 2 light views ON the scroll stays at 0/1203,
+avg 1.34ms (no regression; hardware decode removes the simulator's
+bottleneck entirely). The Tier 1/2 wins on healthy iPhones are
+network/battery/decode-session-side, not frame-side.
+
+**iPhone PiP device pass (Tier 2 light views ON):** manual PiP enter ✓ /
+exit ✓ from a light view (AVPictureInPictureController(playerLayer:)),
+automatic PiP on backgrounding ✓ (the medium-risk item), PiP persists
+across app foregrounding and exits cleanly ✓, MPE 0 throughout.
+
+**Galaxy S21 (SM-G991B, Android 12, profile):** the device where the costs
+live. N=6 baseline (flags off): 8.4% janky frames (28/332), frame total avg
+10.59ms with raster avg 6.09ms — platform-view composition is visible on
+the raster thread. Dalvik heap plateaus ~172MB of the 256MB growth limit at
+full-ABR 1080p×6.
+
+**Critical S21 finding → fixed:** re-entering the N=6 feed repeatedly
+**OOM-killed the app** (MediaCodec alloc failure at 256MB/256MB, GC freeing
+<1%), in BOTH view modes. Root cause was a real plugin bug, not transient
+overlap: `controller.dispose()` released the native player through the
+view-routed 'dispose' call, which races platform-view teardown when a tile
+unmounts → lands after the view unregistered → `NO_VIEW` → silently dropped
+→ **one leaked ExoPlayer (with full buffers) per disposed controller**
+(`Error calling dispose: PlatformException(NO_VIEW...)` in the log; heap
+ratcheted 130→204MB→dead across visits). Pre-existing on master/1.0.1 —
+invisible on emulators with larger heaps. Fixed on this branch:
+`dispose()` now always issues the controller-ID-routed `disposeController`
+as the authoritative release (idempotent on both platforms) + regression
+test. Also measured: with `qualityForViewportSize` ON the same sequence
+survives with heap headroom (130MB steady vs 172MB uncapped — Tier 1's
+real device win is heap/network, exactly as predicted).
+
 ## Tier 3 — playing-priority + smarter loading
 
 - **Android `PriorityTaskManager`** (present in media3-common 1.5.0): give
@@ -259,3 +296,4 @@ Every step lands behind `NativeVideoPlayerConfig` flags defaulting to
 current behavior, keeps the API additive, and reruns the harness scenarios
 (stress feed, scroll, nav loop, lifecycle stress, cap semantics) plus the
 PiP/AirPlay/Now Playing device checklist before merging.
+/

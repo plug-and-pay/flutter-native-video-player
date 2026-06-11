@@ -296,6 +296,59 @@ void main() {
     });
   });
 
+  group('dispose player release', () {
+    testWidgets(
+      'dispose releases the controller even when the view dispose hits NO_VIEW',
+      (tester) async {
+        // The view-routed 'dispose' races platform-view teardown when a feed
+        // tile unmounts (NO_VIEW) — dropping it silently leaked one native
+        // player per disposed controller (observed as an OOM on a Galaxy S21
+        // after a few six-player feed visits). disposeController must always
+        // run as the authoritative release.
+        await tester.pumpWidget(const SizedBox());
+        final context = tester.element(find.byType(SizedBox));
+
+        await tester.runAsync(() async {
+          messenger.setMockMethodCallHandler(methodChannel, (call) async {
+            log.add('method:${call.method}');
+            if (call.method == 'dispose') {
+              throw PlatformException(
+                code: 'NO_VIEW',
+                message: 'No view found for method call',
+              );
+            }
+            if (call.method == 'getAvailableQualities') return <Object?>[];
+            return null;
+          });
+          mockControllerStream(14);
+          mockViewStream(412);
+
+          final controller = NativeVideoPlayerController(id: 14);
+          await flushSetup(controller);
+
+          await controller.onPlatformViewCreated(412, context);
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+
+          await controller.dispose();
+
+          expect(
+            log,
+            contains('method:dispose'),
+            reason: 'the view-routed dispose should still be attempted',
+          );
+          expect(
+            log,
+            contains('method:disposeController'),
+            reason:
+                'disposeController must run as the authoritative release '
+                'even though the view dispose failed',
+          );
+          expect(flutterErrors, isEmpty);
+        });
+      },
+    );
+  });
+
   group('platform view safety net', () {
     testWidgets('onPlatformViewCreated sets up the channel if setup failed', (
       tester,

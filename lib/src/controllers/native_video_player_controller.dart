@@ -914,6 +914,10 @@ class NativeVideoPlayerController {
         NativeVideoPlayerConfig.global.prioritizeActivePlayback,
     'lightweightInlineViews':
         NativeVideoPlayerConfig.global.lightweightInlineViews,
+    'androidEnableDiskCache':
+        NativeVideoPlayerConfig.global.androidEnableDiskCache,
+    'androidDiskCacheMaxBytes':
+        NativeVideoPlayerConfig.global.androidDiskCacheMaxBytes,
     if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
       'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
           .toMap(),
@@ -2181,19 +2185,24 @@ class NativeVideoPlayerController {
     }
 
     // Dispose native player resources (removes shared player from manager).
-    // After releaseResources() there is no per-view method channel anymore,
-    // but the shared native player may still be alive — release it by
-    // controller ID via the plugin channel so it cannot leak.
     if (_methodChannel != null) {
       await _methodChannel?.dispose();
-    } else {
-      try {
-        await _pluginMethodChannel.invokeMethod<void>('disposeController', {
-          'controllerId': id,
-        });
-      } catch (e) {
-        debugPrint('Failed to dispose native player for controller $id: $e');
-      }
+    }
+
+    // ALWAYS release by controller ID as the authoritative cleanup: the
+    // view-routed dispose above races platform-view teardown when a feed
+    // tile is unmounted (the call lands after the view unregistered →
+    // NO_VIEW → silently dropped), which leaked one native player per
+    // disposed controller until the OS killed the app (observed as an OOM
+    // on a Galaxy S21 after a few six-player feed visits). disposeController
+    // needs no view, and native removePlayer is idempotent on both
+    // platforms, so running it after a successful view dispose is harmless.
+    try {
+      await _pluginMethodChannel.invokeMethod<void>('disposeController', {
+        'controllerId': id,
+      });
+    } catch (e) {
+      debugPrint('Failed to dispose native player for controller $id: $e');
     }
 
     // Close all stream controllers
