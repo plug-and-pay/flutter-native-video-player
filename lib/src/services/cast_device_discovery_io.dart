@@ -1,16 +1,22 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:multicast_dns/multicast_dns.dart';
 
 import '../models/cast_device.dart';
 
-/// Discovers Google Cast (Chromecast) receivers on the local network via
-/// mDNS (`_googlecast._tcp`). Pure Dart — no Cast SDK.
+/// Discovers Google Cast (Chromecast) receivers on the local network
+/// (`_googlecast._tcp`). No Cast SDK.
+///
+/// On iOS the scan runs through the plugin's native side using the system
+/// Bonjour browser (`NWBrowser`): sending raw multicast UDP from Dart needs
+/// the restricted `com.apple.developer.networking.multicast` entitlement on
+/// physical devices, while Bonjour browsing is exempt. Everywhere else the
+/// scan is pure-Dart mDNS.
 ///
 /// Real-device requirements (iOS 14+):
-/// - The phone must be on the SAME Wi-Fi as the Cast devices (cellular
-///   yields `SocketException: No route to host`).
+/// - The phone must be on the SAME Wi-Fi as the Cast devices.
 /// - Info.plist needs `NSLocalNetworkUsageDescription` and
 ///   `NSBonjourServices` containing `_googlecast._tcp`.
 /// - The user must accept the Local Network permission prompt (first scan
@@ -28,15 +34,18 @@ class CastDeviceDiscovery {
 
   static const String _service = '_googlecast._tcp.local';
 
+  static const MethodChannel _channel = MethodChannel('native_video_player');
+
   /// One-shot scan; resolves after [timeout] with every device seen.
   ///
-  /// Throws [CastDiscoveryException] when the network blocks multicast
+  /// Throws [CastDiscoveryException] when the network blocks the scan
   /// (wrong network / missing Local Network permission) instead of leaking
   /// raw [SocketException]s — including ones the mDNS client raises from
   /// its internal retry timers, which would otherwise crash as unhandled.
   static Future<List<CastDevice>> discover({
     Duration timeout = const Duration(seconds: 5),
   }) {
+    if (Platform.isIOS) return _discoverViaBonjour(timeout);
     // multicast_dns re-sends queries from internal timers; their failures
     // surface OUTSIDE the caller's await chain. The guarded zone catches
     // those strays so a denied permission can't crash the app.
@@ -61,6 +70,43 @@ class CastDeviceDiscovery {
       },
     );
     return completer.future;
+  }
+
+  /// iOS: scan through the plugin's native NWBrowser (system Bonjour).
+  static Future<List<CastDevice>> _discoverViaBonjour(Duration timeout) async {
+    try {
+      final raw = await _channel.invokeListMethod<dynamic>(
+        'discoverCastDevices',
+        <String, dynamic>{'timeoutMs': timeout.inMilliseconds},
+      );
+      return (raw ?? const <dynamic>[])
+          .cast<Map<dynamic, dynamic>>()
+          .map(
+            (m) => CastDevice(
+              id: m['id'] as String,
+              name: m['name'] as String,
+              friendlyName: m['friendlyName'] as String?,
+              model: m['model'] as String?,
+              host: m['host'] as String,
+              port: m['port'] as int,
+            ),
+          )
+          .toList();
+    } on PlatformException catch (e) {
+      throw CastDiscoveryException(
+        'Cast device scan failed (${e.message ?? e.code}). Check that the '
+        'device is on the same Wi-Fi as the Cast devices and that the Local '
+        'Network permission is granted (iOS: Settings > Privacy & Security > '
+        'Local Network).',
+        e,
+      );
+    } on MissingPluginException catch (e) {
+      throw CastDiscoveryException(
+        'The running iOS app was built before cast discovery was added — '
+        'rebuild the app (full build, not hot reload).',
+        e,
+      );
+    }
   }
 
   static Object _wrap(Object error) {

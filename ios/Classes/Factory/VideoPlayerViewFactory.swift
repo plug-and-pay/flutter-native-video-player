@@ -55,6 +55,22 @@ import UIKit
                 return
             }
 
+            if call.method == "discoverCastDevices" {
+                // Bonjour browse via the system daemon — Dart-side mDNS would
+                // need the restricted multicast entitlement on real devices.
+                if #available(iOS 13.0, *) {
+                    let args = call.arguments as? [String: Any]
+                    let timeoutMs = args?["timeoutMs"] as? Int ?? 5000
+                    CastDeviceDiscoverer.shared.discover(timeoutMs: timeoutMs, result: result)
+                } else {
+                    result(FlutterError(
+                        code: "CAST_DISCOVERY_UNSUPPORTED",
+                        message: "Cast discovery requires iOS 13 or newer",
+                        details: nil))
+                }
+                return
+            }
+
             if call.method == "disposeController" {
                 // Releases the shared native player by controller ID. Used by Dart
                 // dispose() when no platform view is alive (after releaseResources())

@@ -936,7 +936,7 @@ Image.network(video.bestThumbnail!.url);
 
 #### Chromecast (Google Cast)
 
-Pure-Dart Chromecast support (CASTV2 over TLS — no Cast SDK, no platform code). It lives in a **separate entrypoint** so its `CastDevice`/`CastSession` names can't collide with other packages — import it with a prefix:
+Chromecast support without the Cast SDK: the session protocol (CASTV2 over TLS) is pure Dart, and discovery uses the system Bonjour browser on iOS (required on physical devices — raw multicast needs a restricted Apple entitlement) with pure-Dart mDNS elsewhere. It lives in a **separate entrypoint** so its `CastDevice`/`CastSession` names can't collide with other packages — import it with a prefix:
 
 ```dart
 import 'package:better_native_video_player/cast.dart' as nvp_cast;

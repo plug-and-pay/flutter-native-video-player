@@ -1,6 +1,7 @@
-/// Chromecast support: device discovery (mDNS) and a full CASTV2 session
-/// (load with metadata + caption tracks, play/pause/seek/stop,
-/// volume/mute, caption switching, loop, live status stream).
+/// Chromecast support: device discovery (system Bonjour on iOS, pure-Dart
+/// mDNS elsewhere) and a full CASTV2 session (load with metadata + caption
+/// tracks, play/pause/seek/stop, volume/mute, caption switching, loop,
+/// live status stream).
 ///
 /// Deliberately a SEPARATE entrypoint from the main library:
 /// `CastDevice`/`CastSession` are common names (the `cast` package uses
