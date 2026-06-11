@@ -59,7 +59,8 @@ class CastSessionStatus {
 
   @override
   String toString() =>
-      'CastSessionStatus($playerState ${position.inSeconds}s'
+      'CastSessionStatus($playerState'
+      '${idleReason == null ? '' : '($idleReason)'} ${position.inSeconds}s'
       '${duration == null ? '' : '/${duration!.inSeconds}s'} '
       'vol ${(volumeLevel * 100).round()}% tracks $activeTrackIds)';
 }
@@ -257,14 +258,16 @@ class CastSession {
     final durationSeconds = (media?['duration'] as num?)?.toDouble();
     final playerState = s['playerState'] as String? ?? _lastStatus.playerState;
     final idleReason = s['idleReason'] as String?;
+    // Receivers omit currentTime from some status pushes (e.g. track edits);
+    // treat "absent" as "unchanged", NOT as position zero.
+    final currentTimeSeconds = (s['currentTime'] as num?)?.toDouble();
 
     _emit(
       _lastStatus.copyWith(
         playerState: playerState,
-        position: Duration(
-          milliseconds: (((s['currentTime'] as num?)?.toDouble() ?? 0) * 1000)
-              .round(),
-        ),
+        position: currentTimeSeconds == null
+            ? _lastStatus.position
+            : Duration(milliseconds: (currentTimeSeconds * 1000).round()),
         duration: durationSeconds == null
             ? _lastStatus.duration
             : Duration(milliseconds: (durationSeconds * 1000).round()),

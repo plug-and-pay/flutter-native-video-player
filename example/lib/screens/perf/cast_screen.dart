@@ -28,10 +28,21 @@ class _CastScreenState extends State<CastScreen> {
   List<CastDevice> _devices = const [];
   CastSession? _session;
   StreamSubscription<CastSessionStatus>? _statusSub;
+  Timer? _statusPoll;
   String _status = 'idle — scan to find devices';
   String _sessionStatus = '-';
   bool _scanning = false;
   bool _looping = false;
+
+  /// While the user drags the seek slider, show the drag position instead
+  /// of the (still updating) receiver position.
+  double? _dragPositionSeconds;
+
+  /// After a seek, hold the slider at the target until the receiver
+  /// confirms (statuses sent before the SEEK landed still carry the old
+  /// position and would briefly snap the slider back).
+  double? _pendingSeekSeconds;
+  Timer? _pendingSeekClear;
 
   Future<void> _scan() async {
     setState(() {
@@ -52,6 +63,8 @@ class _CastScreenState extends State<CastScreen> {
     }
   }
 
+  /// Tap on a device: connect AND start the demo video right away, so the
+  /// controls below drive a live playback session on the receiver.
   Future<void> _connect(CastDevice device) async {
     setState(() => _status = 'connecting to ${device.displayName}…');
     try {
@@ -59,7 +72,15 @@ class _CastScreenState extends State<CastScreen> {
       // Be polite to whoever is near the TV: start quiet.
       await session.setVolume(0.15);
       _statusSub = session.statusStream.listen((status) {
-        if (mounted) setState(() => _sessionStatus = status.toString());
+        if (!mounted) return;
+        setState(() {
+          _sessionStatus = status.toString();
+          final pending = _pendingSeekSeconds;
+          if (pending != null &&
+              (status.position.inSeconds - pending).abs() <= 2) {
+            _pendingSeekSeconds = null; // receiver caught up with the seek
+          }
+        });
       });
       if (!mounted) {
         await session.close();
@@ -67,15 +88,22 @@ class _CastScreenState extends State<CastScreen> {
       }
       setState(() {
         _session = session;
-        _status = 'connected: ${device.displayName}';
+        _status = 'connected: ${device.displayName} — loading video…';
       });
+      await _load(session);
+      // Receivers only push MEDIA_STATUS on state CHANGES; poll while
+      // connected so the position slider tracks playback continuously.
+      _statusPoll = Timer.periodic(const Duration(seconds: 1), (_) {
+        unawaited(_session?.requestStatus());
+      });
+      if (mounted) setState(() => _status = 'playing on ${device.displayName}');
     } catch (e) {
       if (mounted) setState(() => _status = 'connect failed: $e');
     }
   }
 
-  Future<void> _load() async {
-    await _session?.loadMedia(
+  Future<void> _load(CastSession session) async {
+    await session.loadMedia(
       contentUrl: CastScreen.mediaUrl,
       title: 'Designing for Google Cast',
       subtitle: 'better_native_video_player demo',
@@ -91,11 +119,133 @@ class _CastScreenState extends State<CastScreen> {
     );
   }
 
+  Future<void> _disconnect() async {
+    _statusPoll?.cancel();
+    _statusPoll = null;
+    _pendingSeekClear?.cancel();
+    _pendingSeekSeconds = null;
+    await _statusSub?.cancel();
+    _statusSub = null;
+    await _session?.close();
+    if (mounted) {
+      setState(() {
+        _session = null;
+        _sessionStatus = '-';
+        _status = 'disconnected';
+      });
+    }
+  }
+
+  String _fmt(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
   @override
   void dispose() {
+    _statusPoll?.cancel();
+    _pendingSeekClear?.cancel();
     unawaited(_statusSub?.cancel());
     unawaited(_session?.close());
     super.dispose();
+  }
+
+  /// Position slider + time labels; dragging seeks the receiver.
+  Widget _buildSeekRow(CastSession session) {
+    final position = session.status.position.inSeconds.toDouble();
+    final duration = (session.status.duration?.inSeconds ?? 0).toDouble();
+    final hasDuration = duration > 0;
+    final value = (_dragPositionSeconds ?? _pendingSeekSeconds ?? position)
+        .clamp(0.0, hasDuration ? duration : position);
+    return Row(
+      children: [
+        Text(_fmt(Duration(seconds: value.round()))),
+        Expanded(
+          child: Slider(
+            key: const ValueKey('cast_seek_slider'),
+            value: value,
+            max: hasDuration ? duration : (position > 0 ? position : 1),
+            onChanged: hasDuration
+                ? (v) => setState(() => _dragPositionSeconds = v)
+                : null,
+            onChangeEnd: (v) {
+              // Seeking AT the duration makes the receiver finish the
+              // stream (IDLE + position 0); stop just short of the end.
+              final target = hasDuration ? v.clamp(0.0, duration - 1) : v;
+              setState(() {
+                _dragPositionSeconds = null;
+                _pendingSeekSeconds = target;
+              });
+              _pendingSeekClear?.cancel();
+              _pendingSeekClear = Timer(const Duration(seconds: 4), () {
+                if (mounted) setState(() => _pendingSeekSeconds = null);
+              });
+              unawaited(session.seek(Duration(seconds: target.round())));
+            },
+          ),
+        ),
+        Text(hasDuration ? _fmt(Duration(seconds: duration.round())) : '--:--'),
+      ],
+    );
+  }
+
+  /// -15s / play-pause / +15s, mirroring the receiver's reported state.
+  Widget _buildTransportRow(CastSession session) {
+    final isPlaying = session.status.isPlaying;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          key: const ValueKey('cast_seek_back'),
+          iconSize: 36,
+          icon: const Icon(Icons.replay_10),
+          onPressed: () => session.seek(
+            session.status.position - const Duration(seconds: 15),
+          ),
+        ),
+        IconButton(
+          key: ValueKey(isPlaying ? 'cast_pause' : 'cast_play'),
+          iconSize: 56,
+          icon: Icon(
+            isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+          ),
+          onPressed: isPlaying ? session.pause : session.play,
+        ),
+        IconButton(
+          key: const ValueKey('cast_seek_fwd'),
+          iconSize: 36,
+          icon: const Icon(Icons.forward_10),
+          onPressed: () => session.seek(
+            session.status.position + const Duration(seconds: 15),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Receiver volume slider with step buttons (kept for the MCP harness).
+  Widget _buildVolumeRow(CastSession session) {
+    final volume = session.status.volumeLevel.clamp(0.0, 1.0);
+    return Row(
+      children: [
+        IconButton(
+          key: const ValueKey('cast_vol_down'),
+          icon: const Icon(Icons.volume_down),
+          onPressed: () => session.setVolume(volume - 0.05),
+        ),
+        Expanded(
+          child: Slider(
+            key: const ValueKey('cast_volume_slider'),
+            value: volume,
+            onChanged: (v) => unawaited(session.setVolume(v)),
+          ),
+        ),
+        IconButton(
+          key: const ValueKey('cast_vol_up'),
+          icon: const Icon(Icons.volume_up),
+          onPressed: () => session.setVolume(volume + 0.05),
+        ),
+        Text('${(volume * 100).round()}%'),
+      ],
+    );
   }
 
   @override
@@ -136,43 +286,18 @@ class _CastScreenState extends State<CastScreen> {
               style: const TextStyle(fontSize: 12),
             ),
             const SizedBox(height: 8),
+            _buildSeekRow(session),
+            _buildTransportRow(session),
+            _buildVolumeRow(session),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 ElevatedButton(
                   key: const ValueKey('cast_load'),
-                  onPressed: _load,
-                  child: const Text('Load video + captions'),
-                ),
-                ElevatedButton(
-                  key: const ValueKey('cast_play'),
-                  onPressed: session.play,
-                  child: const Text('Play'),
-                ),
-                ElevatedButton(
-                  key: const ValueKey('cast_pause'),
-                  onPressed: session.pause,
-                  child: const Text('Pause'),
-                ),
-                ElevatedButton(
-                  key: const ValueKey('cast_seek_fwd'),
-                  onPressed: () => session.seek(
-                    session.status.position + const Duration(seconds: 15),
-                  ),
-                  child: const Text('+15s'),
-                ),
-                ElevatedButton(
-                  key: const ValueKey('cast_vol_down'),
-                  onPressed: () =>
-                      session.setVolume(session.status.volumeLevel - 0.05),
-                  child: const Text('Vol -'),
-                ),
-                ElevatedButton(
-                  key: const ValueKey('cast_vol_up'),
-                  onPressed: () =>
-                      session.setVolume(session.status.volumeLevel + 0.05),
-                  child: const Text('Vol +'),
+                  onPressed: () => _load(session),
+                  child: const Text('Reload video + captions'),
                 ),
                 ElevatedButton(
                   key: const ValueKey('cast_captions_on'),
@@ -195,16 +320,7 @@ class _CastScreenState extends State<CastScreen> {
                 ),
                 ElevatedButton(
                   key: const ValueKey('cast_disconnect'),
-                  onPressed: () async {
-                    await session.close();
-                    if (mounted) {
-                      setState(() {
-                        _session = null;
-                        _sessionStatus = '-';
-                        _status = 'disconnected';
-                      });
-                    }
-                  },
+                  onPressed: _disconnect,
                   child: const Text('Disconnect'),
                 ),
               ],
