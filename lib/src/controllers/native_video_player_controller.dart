@@ -17,6 +17,7 @@ import '../models/native_video_player_quality.dart';
 import '../models/native_video_player_sidecar_subtitle.dart';
 import '../models/native_video_player_state.dart';
 import '../models/native_video_player_subtitle_track.dart';
+import '../models/native_video_player_video_size.dart';
 import '../platform/platform_utils.dart';
 import '../platform/video_player_method_channel.dart';
 import '../services/airplay_state_manager.dart';
@@ -351,6 +352,22 @@ class NativeVideoPlayerController {
       StreamController<bool>.broadcast();
   final StreamController<bool> _isPipAvailableController =
       StreamController<bool>.broadcast();
+
+  /// Latest native video dimensions (texture-rendered views report these so
+  /// the widget can letterbox the texture; platform views handle aspect
+  /// natively and may never emit one).
+  NativeVideoPlayerVideoSize? _videoSize;
+  final StreamController<NativeVideoPlayerVideoSize> _videoSizeController =
+      StreamController<NativeVideoPlayerVideoSize>.broadcast();
+
+  /// Platform-view IDs that are actually texture-rendered backends (no
+  /// Android/iOS view exists for them). Drives the Dart-fullscreen fallback.
+  final Set<int> _textureViewIds = <int>{};
+
+  /// Whether the active fullscreen session went through the Dart path (so
+  /// exit uses the matching path even without a custom overlay).
+  bool _usedDartFullscreen = false;
+
   final StreamController<bool> _isFullscreenController =
       StreamController<bool>.broadcast();
   final StreamController<NativeVideoPlayerQuality> _qualityChangedController =
@@ -884,6 +901,26 @@ class NativeVideoPlayerController {
   /// Stream of fullscreen state changes
   Stream<bool> get isFullscreenStream => _isFullscreenController.stream;
 
+  /// Latest native video dimensions (reported by texture-rendered views;
+  /// null until the first frame's size is known).
+  NativeVideoPlayerVideoSize? get videoSize => _videoSize;
+
+  /// Stream of native video dimension changes (texture-rendered views).
+  Stream<NativeVideoPlayerVideoSize> get videoSizeStream =>
+      _videoSizeController.stream;
+
+  /// Marks [platformViewId] as texture-rendered. Called by the widget right
+  /// before [onPlatformViewCreated] for texture backends — these have no
+  /// native view, so fullscreen falls back to the Dart path.
+  void registerTextureView(int platformViewId) {
+    _textureViewIds.add(platformViewId);
+  }
+
+  /// Whether the primary view is a texture-rendered backend.
+  bool get _primaryViewIsTexture =>
+      _primaryPlatformViewId != null &&
+      _textureViewIds.contains(_primaryPlatformViewId);
+
   /// Stream of quality changes
   Stream<NativeVideoPlayerQuality> get qualityChangedStream =>
       _qualityChangedController.stream;
@@ -1125,6 +1162,7 @@ class NativeVideoPlayerController {
   void onPlatformViewDisposed(int platformViewId) {
     _platformViewIds.remove(platformViewId);
     _platformViewContexts.remove(platformViewId);
+    _textureViewIds.remove(platformViewId);
 
     // Cancel the event channel subscription first, then release the native
     // per-view channel handlers: on iOS the EventChannel handler strongly
@@ -1820,7 +1858,12 @@ class NativeVideoPlayerController {
       await _refreshAvailabilityFlags();
     }
 
-    if (_hasCustomOverlay && _fullscreenContext != null) {
+    // Texture-rendered views have no native view to expand: always use the
+    // Dart fullscreen route for them, overlay or not.
+    if ((_hasCustomOverlay || _primaryViewIsTexture) &&
+        _fullscreenContext != null) {
+      _usedDartFullscreen = true;
+
       // Emit fullscreen entered event
       final controlEvent = PlayerControlEvent(
         state: PlayerControlState.fullscreenEntered,
@@ -1855,7 +1898,9 @@ class NativeVideoPlayerController {
       await _refreshAvailabilityFlags();
     }
 
-    if (_hasCustomOverlay) {
+    if (_hasCustomOverlay || _usedDartFullscreen) {
+      _usedDartFullscreen = false;
+
       // Dart fullscreen: use dedicated callback to close the dialog
       _dartFullscreenCloseCallback?.call();
 
@@ -2218,10 +2263,12 @@ class NativeVideoPlayerController {
     await _qualityChangedController.close();
     await _qualitiesController.close();
     await _isOverlayLockedController.close();
+    await _videoSizeController.close();
 
     // Clear platform view references
     _platformViewIds.clear();
     _platformViewContexts.clear();
+    _textureViewIds.clear();
     _primaryPlatformViewId = null;
 
     // Clear overlay and fullscreen references

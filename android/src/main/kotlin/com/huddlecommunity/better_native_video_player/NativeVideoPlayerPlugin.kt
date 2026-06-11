@@ -38,6 +38,18 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         // controller-level EventChannels before any platform view exists.
         private var messenger: BinaryMessenger? = null
 
+        // Texture registry of the most recently attached engine (texture
+        // rendering mode). Texture backends have no engine-side owner, so
+        // the plugin retains them strongly until viewDisposed/engine detach.
+        private var textureRegistry: io.flutter.view.TextureRegistry? = null
+        private val textureBackends = mutableMapOf<Long, TextureVideoPlayer>()
+
+        private fun disposeAllTextureBackends() {
+            // dispose() unregisters from registeredViews; iterate a copy.
+            textureBackends.values.toList().forEach { it.dispose() }
+            textureBackends.clear()
+        }
+
         // Controller-level EventChannels keyed by controller ID. Created on
         // demand via setupControllerEventChannel (called from the Dart
         // controller constructor) and torn down on controller dispose.
@@ -111,6 +123,7 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         NpLog.d(TAG, "Registering NativeVideoPlayerPlugin")
 
         messenger = binding.binaryMessenger
+        textureRegistry = binding.textureRegistry
 
         // Register platform view factory
         binding.platformViewRegistry.registerViewFactory(
@@ -164,9 +177,52 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
                     return@setMethodCallHandler
                 }
                 "viewDisposed" -> {
-                    // iOS needs this hook to deregister its per-view
-                    // EventChannel handler; Android already cleans up in
-                    // PlatformView.dispose, so it's a no-op here.
+                    // Texture backends have no PlatformView.dispose — this
+                    // Dart hook is their disposal trigger. For platform views
+                    // it's a no-op (the engine calls dispose itself); iOS
+                    // uses it to deregister its per-view EventChannel handler.
+                    val viewId = ((call.arguments as? Map<*, *>)?.get("viewId") as? Number)?.toLong()
+                    if (viewId != null) {
+                        textureBackends.remove(viewId)?.dispose()
+                    }
+                    result.success(null)
+                    return@setMethodCallHandler
+                }
+                "createTextureView" -> {
+                    // Texture rendering mode: the Dart widget allocated the
+                    // viewId from platformViewsRegistry (collision-free with
+                    // real platform views) and sends the same creationParams
+                    // a platform view would get.
+                    @Suppress("UNCHECKED_CAST")
+                    val params = call.arguments as? Map<String, Any>
+                    val viewId = (params?.get("viewId") as? Number)?.toLong()
+                    val registry = textureRegistry
+                    if (viewId == null || registry == null) {
+                        result.error(
+                            "NO_ENGINE",
+                            "viewId missing or texture registry unavailable",
+                            null
+                        )
+                        return@setMethodCallHandler
+                    }
+                    val producer = registry.createSurfaceProducer()
+                    val backend = TextureVideoPlayer(
+                        applicationContext,
+                        viewId,
+                        params,
+                        binding.binaryMessenger,
+                        producer
+                    )
+                    textureBackends[viewId] = backend
+                    registerView(backend, viewId)
+                    result.success(mapOf("textureId" to producer.id()))
+                    return@setMethodCallHandler
+                }
+                "disposeAllTextureViews" -> {
+                    // Hot-restart hygiene: the Dart isolate forgot its texture
+                    // backends but they survive natively — called once per
+                    // isolate before the first createTextureView.
+                    disposeAllTextureBackends()
                     result.success(null)
                     return@setMethodCallHandler
                 }
@@ -261,6 +317,11 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
         // open: SimpleCache is process-lifetime (it throws if the same
         // directory is reopened, e.g. after a Flutter hot restart).
         VideoCacheManager.cancelAllPrecache()
+
+        // Texture backends are plugin-owned (no PlatformView lifecycle):
+        // release their surfaces before the engine goes away.
+        disposeAllTextureBackends()
+        textureRegistry = null
 
         // Tear down all controller-level event channels before dropping the messenger
         controllerEventChannels.values.forEach { it.setStreamHandler(null) }

@@ -10,6 +10,8 @@ import 'config/native_video_player_config.dart';
 import 'controllers/native_video_player_controller.dart';
 import 'enums/native_video_player_event.dart';
 import 'models/native_video_player_subtitle_style.dart';
+import 'models/native_video_player_video_size.dart';
+import 'platform/video_player_method_channel.dart';
 import 'subtitles/subtitle_overlay.dart';
 
 /// A native video player widget that wraps platform-specific video players
@@ -78,6 +80,19 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     super.initState();
     // Pass the overlay builder to the controller
     widget.controller.setOverlayBuilder(widget.overlayBuilder);
+
+    // Texture rendering mode (Android): decided per view at creation, after
+    // the overlay determined the effective showNativeControls. Views with
+    // native controls and Dart-fullscreen hosts keep using platform views.
+    _useTextureBackend =
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        NativeVideoPlayerConfig.global.androidTextureMode &&
+        !widget.isFullscreenContext &&
+        widget.controller.creationParams['showNativeControls'] == false;
+    if (_useTextureBackend) {
+      unawaited(_createTextureBackend());
+    }
 
     // Set up animation controller for overlay fade
     _overlayAnimationController = AnimationController(
@@ -295,6 +310,88 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
 
   Widget _platformView() => _cachedPlatformView ??= _buildPlatformView();
 
+  /// Texture rendering mode (androidTextureMode): decided in initState.
+  bool _useTextureBackend = false;
+
+  /// Engine texture id once the native backend exists.
+  int? _textureId;
+
+  /// One-time hot-restart hygiene per isolate: native texture backends
+  /// survive a hot restart while the Dart side forgets them.
+  static bool _textureBackendsResetDone = false;
+
+  Future<void> _createTextureBackend() async {
+    if (!_textureBackendsResetDone) {
+      _textureBackendsResetDone = true;
+      await VideoPlayerMethodChannel.disposeAllTextureViews();
+    }
+
+    // Allocate the synthetic viewId from the same registry as real platform
+    // views, so it can never collide with one. Everything downstream
+    // (channels, routing, viewDisposed) treats it like a platform view id.
+    final int viewId = platformViewsRegistry.getNextPlatformViewId();
+    final params = _getCreationParams()..['viewId'] = viewId;
+
+    try {
+      final textureId = await VideoPlayerMethodChannel.createTextureView(
+        params,
+      );
+      if (!mounted) {
+        // Disposed while creating: release the native backend directly (the
+        // normal dispose flow never learned this view existed).
+        unawaited(VideoPlayerMethodChannel.notifyViewDisposed(viewId));
+        return;
+      }
+      setState(() {
+        _platformViewId = viewId;
+        _textureId = textureId;
+      });
+      widget.controller.registerTextureView(viewId);
+      await widget.controller.onPlatformViewCreated(viewId, context);
+      _maybeReportViewportSize();
+    } catch (e) {
+      debugPrint('NativeVideoPlayer: texture backend creation failed: $e');
+    }
+  }
+
+  /// Letterboxes the engine texture to the video's aspect ratio inside
+  /// whatever box the app gives the player — mirroring the platform views'
+  /// RESIZE_MODE_FIT/resizeAspect behavior. Black until the size is known.
+  Widget _textureWidget() {
+    final textureId = _textureId;
+    if (textureId == null) {
+      return const ColoredBox(color: Color(0xFF000000));
+    }
+    return StreamBuilder<NativeVideoPlayerVideoSize>(
+      stream: widget.controller.videoSizeStream,
+      initialData: widget.controller.videoSize,
+      builder: (context, snapshot) {
+        final videoSize = snapshot.data;
+        Widget texture = Texture(textureId: textureId);
+        if (videoSize == null ||
+            videoSize.width <= 0 ||
+            videoSize.height <= 0) {
+          return ColoredBox(color: const Color(0xFF000000), child: texture);
+        }
+        if (videoSize.rotationCorrection % 360 != 0) {
+          texture = RotatedBox(
+            quarterTurns: videoSize.rotationCorrection ~/ 90,
+            child: texture,
+          );
+        }
+        return ColoredBox(
+          color: const Color(0xFF000000),
+          child: Center(
+            child: AspectRatio(
+              aspectRatio: videoSize.aspectRatio,
+              child: texture,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildPlatformView() {
     const String viewType = 'native_video_player';
     final Map<String, dynamic> creationParams = _getCreationParams();
@@ -361,7 +458,9 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
         _lastConstraints = constraints;
         _devicePixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
         _maybeReportViewportSize();
-        return _platformView();
+        // Texture backends render as plain Flutter content (rebuilding the
+        // Texture widget is free, so no caching needed).
+        return _useTextureBackend ? _textureWidget() : _platformView();
       },
     );
 

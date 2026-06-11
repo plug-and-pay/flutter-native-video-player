@@ -65,6 +65,7 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
     bool? lightweightInlineViews,
     bool? androidEnableDiskCache,
     bool? prioritizeActivePlayback,
+    bool? androidTextureMode,
   }) {
     final global = NativeVideoPlayerConfig.global;
     return NativeVideoPlayerConfig(
@@ -79,6 +80,7 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
           androidEnableDiskCache ?? global.androidEnableDiskCache,
       prioritizeActivePlayback:
           prioritizeActivePlayback ?? global.prioritizeActivePlayback,
+      androidTextureMode: androidTextureMode ?? global.androidTextureMode,
     );
   }
 
@@ -191,6 +193,18 @@ class _StressFeedScreenState extends State<StressFeedScreen> {
                   key: const ValueKey('feed_toggle_card_mode'),
                   value: _naiveRebuilds,
                   onChanged: (value) => setState(() => _naiveRebuilds = value),
+                ),
+                const Text('tex', style: TextStyle(fontSize: 12)),
+                // Texture rendering (Tier 4, Android). Applies at view
+                // creation: toggle, then leave and re-enter this screen.
+                Switch(
+                  key: const ValueKey('feed_toggle_texture'),
+                  value: NativeVideoPlayerConfig.global.androidTextureMode,
+                  onChanged: (value) => setState(() {
+                    NativeVideoPlayerConfig.global = _copyGlobalConfig(
+                      androidTextureMode: value,
+                    );
+                  }),
                 ),
                 const Text('3a', style: TextStyle(fontSize: 12)),
                 // Playback prioritization (Tier 3a, Android). Applies at

@@ -26,6 +26,7 @@ class NativeVideoPlayerConfig {
     this.androidEnableDiskCache = false,
     this.androidDiskCacheMaxBytes = 100 * 1024 * 1024,
     this.androidPrecacheBytes = 2 * 1024 * 1024,
+    this.androidTextureMode = false,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
@@ -140,6 +141,27 @@ class NativeVideoPlayerConfig {
   /// 2 MB): progressive sources cache their first bytes, HLS warms the
   /// playlists plus leading segments up to this budget.
   final int androidPrecacheBytes;
+
+  /// Renders Android players as Flutter engine textures instead of platform
+  /// views (default: false = current behavior).
+  ///
+  /// Texture-rendered tiles are ordinary Flutter content: the per-tile
+  /// hybrid-composition cost disappears and `RepaintBoundary`/raster
+  /// caching work again — the architectural win for scroll feeds on
+  /// mid-range devices. Rendering uses the Impeller-compatible
+  /// `TextureRegistry.SurfaceProducer` path (the same approach as the
+  /// official video_player plugin). Activity-level PiP, media
+  /// notifications, quality capping, caching, subtitles (Flutter overlay)
+  /// and background playback are unaffected.
+  ///
+  /// Per-view fallbacks: views with native controls
+  /// (`showNativeControls: true`) and Dart-fullscreen host views keep using
+  /// platform views. Native fullscreen (`enterFullScreen`) is replaced by
+  /// Dart fullscreen for texture views (there is no Android view to expand);
+  /// native sidecar caption rendering during native fullscreen does not
+  /// apply (the Flutter overlay renders captions). Applies to views created
+  /// after the config is set. Requires Flutter 3.27+.
+  final bool androidTextureMode;
 }
 
 /// ExoPlayer `DefaultLoadControl` parameters (Android only).

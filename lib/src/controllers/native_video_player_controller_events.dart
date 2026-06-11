@@ -308,6 +308,26 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
               return;
             }
 
+            // Texture-mode aspect ratio: there is no native
+            // AspectRatioFrameLayout for texture-rendered views, so the
+            // widget letterboxes the Texture from this event.
+            if (eventName == 'videoSize') {
+              final width = (map['width'] as num?)?.toDouble() ?? 0;
+              final height = (map['height'] as num?)?.toDouble() ?? 0;
+              final rotation = (map['rotationCorrection'] as num?)?.toInt();
+              if (width > 0 && height > 0) {
+                _videoSize = NativeVideoPlayerVideoSize(
+                  width: width,
+                  height: height,
+                  rotationCorrection: rotation ?? 0,
+                );
+                if (!_videoSizeController.isClosed) {
+                  _videoSizeController.add(_videoSize!);
+                }
+              }
+              return;
+            }
+
             // Determine if this is an activity event or control event
             final isActivityEvent = _isActivityEvent(eventName);
 

@@ -13,6 +13,35 @@ class VideoPlayerMethodChannel {
   final int primaryPlatformViewId;
   final MethodChannel _methodChannel;
 
+  /// Creates a texture-rendered backend (Android `androidTextureMode`).
+  ///
+  /// [creationParams] must include the Dart-allocated `viewId` (from
+  /// `platformViewsRegistry.getNextPlatformViewId()`, so it can never
+  /// collide with a real platform view). Returns the engine `textureId`
+  /// to render with a `Texture` widget. Throws on failure — the widget
+  /// falls back gracefully.
+  static Future<int> createTextureView(
+    Map<String, dynamic> creationParams,
+  ) async {
+    final result = await const MethodChannel(
+      'native_video_player',
+    ).invokeMapMethod<String, Object?>('createTextureView', creationParams);
+    return result!['textureId']! as int;
+  }
+
+  /// Disposes all native texture backends (hot-restart hygiene: the Dart
+  /// isolate forgets them but they survive natively). Called once per
+  /// isolate before the first [createTextureView]. Failures are swallowed.
+  static Future<void> disposeAllTextureViews() async {
+    try {
+      await const MethodChannel(
+        'native_video_player',
+      ).invokeMethod<void>('disposeAllTextureViews');
+    } catch (e) {
+      debugPrint('disposeAllTextureViews failed: $e');
+    }
+  }
+
   /// Tells the native side a platform view has been disposed.
   ///
   /// On iOS this releases the per-view EventChannel stream handler, whose

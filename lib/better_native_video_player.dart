@@ -25,6 +25,7 @@ export 'src/models/native_video_player_sidecar_subtitle.dart';
 export 'src/models/native_video_player_state.dart';
 export 'src/models/native_video_player_subtitle_style.dart';
 export 'src/models/native_video_player_subtitle_track.dart';
+export 'src/models/native_video_player_video_size.dart';
 export 'src/subtitles/storyboard_thumbnails.dart';
 export 'src/subtitles/subtitle_cue.dart';
 export 'src/subtitles/subtitle_parser.dart' show SubtitleFormat;
