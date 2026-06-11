@@ -30,7 +30,9 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 - ✅ **Scrub-preview storyboards**: parse WebVTT storyboards and sprite-sheet grids (Vimeo/Bunny style) for thumbnail previews
 - ✅ **Chromecast**: pure-Dart device discovery + full cast session (load with metadata/captions, play/pause/seek, volume, loop, live status stream) — no Cast SDK
 - ✅ **Offline downloads**: `VideoDownloadController` with progress streams, persistence, cancel/remove, and local playback
-- ✅ **Performance tuning**: global config for concurrent-playback caps, viewport-based quality capping, buffer presets
+- ✅ **Performance tuning**: global config for concurrent-playback caps, viewport-based quality capping (with lossless headroom control), lightweight inline views, playback priority, buffer presets
+- ✅ **Disk cache + precache** (Android): opt-in Media3 cache with LRU eviction and a byte-budgeted `NativeVideoPlayerCache.precache()` for upcoming feed items — cached items replay offline
+- ✅ **Texture rendering mode** (experimental, opt-in): render inline tiles as Flutter textures on both platforms — native-feeling feed scrolling, no hybrid-composition overhead, automatic platform-view fallback for PiP/fullscreen/DRM
 - ✅ **Separated event streams**: Activity events (play/pause/buffering) and Control events (quality/speed/PiP/fullscreen)
 - ✅ **Individual property streams**: Dedicated streams for position, duration, speed, state, fullscreen, PiP, AirPlay, and quality
 - ✅ Real-time playback position tracking with **buffered position indicator**
@@ -911,17 +913,64 @@ final thumb = board.thumbnailAt(scrubPosition);
 
 #### Performance Configuration
 
-Global tuning knobs in `NativeVideoPlayerConfig` (set before creating controllers), built for multi-video feeds:
+Global tuning knobs in `NativeVideoPlayerConfig` (set `NativeVideoPlayerConfig.global` before creating controllers), built for multi-video feeds:
 
 ```dart
-NativeVideoPlayerConfig.maxConcurrentPlayingPlayers = 2; // LRU playback cap
-NativeVideoPlayerConfig.qualityForViewportSize = true;   // cap HLS quality to the tile size
-NativeVideoPlayerConfig.prioritizeActivePlayback = true; // Android: playing > preloading bandwidth
-NativeVideoPlayerConfig.androidBufferConfig = AndroidBufferConfig.feed();
-NativeVideoPlayerConfig.iosBufferConfig = IosBufferConfig.feed();
+NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
+  maxConcurrentPlayingPlayers: 2,    // LRU playback cap
+  qualityForViewportSize: true,      // cap HLS quality to the tile size
+  viewportCapHeadroom: 1.5,          // iOS cap headroom (1.5 = visually lossless, 1.0 = max savings)
+  prioritizeActivePlayback: true,    // Android: playing > preloading bandwidth
+  lightweightInlineViews: true,      // lighter native views when controls are hidden
+  androidBufferConfig: NativeVideoPlayerAndroidBufferConfig.feed(),
+  iosBufferConfig: NativeVideoPlayerIosBufferConfig.feed(),
+);
 ```
 
-See `PERFORMANCE_ROADMAP.md` for the measured impact of each knob.
+All flags default to off / current behavior. See `PERFORMANCE_ROADMAP.md` for the measured impact of each knob on real devices.
+
+- **`qualityForViewportSize`** — caps each player's ABR variant selection to its on-screen size, so a feed of small tiles stops decoding several full-resolution streams at once. Measured on a Galaxy S21: −58% Dalvik heap at six concurrent players (172→77MB), and it turns an OOM-crash sequence into a survivable one. The cap lifts automatically for fullscreen and AirPlay; manual quality selection is never constrained.
+- **`viewportCapHeadroom`** (iOS) — multiplier applied to the viewport cap. The default `1.5` keeps the first HLS variant at-or-above the tile size selectable (visually lossless); set `1.0` for maximum savings at the cost of one ladder step of sharpness.
+- **`lightweightInlineViews`** — when a tile hides native controls (`showNativeControls: false`), renders it with a bare `AVPlayerLayer` (iOS) / `SurfaceView` + subtitle overlay (Android) instead of a full `AVPlayerViewController` / Media3 `PlayerView`. Fullscreen, PiP (including automatic PiP on backgrounding), Now Playing and AirPlay all still work — verified on physical devices.
+- **`prioritizeActivePlayback`** (Android) — playing tiles get network/IO priority over paused/preloading ones via Media3's `PriorityTaskManager`.
+
+#### Disk Cache and Precaching (Android)
+
+Opt-in Media3 disk cache so revisited feed items skip the network, plus a precache API for upcoming items:
+
+```dart
+NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
+  androidEnableDiskCache: true,
+  androidDiskCacheMaxBytes: 100 * 1024 * 1024, // LRU-evicted, default 100MB
+  androidPrecacheBytes: 2 * 1024 * 1024,       // per-precache budget, default 2MB
+);
+
+// Warm the cache for the next items in your feed (fire-and-forget):
+await NativeVideoPlayerCache.precache('https://example.com/video.m3u8');
+```
+
+Works for both progressive (MP4) and HLS sources — HLS precaching warms the playlists plus the leading segments up to the byte budget. DRM-protected and non-HTTP sources bypass the cache automatically. Cached items replay without a network connection. iOS is intentionally not covered (AVFoundation has no practical inline HLS cache); the call is a silent no-op there.
+
+#### Texture Rendering Mode (Experimental)
+
+By default every player is a native platform view. With texture mode, inline tiles render as ordinary Flutter textures instead:
+
+```dart
+NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
+  androidTextureMode: true,
+  iosTextureMode: true,
+);
+```
+
+What you gain: feed scrolling behaves like a normal Flutter list (platform views claim drag gestures that start on a video and kill fling momentum — textures don't), the hybrid-composition overhead disappears, and tiles participate in normal Flutter compositing (clips, transforms, `RepaintBoundary`).
+
+What it costs and the contract:
+
+- Video frames are composited by the Flutter raster thread, which is **more expensive while many large tiles play simultaneously** on mid-range Android devices. Modern iPhones absorb it easily. Measure for your content size — see `PERFORMANCE_ROADMAP.md`.
+- Texture mode only applies to tiles with hidden native controls outside fullscreen hosts; other tiles automatically stay platform views.
+- **iOS PiP:** tiles with `canStartPictureInPictureAutomatically` keep using (light) platform views so automatic PiP works unchanged. Manual `enterPictureInPicture()` from a texture tile transparently swaps the tile to a platform view first (same shared player, visually seamless), then starts PiP.
+- Fullscreen from a texture tile uses the Dart fullscreen player (native fullscreen needs a platform view).
+- **FairPlay DRM requires platform-view mode** (iOS); AirPlay from a texture tile keeps playing on the receiver but freezes the local preview on the last frame.
 
 #### Companion Package: WebView-Free Vimeo/YouTube Extraction
 

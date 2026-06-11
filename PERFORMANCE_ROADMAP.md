@@ -268,6 +268,27 @@ real device win is heap/network, exactly as predicted).
   ("Playback priority -> ..." per view), through the refactored
   PlayerBackendSession.
 
+### Tier 3b results (Android disk cache + precache, implemented)
+
+Shipped behind `androidEnableDiskCache` (default off) with
+`androidDiskCacheMaxBytes` (100MB default, LRU-evicted) and
+`NativeVideoPlayerCache.precache(url)` honoring `androidPrecacheBytes`
+(2MB default). Process-lifetime `SimpleCache` (hot-restart safe),
+`CacheDataSource` with `FLAG_IGNORE_CACHE_ON_ERROR` wrapped around both
+`handleLoad` and the quality-switch paths; DRM and non-http sources bypass
+the cache entirely. Precache uses `CacheWriter` for progressive sources
+(`DataSpec` length cap) and `HlsDownloader` for HLS (master + media
+playlists + leading segments, cancelled at the byte budget — cancellation
+at budget is reported as success).
+
+Verified on device/emulator: cache spans appear under
+`cache/bnvp_media_cache`; **airplane-mode replay of both a cached MP4 and
+a precached HLS stream reaches `playing` with fresh controllers**; with
+the flag off the same scenario fails (network required) and the cache
+manager stays silent; DRM streams add no spans. The win is
+product-shaped (instant revisits, offline tolerance, less network), not a
+frame-stats change.
+
 ## Tier 4 — opt-in texture rendering (the architectural step)
 
 The official `video_player_android` 2.9.5 ships BOTH render paths side by
@@ -293,6 +314,158 @@ Recommendation: do Android texture mode first — it's where platform-view
 composition hurts most (feeds on mid-range devices) and where nothing is
 lost. Decide on iOS only after Tier 1/2 numbers come in; viewport capping +
 AVPlayerLayer tiles may already be enough.
+
+### Tier 4 results (implemented on both platforms, opt-in)
+
+Shipped as `androidTextureMode` / `iosTextureMode` (default off). Texture
+views get Dart-allocated synthetic viewIds
+(`platformViewsRegistry.getNextPlatformViewId()`), so every existing
+controller flow (event channels, primary view, viewDisposed) is unchanged.
+Android renders via `TextureRegistry.createSurfaceProducer()`
+(Impeller-compatible); iOS via a `FlutterTexture` +
+`AVPlayerItemVideoOutput` renderer ported from video_player_avfoundation
+(BT.709 output settings, invisible fix-layer for AES-HLS, item-following
+KVO). Fullscreen from a texture tile falls back to Dart fullscreen;
+`showNativeControls` and Dart-fullscreen hosts always use platform views.
+
+**iOS PiP contract (verified on iPhone 13 Pro Max):** tiles with automatic
+PiP enabled never use texture (they take the Tier 2 light path); manual
+PiP from a texture tile live-swaps to a light platform view first (same
+shared player — visually seamless), then starts PiP through the normal
+path ("Custom PiP controller will start" → PiP active, on device, iOS 26).
+
+**Measured (Galaxy S21, profile, 2026-06-12):** texture mode moves video
+composition from SurfaceFlinger/HWUI into the Flutter raster thread:
+
+- `dumpsys gfxinfo` records **0 HWUI frames** in texture mode — the
+  hybrid-composition path (MergedTransactions, per-view HWUI work) is
+  gone entirely; the Flutter raster thread becomes the whole story.
+- Static N=6 playback is **more expensive**: the engine rasterizes every
+  video frame continuously (raster avg 13.9ms, p90 22ms vs ~6.5ms avg in
+  platform-view mode where video frames cost Flutter nothing). Six
+  concurrent large tiles on a 2021 mid-ranger is the wrong workload for
+  texture mode.
+- Feed scrolling is **dramatically better in a way frame stats undersell**:
+  with platform views, drags that start on a video surface are claimed
+  natively and kill fling momentum — the scripted 24-swipe pass advances
+  only ~4 cards (2–4 tile mounts). In texture mode the identical script
+  flings through the whole 30-tile list (**27 tile mounts**, TTFF median
+  ~880ms while scrolling) at the same raster average (6.83ms). Scroll
+  gesture ownership alone is a user-visible UX win for feed apps.
+
+**Measured (iPhone 13 Pro Max, profile):** texture N=6 steady state stays
+at **0 janky frames** with raster avg 3.41ms (vs 1.37ms light views) —
+modern iPhones absorb the texture path trivially.
+
+**Recommendation:** keep both flags off by default. Turn texture mode on
+for scroll-heavy feeds of small tiles (gesture ownership + no
+hybrid-composition overhead + ordinary Flutter compositing); keep platform
+views for screens that hold several large players playing simultaneously
+on mid-range Android. FairPlay DRM requires platform-view mode; AirPlay
+from a texture tile keeps playing but shows the last frame locally.
+
+## Final A/B comparison — pre-wave baseline vs branch (#21, 2026-06-12)
+
+Method: the pre-feature-wave commit (`22fd6dc` "Dar format", plugin code
+byte-identical at `303fb83` which adds the measurement harness) was built
+from a worktree and run on the same two physical devices, profile mode,
+driven by the same Marionette scripts as the branch build: N=6 stress feed
+(15s warmup, then a 60s `dumpsys gfxinfo reset`→print window +
+`PerfMetrics` reset→dump), a scripted 24-swipe scroll pass over the
+30-tile feed, and ×6 enter/play-10s/exit re-entry cycles with
+`dumpsys meminfo` after each exit. Branch configs: flags off, `vp+light`
+(`qualityForViewportSize` + `lightweightInlineViews`), and `tex`
+(`androidTextureMode`/`iosTextureMode`, vp on). N=6 windows were repeated
+(A/B/A) to bound variance.
+
+### Galaxy S21 (Android 12, profile) — N=6 stress feed, 60s steady state
+
+| Config | HWUI janky % (frames) | HWUI p50/p90/p99 | Flutter raster avg | Flutter jank16 | Dalvik PSS | Total PSS |
+|---|---|---|---|---|---|---|
+| baseline | 84.1% (372) | 10/15/20ms | 5.08ms* | 13.3%* | 172.7MB | 701MB |
+| branch, flags off (run 1) | 53.0% (457) | 11/15/23ms | 5.95ms | 7.6% | 167.1MB | 751MB |
+| branch, flags off (run 2) | 90.5% (423) | 12/18/27ms | 6.88ms | 15.3% | 186.3MB | 796MB |
+| branch, vp+light (run 1) | 94.0% (433) | 13/19/31ms | 7.03ms | 20.2% | **77.5MB** | **661MB** |
+| branch, vp+light (run 2) | 91.2% (431) | 13/19/32ms | 6.61ms | 20.0% | **77.3MB** | 669MB |
+| branch, tex (vp on) | 0 HWUI frames† | n/a | 13.86ms† | 74%† | 89.5MB | 712MB |
+
+\* baseline Flutter window includes screen entry (no post-warmup reset in
+that pass); treat as indicative. † texture mode bypasses HWUI entirely and
+rasterizes every video frame in Flutter — continuous-pipeline numbers are
+a different workload, see Tier 4 results.
+
+**Reading the frame columns honestly: the flags-off repeat spread (53→90%
+HWUI jank, 5.95→6.88ms raster) is as large as any config delta, so N=6
+frame stats on this device are variance-dominated — no reliable frame
+gain or regression from vp+light.** The memory columns are the opposite:
+they reproduce to within 0.2MB across repeat windows. **Viewport capping
+cuts the Dalvik heap by 109MB (−58%) and total PSS by ~130MB, every
+time.**
+
+### Galaxy S21 — 30-tile scroll (identical 24-swipe script)
+
+| Config | HWUI janky % | Flutter raster avg | jank16 | tiles mounted | Graphics PSS | Total PSS |
+|---|---|---|---|---|---|---|
+| baseline | 85.6% (1502) | 7.32ms | 9.4% | 2 | 358.8MB | 881MB |
+| branch, flags off | 69.3% (1337) | 6.82ms | 9.0% | 4 | 272.1MB | 813MB |
+| branch, vp+light | 81.1% (1216) | 7.76ms | 18.1% | 4 | 242.3MB | **690MB** |
+| branch, tex (vp on) | 0 HWUI frames | 6.83ms | 19.5% | **27** | 429.6MB (churn peak) | 860MB |
+
+The "tiles mounted" column is the headline: platform views (all configs
+but tex) claim drag gestures that start on a video surface, killing fling
+momentum — the same script that crawls 4 cards in platform-view mode
+flings through all 30 tiles in texture mode at the same raster average,
+while creating 27 players mid-scroll.
+
+### Galaxy S21 — re-entry leak (×6 cycles, Java HeapAlloc after each exit)
+
+| Cycle | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|---|
+| baseline | 4.6 | 6.95 | 8.07 | 9.22 | 10.27 | 11.42 | 12.56MB |
+| branch | 6.21 | 6.30 | 6.27 | 6.25 | 6.30 | 6.25 | 6.29MB |
+
+Baseline ratchets **+1.1–2.4MB per visit, never recovered** — the leaked
+ExoPlayer per disposed controller that eventually OOM-killed the app.
+Branch is flat to within 0.09MB across all six cycles. Additionally the
+on-screen MissingPluginException counter read 9 at first screen and 19
+after scroll churn on baseline; **0 throughout on the branch**.
+
+### iPhone 13 Pro Max (iOS 26.5, profile)
+
+| Config | N=6 steady state | raster avg | scroll |
+|---|---|---|---|
+| baseline | 0 jank (658f) | 1.25ms | 0 jank (1059f, 1.09ms) |
+| branch, flags off | 0 jank (484f) | 1.28ms | — |
+| branch, vp+light | 0 jank (633f) | 1.37ms | — |
+| branch, tex | 0 jank (624f) | 3.41ms | — |
+
+First-entry TTFF (6 tiles): baseline 433–1068ms, branch 602–861ms —
+network-dominated, same range. The iPhone is frame-saturated in every
+config; its gains are the structural ones (no leaked views/players, MPE 0,
+viewport cap's network/decode reduction, disk cache).
+
+### Verdict — are there performance gains, yes or no?
+
+- **Stability / leaks: yes, decisive.** The baseline leaks one native
+  player per disposed controller (OOM crash sequence on 256MB-heap
+  devices) and accumulates MissingPluginExceptions; the branch is flat
+  heap, MPE 0. This alone changes app viability for feed UIs on mid-range
+  Android.
+- **Memory: yes, large and reproducible.** `qualityForViewportSize` cuts
+  Dalvik PSS 58% (172→77MB at N=6) and total PSS ~130–190MB on the S21;
+  exact numbers reproduce across repeat windows and survive the
+  crash-sequence re-entry test (130MB steady vs OOM).
+- **Frame times on mid-range Android: no reliable change** for
+  platform-view configs at this content size — window variance exceeds
+  config deltas; light views are about teardown cost and leak surface,
+  not steady-state raster. Honest result, recorded as such.
+- **Texture mode: a real trade.** Costs raster on static multi-player
+  boards (S21), wins scroll-feed UX outright (gesture ownership, 27 vs 4
+  tiles reachable, HWUI path eliminated) and is free on modern iPhones.
+  Off by default; enable per use-case.
+- **TTFF / network: product-shaped wins** from the disk cache + precache
+  (offline replay proven) and from capping ABR to tile size; not visible
+  in frame stats.
 
 ## Sequencing and measurement gate
 
