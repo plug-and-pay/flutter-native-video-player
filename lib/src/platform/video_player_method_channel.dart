@@ -13,6 +13,23 @@ class VideoPlayerMethodChannel {
   final int primaryPlatformViewId;
   final MethodChannel _methodChannel;
 
+  /// Tells the native side a platform view has been disposed.
+  ///
+  /// On iOS this releases the per-view EventChannel stream handler, whose
+  /// engine-side registration strongly retains the native view — without
+  /// this call the view (and its observers) can never deallocate. Android
+  /// cleans up in `PlatformView.dispose` and treats this as a no-op.
+  /// Static because it can target any view, not just the primary one.
+  static Future<void> notifyViewDisposed(int platformViewId) async {
+    try {
+      await const MethodChannel(
+        'native_video_player',
+      ).invokeMethod<void>('viewDisposed', {'viewId': platformViewId});
+    } catch (e) {
+      debugPrint('Error notifying view disposal for view $platformViewId: $e');
+    }
+  }
+
   /// Loads a video URL
   Future<void> load({
     required String url,

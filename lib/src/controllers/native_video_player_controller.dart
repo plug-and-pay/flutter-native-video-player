@@ -1122,9 +1122,16 @@ class NativeVideoPlayerController {
     _platformViewIds.remove(platformViewId);
     _platformViewContexts.remove(platformViewId);
 
-    // Cancel the event channel subscription for this platform view
-    unawaited(_safeCancelSubscription(_eventSubscriptions[platformViewId]));
-    _eventSubscriptions.remove(platformViewId);
+    // Cancel the event channel subscription first, then release the native
+    // per-view channel handlers: on iOS the EventChannel handler strongly
+    // retains the platform view, so its deinit is unreachable until the
+    // handler is deregistered.
+    final subscription = _eventSubscriptions.remove(platformViewId);
+    unawaited(
+      _safeCancelSubscription(subscription).then(
+        (_) => VideoPlayerMethodChannel.notifyViewDisposed(platformViewId),
+      ),
+    );
 
     // If the disposed view was the primary view, switch to another active view
     if (_primaryPlatformViewId == platformViewId &&

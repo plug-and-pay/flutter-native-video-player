@@ -36,6 +36,19 @@ import QuartzCore
     private var methodChannel: FlutterMethodChannel
     private var channelName: String
     var eventSink: FlutterEventSink?
+
+    // The per-view EventChannel. Its engine-side handler registration
+    // strongly retains this view (setStreamHandler(self)), which makes
+    // deinit unreachable until tearDownChannels() deregisters it.
+    private var eventChannel: FlutterEventChannel?
+    private var channelsTornDown = false
+
+    // KVO bookkeeping so teardown removes exactly what was registered:
+    // removing a never-registered observer throws NSRangeException, and the
+    // observed item can differ from player.currentItem by the time the view
+    // goes away (re-loads, shared players).
+    var observedItem: AVPlayerItem?
+    var hasPlayerStateObservers = false
     var availableQualities: [[String: Any]] = []
     var qualityLevels: [VideoPlayer.QualityLevel] = []
     var isAutoQuality = false
@@ -393,12 +406,13 @@ import QuartzCore
             self.handleMethodCall(call: call, result: result)
         })
         
-        // Set up event channel
+        // Set up event channel (stored so tearDownChannels can deregister it)
         let eventChannel = FlutterEventChannel(
             name: "native_video_player_\(viewId)",
             binaryMessenger: messenger
         )
         eventChannel.setStreamHandler(self)
+        self.eventChannel = eventChannel
 
         // Set up observers for shared players if there's already a loaded video
         // The initial state event will be sent when onListen is called
@@ -529,6 +543,24 @@ import QuartzCore
         pipController = controller
         npLog("✅ Created inline PiP controller for view \(viewId) (light: \(usesLightView))")
         return controller
+    }
+
+    // MARK: - Channel teardown
+
+    /// Deregisters this view's engine-side channel handlers.
+    ///
+    /// The EventChannel stream handler block strongly captures `self`, so
+    /// deinit can never run while it is registered — the Dart side invokes
+    /// `viewDisposed` when the platform view is disposed, which lands here.
+    /// Idempotent.
+    func tearDownChannels() {
+        guard !channelsTornDown else { return }
+        channelsTornDown = true
+        npLog("🧹 Tearing down channels for view \(viewId)")
+        eventSink = nil
+        eventChannel?.setStreamHandler(nil)
+        eventChannel = nil
+        methodChannel.setMethodCallHandler(nil)
     }
 
     // MARK: - Audio Session Management
@@ -967,21 +999,14 @@ import QuartzCore
         }
 
         // Only remove observers, don't dispose the player if it's shared
-        // The shared player will be kept alive for reuse
-        if let item = player?.currentItem {
-            item.removeObserver(self, forKeyPath: "status")
-            item.removeObserver(self, forKeyPath: "playbackBufferEmpty")
-            item.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
-        }
-
-        // Remove player observer for timeControlStatus
-        player?.removeObserver(self, forKeyPath: "timeControlStatus")
-
-        // Remove player observer for externalPlaybackActive
-        player?.removeObserver(self, forKeyPath: "externalPlaybackActive")
+        // The shared player will be kept alive for reuse. Removal is
+        // bookkeeping-guarded: this view may never have registered (created
+        // but never loaded), and blind removal throws NSRangeException.
+        removeItemObservers()
+        removePlayerStateObservers()
 
         NotificationCenter.default.removeObserver(self)
-        methodChannel.setMethodCallHandler(nil)
+        tearDownChannels()
 
         // Clean up DRM handler
         drmHandler?.cleanup()

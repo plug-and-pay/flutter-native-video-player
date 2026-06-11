@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Lightweight inline views** (`NativeVideoPlayerConfig.lightweightInlineViews`, default off): views created with native controls hidden (`showNativeControls: false` or a custom `overlayBuilder`) host a bare video surface — `UIView` + `AVPlayerLayer` on iOS instead of a per-tile `AVPlayerViewController`, `SurfaceView` + `AspectRatioFrameLayout` (+ `SubtitleView` for captions) on Android instead of a full Media3 `PlayerView`. Measured on the N=6 stress feed (iOS simulator): janky frames 37% → 24%, average frame total 9.1ms → 6.6ms. PiP, Now Playing, fullscreen, subtitles, and the native sidecar caption handoff keep working. Limitation: `setShowNativeControls(true)` at runtime is ignored for a view created lightweight.
 
+### Fixed
+- **iOS platform views now deallocate when disposed.** Every platform view was permanently retained by its per-view EventChannel handler registration (the engine's handler block strongly captures the view and was never deregistered), so a view's `deinit` could never run — each created view leaked along with its notification observers. The Dart widget now notifies the native side on platform-view disposal (`viewDisposed`), which deregisters the per-view channels and lets the view deallocate; KVO registration is now bookkept so teardown removes exactly what was added (re-loads no longer stack duplicate item/player observers either). Verified with `heap(1)`: view counts return to baseline after open/close cycles, in both display modes.
+
 ## [1.0.1] - 2026-06-11
 
 ### Changed

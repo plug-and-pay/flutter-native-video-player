@@ -3,17 +3,33 @@ import Foundation
 
 extension VideoPlayerView {
     func addObservers(to item: AVPlayerItem) {
+        // Called once per load: drop the previous item's registrations first
+        // so removal at teardown stays balanced (KVO throws on removing a
+        // never-registered observer, and double-adds deliver twice).
+        removeItemObservers()
+
         item.addObserver(self, forKeyPath: "status", options: [.new, .old], context: nil)
         item.addObserver(self, forKeyPath: "playbackBufferEmpty", options: [.new], context: nil)
         item.addObserver(self, forKeyPath: "playbackLikelyToKeepUp", options: [.new], context: nil)
+        observedItem = item
 
-        // Observe player's timeControlStatus to track play/pause state changes
-        player?.addObserver(self, forKeyPath: "timeControlStatus", options: [.new, .old], context: nil)
+        // Player-level observers are registered once per view, not per load
+        if !hasPlayerStateObservers, let player = player {
+            // Observe player's timeControlStatus to track play/pause state changes
+            player.addObserver(self, forKeyPath: "timeControlStatus", options: [.new, .old], context: nil)
 
-        // Observe AirPlay connection status
-        player?.addObserver(self, forKeyPath: "externalPlaybackActive", options: [.new, .initial], context: nil)
+            // Observe AirPlay connection status
+            player.addObserver(self, forKeyPath: "externalPlaybackActive", options: [.new, .initial], context: nil)
+            hasPlayerStateObservers = true
+        }
 
         // Observe audio route changes to detect AirPlay device changes
+        // (remove first so re-loads don't stack duplicate deliveries)
+        NotificationCenter.default.removeObserver(
+            self,
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleAudioRouteChange),
@@ -27,6 +43,28 @@ extension VideoPlayerView {
             name: .AVPlayerItemFailedToPlayToEndTime,
             object: item
         )
+    }
+
+    /// Removes the KVO registrations made on [observedItem], if any.
+    func removeItemObservers() {
+        guard let item = observedItem else { return }
+        item.removeObserver(self, forKeyPath: "status")
+        item.removeObserver(self, forKeyPath: "playbackBufferEmpty")
+        item.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .AVPlayerItemFailedToPlayToEndTime,
+            object: item
+        )
+        observedItem = nil
+    }
+
+    /// Removes the player-level KVO registrations, if registered.
+    func removePlayerStateObservers() {
+        guard hasPlayerStateObservers else { return }
+        player?.removeObserver(self, forKeyPath: "timeControlStatus")
+        player?.removeObserver(self, forKeyPath: "externalPlaybackActive")
+        hasPlayerStateObservers = false
     }
 
     public override func observeValue(

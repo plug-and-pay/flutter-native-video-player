@@ -181,13 +181,19 @@ Android (emulator). Limitation (documented in the config): runtime
 `setShowNativeControls(true)` is ignored for a view created lightweight.
 
 **Finding while verifying (pre-existing, NOT Tier 2):** every iOS platform
-view — heavy or light — is permanently retained by its per-view
-EventChannel handler (`eventChannel.setStreamHandler(self)` is never
+view — heavy or light — was permanently retained by its per-view
+EventChannel handler (`eventChannel.setStreamHandler(self)` was never
 deregistered; the engine's handler block strongly captures the view, so
-deinit is unreachable). The AVPlayer itself is released on dispose; the
-leak is a per-view husk incl. live NotificationCenter observers. Confirmed
+deinit was unreachable). The AVPlayer itself was released on dispose; the
+leak was a per-view husk incl. live NotificationCenter observers. Confirmed
 with `leaks --trace` on both view modes and present on master/1.0.1.
-Fix tracked separately (needs a Dart-side view-disposed hook).
+FIXED on this branch: the Dart widget now sends `viewDisposed` on
+platform-view disposal, which deregisters the per-view channels and makes
+deinit reachable; KVO registration is bookkept (`observedItem` /
+`hasPlayerStateObservers`) so the now-running deinit removes exactly what
+was added. Verified with heap(1): VideoPlayerView returns to baseline
+after open/close churn in both modes (AVPlayerViewController and
+AVPictureInPictureController counts hit zero).
 
 ## Tier 3 — playing-priority + smarter loading
 

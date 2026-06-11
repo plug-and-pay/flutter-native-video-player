@@ -161,6 +161,13 @@ class NativeVideoPlayerPlugin : FlutterPlugin, ActivityAware {
                     }
                     return@setMethodCallHandler
                 }
+                "viewDisposed" -> {
+                    // iOS needs this hook to deregister its per-view
+                    // EventChannel handler; Android already cleans up in
+                    // PlatformView.dispose, so it's a no-op here.
+                    result.success(null)
+                    return@setMethodCallHandler
+                }
             }
 
             val args = call.arguments as? Map<*, *>

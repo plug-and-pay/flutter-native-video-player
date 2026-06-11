@@ -71,6 +71,20 @@ import UIKit
                 return
             }
 
+            if call.method == "viewDisposed" {
+                // Sent by the Dart widget when its platform view is disposed.
+                // Releases the per-view channel handlers: the EventChannel
+                // stream handler strongly retains the view, so this is what
+                // makes the view's deinit reachable.
+                if let args = call.arguments as? [String: Any],
+                   let viewId = args["viewId"] as? Int64 {
+                    registeredViews[viewId]?.view?.tearDownChannels()
+                    registeredViews.removeValue(forKey: viewId)
+                }
+                result(nil)
+                return
+            }
+
             if call.method == "disposeController" {
                 // Releases the shared native player by controller ID. Used by Dart
                 // dispose() when no platform view is alive (after releaseResources())
