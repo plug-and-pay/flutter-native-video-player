@@ -84,6 +84,8 @@ class _DownloadScreenState extends State<DownloadScreen> {
     final path = _localPath;
     if (path == null) return;
     setState(() => _playerVisible = true);
+    // Give the platform view a beat to mount before loading into it.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     await _player.initialize();
     await _player.load(url: 'file://$path', force: true);
   }

@@ -10,14 +10,15 @@ import 'package:flutter/material.dart';
 class CastScreen extends StatefulWidget {
   const CastScreen({super.key});
 
-  // Google's Cast-demo media: HTTPS + CORS-readable by receivers, with a
-  // matching caption VTT (exactly what CAF tutorials use).
-  static const String mediaUrl =
-      'https://storage.googleapis.com/gtv-videos-bucket/sample/DesigningForGoogleCast.mp4';
-  static const String captionsUrl =
-      'https://storage.googleapis.com/gtv-videos-bucket/sample/DesigningForGoogleCast-en.vtt';
+  // Receivers must be able to FETCH these themselves (HTTPS or LAN HTTP,
+  // CORS required for caption tracks). Google's gtv-videos-bucket samples
+  // are the usual choice, but this network blocks googleapis — so the
+  // harness serves Sintel + a VTT from the dev Mac with CORS headers
+  // (python serve.py in /tmp/cast_media, port 8123).
+  static const String mediaUrl = 'http://192.168.1.31:8123/trailer.mp4';
+  static const String captionsUrl = 'http://192.168.1.31:8123/sample_en.vtt';
   static const String posterUrl =
-      'https://storage.googleapis.com/gtv-videos-bucket/sample/images_480x270/DesigningForGoogleCast2-480x270.jpg';
+      'https://i.vimeocdn.com/video/452001751-8216e0571c251a09d7a8387550942d89f7f86f6398f8ed886e639b0dd50d3c90-d';
 
   @override
   State<CastScreen> createState() => _CastScreenState();
