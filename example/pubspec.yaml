@@ -35,6 +35,8 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: 1.0.8
   marionette_flutter: ^0.5.0
+  # Provides the writable directory for the download demo screen.
+  path_provider: ^2.1.4
 
 dev_dependencies:
   integration_test:

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'audio_track_screen.dart';
+import 'cast_screen.dart';
+import 'download_screen.dart';
 import 'extractor_screen.dart';
 import 'lifecycle_stress_screen.dart';
 import 'nav_loop_screen.dart';
@@ -85,6 +87,16 @@ class PerfMenuScreen extends StatelessWidget {
             key: const ValueKey('feature_extractor'),
             title: const Text('Vimeo extractor (no WebView)'),
             onTap: () => _push(context, const ExtractorScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_downloads'),
+            title: const Text('Downloads (offline playback)'),
+            onTap: () => _push(context, const DownloadScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('feature_cast'),
+            title: const Text('Chromecast (discover + control)'),
+            onTap: () => _push(context, const CastScreen()),
           ),
         ],
       ),

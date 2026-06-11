@@ -14,6 +14,9 @@ dependencies:
     sdk: flutter
   dismissible_page: ^1.0.2
   floating: ^6.0.0
+  # Pure-Dart mDNS for Chromecast device discovery (io-only via the
+  # conditional-import facade; web/WASM gets the stub).
+  multicast_dns: ^0.3.2
 
 dev_dependencies:
   flutter_test:
