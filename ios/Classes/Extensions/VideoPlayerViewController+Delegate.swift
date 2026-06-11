@@ -215,7 +215,8 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
     // Handle when the user dismisses fullscreen by tapping Done.
     // Refactored per community PR #32 by @anirudhrao-github: release the player
     // and notify Dart immediately instead of after the dismiss animation.
-    @available(iOS 13.0, *)
+    // No @available annotation: the protocol declares this method as iOS 12.0+, and a
+    // narrower witness fails Xcode 26.3's strict availability check (issue #35).
     public func playerViewController(_ playerViewController: AVPlayerViewController, willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {
         guard playerViewController == self.fullscreenPlayerViewController else { return }
 
