@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-06-12
+
+The performance release: every item of `PERFORMANCE_ROADMAP.md` is
+implemented and verified on physical devices (Galaxy S21, iPhone 13 Pro
+Max) — full before/after measurements live in the roadmap's "Final A/B
+comparison" section. All new behavior is opt-in; defaults are unchanged
+except for the two leak fixes below, which apply automatically.
 
 ### Added
 - **Lightweight inline views** (`NativeVideoPlayerConfig.lightweightInlineViews`, default off): views created with native controls hidden (`showNativeControls: false` or a custom `overlayBuilder`) host a bare video surface — `UIView` + `AVPlayerLayer` on iOS instead of a per-tile `AVPlayerViewController`, `SurfaceView` + `AspectRatioFrameLayout` (+ `SubtitleView` for captions) on Android instead of a full Media3 `PlayerView`. Measured on the N=6 stress feed (iOS simulator): janky frames 37% → 24%, average frame total 9.1ms → 6.6ms. PiP, Now Playing, fullscreen, subtitles, and the native sidecar caption handoff keep working. Limitation: `setShowNativeControls(true)` at runtime is ignored for a view created lightweight.
