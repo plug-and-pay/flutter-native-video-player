@@ -11,6 +11,10 @@ extension VideoPlayerView {
         item.addObserver(self, forKeyPath: "status", options: [.new, .old], context: nil)
         item.addObserver(self, forKeyPath: "playbackBufferEmpty", options: [.new], context: nil)
         item.addObserver(self, forKeyPath: "playbackLikelyToKeepUp", options: [.new], context: nil)
+        // Report the video's display size so the Dart subtitle overlay can pin
+        // captions to the video's content rect (platform views don't emit this
+        // the way the texture renderer does).
+        item.addObserver(self, forKeyPath: "presentationSize", options: [.new, .initial], context: nil)
         observedItem = item
 
         // Player-level observers are registered once per view, not per load
@@ -51,6 +55,7 @@ extension VideoPlayerView {
         item.removeObserver(self, forKeyPath: "status")
         item.removeObserver(self, forKeyPath: "playbackBufferEmpty")
         item.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
+        item.removeObserver(self, forKeyPath: "presentationSize")
         NotificationCenter.default.removeObserver(
             self,
             name: .AVPlayerItemFailedToPlayToEndTime,
@@ -103,7 +108,7 @@ extension VideoPlayerView {
                 // This is important for seeking while paused - user needs to know buffering is done
                 if item.isPlaybackLikelyToKeepUp {
                     sendEvent("loading")
-                    
+
                     // Restore the playback state after buffering completes
                     // This tells the UI whether the video is playing or paused
                     if let player = player {
@@ -113,6 +118,18 @@ extension VideoPlayerView {
                             sendEvent("pause")
                         }
                     }
+                }
+            case "presentationSize":
+                // Display size (rotation already applied by AVFoundation), so the
+                // Dart overlay can letterbox-match captions. Mirror the texture
+                // renderer's payload shape.
+                let size = item.presentationSize
+                if size.width > 0 && size.height > 0 {
+                    sendEvent("videoSize", data: [
+                        "width": Double(size.width),
+                        "height": Double(size.height),
+                        "rotationCorrection": 0,
+                    ])
                 }
             default: break
             }

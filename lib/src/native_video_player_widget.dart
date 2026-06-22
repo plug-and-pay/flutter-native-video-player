@@ -80,6 +80,9 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     super.initState();
     // Pass the overlay builder to the controller
     widget.controller.setOverlayBuilder(widget.overlayBuilder);
+    // Cache the subtitle style on the controller so the Dart fullscreen host
+    // (which builds its own NativeVideoPlayer) renders captions identically.
+    widget.controller.setSubtitleStyle(widget.subtitleStyle);
 
     // Texture rendering mode: decided per view at creation, after the
     // overlay determined the effective showNativeControls. Views with
@@ -150,6 +153,16 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
         }
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(NativeVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Keep the controller's cached style in sync (e.g. theme change) so the
+    // fullscreen host picks up the latest one.
+    if (widget.subtitleStyle != oldWidget.subtitleStyle) {
+      widget.controller.setSubtitleStyle(widget.subtitleStyle);
+    }
   }
 
   void _handleControlEvent(PlayerControlEvent event) {
@@ -550,6 +563,27 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
       },
     );
 
+    // Captions grow when the player is fullscreen AND in landscape; inline and
+    // fullscreen-portrait keep the base typography. Reading orientation here
+    // registers a MediaQuery dependency, so the inline player and the
+    // fullscreen route's inner player both rebuild and restyle on rotation.
+    final isFullscreenLandscape =
+        widget.isFullscreenContext &&
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final effectiveSubtitleStyle = isFullscreenLandscape
+        ? widget.subtitleStyle.copyWith(
+            fontSize:
+                widget.subtitleStyle.fullscreenLandscapeFontSize ??
+                widget.subtitleStyle.fontSize,
+            fontWeight:
+                widget.subtitleStyle.fullscreenLandscapeFontWeight ??
+                widget.subtitleStyle.fontWeight,
+            lineHeight:
+                widget.subtitleStyle.fullscreenLandscapeLineHeight ??
+                widget.subtitleStyle.lineHeight,
+          )
+        : widget.subtitleStyle;
+
     // Sidecar subtitle layer: renders the active external-VTT/SRT cue lines
     // above the video and below the controls. Suppressed during PiP (the
     // Flutter UI is not part of the iOS PiP window; on Android the native
@@ -559,9 +593,26 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
       initialData: widget.controller.isPipEnabled,
       builder: (context, pipSnapshot) {
         if (pipSnapshot.data ?? false) return const SizedBox.shrink();
-        return SubtitleOverlay(
-          cueLines: widget.controller.activeSidecarCueLines,
-          style: widget.subtitleStyle,
+        // Track the video's display size so the overlay can pin captions to
+        // the video's content rect instead of the full (possibly
+        // letterboxed) widget — e.g. portrait fullscreen with a 16:9 video.
+        return StreamBuilder<NativeVideoPlayerVideoSize>(
+          stream: widget.controller.videoSizeStream,
+          initialData: widget.controller.videoSize,
+          builder: (context, sizeSnapshot) {
+            final videoSize = sizeSnapshot.data;
+            final double? videoAspectRatio =
+                videoSize != null &&
+                    videoSize.width > 0 &&
+                    videoSize.height > 0
+                ? videoSize.aspectRatio
+                : null;
+            return SubtitleOverlay(
+              cueLines: widget.controller.activeSidecarCueLines,
+              style: effectiveSubtitleStyle,
+              videoAspectRatio: videoAspectRatio,
+            );
+          },
         );
       },
     );

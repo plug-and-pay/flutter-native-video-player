@@ -16,6 +16,12 @@ class FullscreenManager {
   /// Stores the orientation preferences before entering fullscreen
   static List<DeviceOrientation>? _savedOrientations;
 
+  /// True while a player is in fullscreen. Used to stop a player that is
+  /// constructed/mounted while another player is fullscreen from yanking the
+  /// device orientation away from the active fullscreen (its preferred
+  /// orientations are still recorded as the restore baseline, just not applied).
+  static bool _isFullscreen = false;
+
   /// Enters fullscreen mode
   ///
   /// This method:
@@ -28,6 +34,7 @@ class FullscreenManager {
   static Future<void> enterFullscreen({bool lockToLandscape = true}) async {
     // Save current orientation preferences before changing them
     _savedOrientations = List.from(_currentOrientations);
+    _isFullscreen = true;
     // Hide system UI
     await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
@@ -60,6 +67,7 @@ class FullscreenManager {
   /// - Restores system UI visibility
   /// - Restores original orientation preferences that were saved before entering fullscreen
   static Future<void> exitFullscreen() async {
+    _isFullscreen = false;
     // Restore system UI
     await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.edgeToEdge,
@@ -97,6 +105,14 @@ class FullscreenManager {
     List<DeviceOrientation> orientations,
   ) async {
     _currentOrientations = List.from(orientations);
+
+    // Record the baseline but don't apply it while a player is fullscreen — a
+    // newly constructed/mounted player (e.g. another video tile churning during
+    // rotation) must not pull the device out of the active fullscreen.
+    if (_isFullscreen) {
+      return;
+    }
+
     await SystemChrome.setPreferredOrientations(orientations);
   }
 

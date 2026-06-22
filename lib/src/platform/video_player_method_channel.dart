@@ -131,6 +131,21 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Suppresses/restores native subtitle rendering around Android PiP, where the
+  /// system SubtitleView would otherwise render oversized captions in the small
+  /// PiP window. The native side snapshots the pre-PiP selection and restores it
+  /// when [suppressed] is false again.
+  Future<void> setSubtitlesSuppressedForPip(bool suppressed) async {
+    try {
+      await _methodChannel.invokeMethod<void>('setSubtitlesSuppressedForPip', {
+        'viewId': primaryPlatformViewId,
+        'suppressed': suppressed,
+      });
+    } catch (e) {
+      debugPrint('Failed to toggle PiP subtitle suppression: $e');
+    }
+  }
+
   /// Starts or resumes video playback
   Future<void> play() async {
     try {

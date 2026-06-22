@@ -24,6 +24,9 @@ class NativeVideoPlayerSubtitleStyle {
     this.alignment = Alignment.bottomCenter,
     this.padding = const EdgeInsets.only(bottom: 24, left: 16, right: 16),
     this.textAlign = TextAlign.center,
+    this.fullscreenLandscapeFontSize,
+    this.fullscreenLandscapeFontWeight,
+    this.fullscreenLandscapeLineHeight,
   });
 
   // --- Text ---
@@ -59,6 +62,17 @@ class NativeVideoPlayerSubtitleStyle {
   /// Text alignment within multi-line cues.
   final TextAlign textAlign;
 
+  // --- Fullscreen-landscape overrides ---
+
+  /// When the player is fullscreen AND in landscape, these override the base
+  /// typography so captions can grow for the large-video experience. Each is
+  /// null by default, falling back to the matching base value
+  /// ([fontSize] / [fontWeight] / [lineHeight]). They have no effect inline or
+  /// in fullscreen-portrait, where the base values are always used.
+  final double? fullscreenLandscapeFontSize;
+  final FontWeight? fullscreenLandscapeFontWeight;
+  final double? fullscreenLandscapeLineHeight;
+
   NativeVideoPlayerSubtitleStyle copyWith({
     double? fontSize,
     FontWeight? fontWeight,
@@ -72,6 +86,9 @@ class NativeVideoPlayerSubtitleStyle {
     Alignment? alignment,
     EdgeInsets? padding,
     TextAlign? textAlign,
+    double? fullscreenLandscapeFontSize,
+    FontWeight? fullscreenLandscapeFontWeight,
+    double? fullscreenLandscapeLineHeight,
   }) {
     return NativeVideoPlayerSubtitleStyle(
       fontSize: fontSize ?? this.fontSize,
@@ -86,6 +103,12 @@ class NativeVideoPlayerSubtitleStyle {
       alignment: alignment ?? this.alignment,
       padding: padding ?? this.padding,
       textAlign: textAlign ?? this.textAlign,
+      fullscreenLandscapeFontSize:
+          fullscreenLandscapeFontSize ?? this.fullscreenLandscapeFontSize,
+      fullscreenLandscapeFontWeight:
+          fullscreenLandscapeFontWeight ?? this.fullscreenLandscapeFontWeight,
+      fullscreenLandscapeLineHeight:
+          fullscreenLandscapeLineHeight ?? this.fullscreenLandscapeLineHeight,
     );
   }
 }

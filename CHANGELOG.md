@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-06-22
+
+Android Picture-in-Picture subtitle fix.
+
+### Fixed
+- **Subtitles no longer render oversized in Android Picture-in-Picture.** Android never reported PiP state (only iOS emitted PiP events), so the Flutter caption overlay stayed visible and drew its large fullscreen-landscape font into the small PiP window. The controller now tracks Android PiP via the `floating` package's status while fullscreen — entering PiP hides the caption overlay and suppresses native (embedded/sidecar) caption rendering; exiting restores the previous selection. As a side effect, `isPipEnabled` / `isPipEnabledStream` now reflect PiP state on Android. iOS unchanged.
+
+## [1.2.0] - 2026-06-18
+
+Orientation- and fullscreen-aware sidecar caption sizing.
+
+### Added
+- **Captions can grow when fullscreen in landscape.** `NativeVideoPlayerSubtitleStyle` gains three optional overrides — `fullscreenLandscapeFontSize`, `fullscreenLandscapeFontWeight`, and `fullscreenLandscapeLineHeight` — applied only while the player is fullscreen *and* in landscape orientation. Each falls back to the matching base value (`fontSize` / `fontWeight` / `lineHeight`) when null, so inline and fullscreen-portrait keep the base typography. The widget reads live `MediaQuery` orientation, so both the inline player and the Dart fullscreen route restyle on rotation.
+
+### Fixed
+- **A player constructed while another is fullscreen no longer forces the device back to portrait.** When several players are alive (e.g. multiple video tiles on one screen) and one is in Dart fullscreen, constructing or re-mounting another player ran its `preferredOrientations` through `FullscreenManager.setPreferredOrientations`, which immediately reset the device orientation — fighting the fullscreen player and snapping it out of landscape on rotation. `FullscreenManager` now tracks whether a player is fullscreen and, while one is, records a constructed player's preferred orientations as the restore baseline **without** applying them to the device. No effect on the single-player case.
+
+## [1.1.3] - 2026-06-18
+
+Android subtitle de-duplication and exact-track selection fixes.
+
+### Fixed
+- **A sidecar caption no longer appears twice on Android.** URL sidecar subtitles are attached natively (so captions render in PiP and native fullscreen), which made them echo back from the native track list *in addition to* the Dart sidecar entry — e.g. two identical "Nederlands" rows. `getAvailableSubtitleTracks()` now suppresses, by language, the native echo of any sidecar it attached natively, so each caption is listed once. iOS is unaffected (no native sideload), so a genuine embedded track such as "CC" still appears alongside the sidecar.
+- **Selecting a subtitle pins the exact track instead of every track in that language.** Android selection used `setPreferredTextLanguage`, which enabled *all* text tracks sharing the language — with a sidecar and an embedded track both in, say, Dutch, both were enabled at once, rendering two overlapping caption tracks and crashing playback. `setSubtitleTrack()` now applies a `TrackSelectionOverride` on the specific track group (the same approach as audio-track selection), and subtitle tracks are enumerated/selected by a stable flat index across track groups (a per-group index collided between the embedded and sidecar groups).
+
+## [1.1.2] - 2026-06-18
+
+Re-release of 1.1.1 with a clean package archive — 1.1.1 accidentally bundled
+the local `build/` directory (~13 MB). No code changes from 1.1.1.
+
+## [1.1.1] - 2026-06-18
+
+Sidecar (VTT/SRT) subtitle fixes for fullscreen and outline rendering.
+
+### Fixed
+- **Captions anchor to the video, not the screen, in fullscreen.** The Flutter sidecar-subtitle overlay now constrains its cue block to the video's content rect (`Center` + `AspectRatio`, matching the texture path's letterbox fit) instead of the full widget bounds. Previously, in portrait fullscreen with a 16:9 video, captions sat at the bottom of the *screen* — well below the letterboxed video.
+- **`videoSize` is now reported from platform-view players too** (iOS `AVPlayerItem.presentationSize` KVO; Android `Player.Listener.onVideoSizeChanged` on the SurfaceView/PlayerView paths), so `controller.videoSize` / `videoSizeStream` is populated in all rendering modes — including Dart fullscreen, which the overlay needs to letterbox-match captions.
+- **`subtitleStyle` is forwarded into the Dart fullscreen player.** `FullscreenVideoPlayer` (and the controller's `_enterDartFullscreen`) now pass the app's `subtitleStyle` to the fullscreen `NativeVideoPlayer`, so fullscreen captions match the inline player instead of falling back to the default style.
+- **Crisp caption outline.** The caption outline is now a true vector stroke (a stroked text pass under the filled pass) instead of four diagonal corner shadows, which left the cardinal edges uncovered and doubled visibly once `outlineWidth >= 1`. `outlineWidth` is now an even stroke width in logical pixels at any value.
+
 ## [1.1.0] - 2026-06-12
 
 The performance release: every item of `PERFORMANCE_ROADMAP.md` is

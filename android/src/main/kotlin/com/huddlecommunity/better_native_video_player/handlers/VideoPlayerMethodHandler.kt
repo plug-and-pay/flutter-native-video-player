@@ -176,6 +176,7 @@ class VideoPlayerMethodHandler(
             "load" -> handleLoad(call, result)
             "setSidecarSubtitles" -> handleSetSidecarSubtitles(call, result)
             "setNativeSidecarActive" -> handleSetNativeSidecarActive(call, result)
+            "setSubtitlesSuppressedForPip" -> handleSetSubtitlesSuppressedForPip(call, result)
             "getAvailableAudioTracks" -> handleGetAvailableAudioTracks(result)
             "setAudioTrack" -> handleSetAudioTrack(call, result)
             "play" -> handlePlay(result)
@@ -681,6 +682,44 @@ class VideoPlayerMethodHandler(
         result.success(null)
     }
 
+    // Remembers whether the text track type was disabled before entering PiP, so
+    // the prior subtitle selection (sidecar preferred-language or embedded
+    // TrackSelectionOverride) is restored on exit.
+    private var textDisabledBeforePip: Boolean? = null
+
+    /**
+     * Suppresses all subtitle rendering while in Android PiP and restores it on
+     * exit. In PiP the Flutter overlay is gone and the native SubtitleView
+     * renders captions at the system default size, which is oversized in the tiny
+     * PiP window. Disabling the player's text track type hides every subtitle
+     * source (embedded and sidecar) at once; the TrackSelectionOverride in
+     * `overrides` survives buildUpon(), so the exact track resumes on restore.
+     */
+    private fun handleSetSubtitlesSuppressedForPip(call: MethodCall, result: MethodChannel.Result) {
+        val suppressed = (call.arguments as? Map<*, *>)?.get("suppressed") as? Boolean ?: false
+        val params = player.trackSelectionParameters
+        if (suppressed) {
+            // Snapshot the baseline only once so repeated suppress calls don't
+            // overwrite it with the already-disabled state.
+            if (textDisabledBeforePip == null) {
+                textDisabledBeforePip = params.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+            }
+            player.trackSelectionParameters = params.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+        } else {
+            val wasDisabled = textDisabledBeforePip
+            textDisabledBeforePip = null
+            if (wasDisabled != null) {
+                player.trackSelectionParameters = params.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, wasDisabled)
+                    .build()
+            }
+        }
+        NpLog.d(TAG, "PiP subtitle suppression=$suppressed (restoreDisabled=$textDisabledBeforePip)")
+        result.success(null)
+    }
+
     private fun handleSetQuality(call: MethodCall, result: MethodChannel.Result) {
         // Check if current video is HLS before attempting quality switch
         if (!currentVideoIsHls) {
@@ -955,6 +994,13 @@ class VideoPlayerMethodHandler(
             // Get track selection parameters to find the selected track
             val trackSelectionParameters = player.trackSelectionParameters
 
+            // A flat index across ALL text tracks of ALL groups (same scheme as
+            // handleGetAvailableAudioTracks). ExoPlayer exposes a separate text
+            // track group per source (e.g. a sideloaded sidecar is its own
+            // group), so a per-group index would collide between groups.
+            // handleSetSubtitleTrack walks the same counter.
+            var flatIndex = 0
+
             // Iterate through all track groups
             for (groupIndex in 0 until currentTracks.groups.size) {
                 val group = currentTracks.groups[groupIndex]
@@ -983,7 +1029,7 @@ class VideoPlayerMethodHandler(
                             }
 
                         val trackInfo = mapOf(
-                            "index" to trackIndex,
+                            "index" to flatIndex,
                             "language" to languageCode,
                             "displayName" to displayName,
                             "isSelected" to isSelected
@@ -991,6 +1037,7 @@ class VideoPlayerMethodHandler(
 
                         tracks.add(trackInfo)
                         NpLog.d(TAG, "📝 Found subtitle track: $displayName ($languageCode) - Selected: $isSelected")
+                        flatIndex++
                     }
                 }
             }
@@ -1045,27 +1092,40 @@ class VideoPlayerMethodHandler(
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
 
-            // Find the track format for the requested index
+            // Walk the same global text-track index used by
+            // handleGetAvailableSubtitleTracks to find the exact (group, track),
+            // then pin it with a TrackSelectionOverride. Selecting the specific
+            // track group — rather than setPreferredTextLanguage — avoids
+            // selecting EVERY track that shares the language, which would render
+            // two overlapping subtitles (and crash) when a sidecar and an
+            // embedded track share a language.
             val currentTracks = player.currentTracks
             var trackFound = false
             var selectedLanguage = "unknown"
             var selectedDisplayName = "Unknown"
+            var flatIndex = 0
 
-            for (groupIndex in 0 until currentTracks.groups.size) {
+            loop@ for (groupIndex in 0 until currentTracks.groups.size) {
                 val group = currentTracks.groups[groupIndex]
+                if (group.type != C.TRACK_TYPE_TEXT) continue
 
-                if (group.type == C.TRACK_TYPE_TEXT && index < group.length) {
-                    val format = group.getTrackFormat(index)
-                    selectedLanguage = format.language ?: "unknown"
-                    selectedDisplayName = format.label?.takeIf { it.isNotEmpty() }
-                        ?: selectedLanguage
+                for (trackIndex in 0 until group.length) {
+                    if (flatIndex == index) {
+                        val format = group.getTrackFormat(trackIndex)
+                        selectedLanguage = format.language ?: "unknown"
+                        selectedDisplayName = format.label?.takeIf { it.isNotEmpty() }
+                            ?: selectedLanguage
 
-                    // Set preferred text language to the selected track's language
-                    parametersBuilder = parametersBuilder
-                        .setPreferredTextLanguage(selectedLanguage)
+                        parametersBuilder = parametersBuilder
+                            .setOverrideForType(
+                                TrackSelectionOverride(group.mediaTrackGroup, trackIndex)
+                            )
 
-                    trackFound = true
-                    break
+                        trackFound = true
+                        break@loop
+                    }
+
+                    flatIndex++
                 }
             }
 

@@ -2,6 +2,7 @@ import 'package:dismissible_page/dismissible_page.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/native_video_player_controller.dart';
+import '../models/native_video_player_subtitle_style.dart';
 import '../native_video_player_widget.dart';
 
 /// A fullscreen video player widget that displays the video in fullscreen mode
@@ -12,6 +13,7 @@ class FullscreenVideoPlayer extends StatefulWidget {
   const FullscreenVideoPlayer({
     required this.controller,
     this.overlayBuilder,
+    this.subtitleStyle = const NativeVideoPlayerSubtitleStyle(),
     this.backgroundColor = Colors.black,
     super.key,
   });
@@ -25,6 +27,10 @@ class FullscreenVideoPlayer extends StatefulWidget {
     NativeVideoPlayerController controller,
   )?
   overlayBuilder;
+
+  /// Style and position for sidecar subtitles, forwarded to the inner
+  /// [NativeVideoPlayer] so fullscreen captions match the inline player.
+  final NativeVideoPlayerSubtitleStyle subtitleStyle;
 
   /// Background color for the fullscreen container
   final Color backgroundColor;
@@ -69,6 +75,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
         child: NativeVideoPlayer(
           controller: widget.controller,
           overlayBuilder: widget.overlayBuilder,
+          subtitleStyle: widget.subtitleStyle,
           isFullscreenContext: true,
         ),
       ),

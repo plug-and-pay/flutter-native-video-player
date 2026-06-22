@@ -61,6 +61,11 @@ class VideoPlayerView(
     private val lightSurfaceView: SurfaceView?
     private val lightListener: Player.Listener?
 
+    // Reports the video's display size to Dart in both display paths so the
+    // Flutter sidecar-subtitle overlay can anchor captions to the video's
+    // content rect (e.g. portrait fullscreen with a 16:9 video).
+    private val videoSizeListener: Player.Listener
+
     // The view that displays video, whichever path is active; moved between
     // the inline container and the fullscreen dialog.
     private val videoContentView: View
@@ -187,6 +192,18 @@ class VideoPlayerView(
             }
             videoContentView = playerView
         }
+
+        // Report the video's display size to Dart so the sidecar subtitle
+        // overlay can pin captions to the video's content rect. Covers both
+        // display paths; platform views handle crop/rotation natively, so no
+        // Dart-side rotation correction is needed.
+        videoSizeListener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                sendVideoSize(videoSize)
+            }
+        }
+        player.addListener(videoSizeListener)
+        sendVideoSize(player.videoSize)
 
         // For shared players that already existed, ensure surface is properly connected
         // This is crucial when returning to a video after calling releaseResources()
@@ -619,6 +636,24 @@ class VideoPlayerView(
         frame.setAspectRatio(videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height)
     }
 
+    /**
+     * Reports the video's display size to Dart (same payload the texture path
+     * emits), so the Flutter sidecar-subtitle overlay can letterbox-match its
+     * captions to the video. Platform views handle crop/rotation natively, so
+     * [rotationCorrection] is always 0.
+     */
+    private fun sendVideoSize(videoSize: VideoSize) {
+        if (videoSize.width == 0 || videoSize.height == 0) return
+        session.eventHandler.sendEvent(
+            "videoSize",
+            mapOf(
+                "width" to (videoSize.width * videoSize.pixelWidthHeightRatio).toInt(),
+                "height" to videoSize.height,
+                "rotationCorrection" to 0
+            )
+        )
+    }
+
     override fun dispose() {
         NpLog.d(TAG, "VideoPlayerView dispose for id: $viewId")
 
@@ -648,6 +683,7 @@ class VideoPlayerView(
 
         // Remove the light display path's own listener before the common dispose
         lightListener?.let { player.removeListener(it) }
+        player.removeListener(videoSizeListener)
 
         session.disposeCommon(detachOutput = {
             // IMPORTANT: For shared players, detach the player from this view's display

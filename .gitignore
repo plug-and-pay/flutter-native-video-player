@@ -76,3 +76,4 @@ coverage/
 *.lcov
 # Local-only notes
 *.local.md
+PROMPT_*.md

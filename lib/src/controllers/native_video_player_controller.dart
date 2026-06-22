@@ -16,6 +16,7 @@ import '../models/native_video_player_playback_range.dart';
 import '../models/native_video_player_quality.dart';
 import '../models/native_video_player_sidecar_subtitle.dart';
 import '../models/native_video_player_state.dart';
+import '../models/native_video_player_subtitle_style.dart';
 import '../models/native_video_player_subtitle_track.dart';
 import '../models/native_video_player_video_size.dart';
 import '../platform/platform_utils.dart';
@@ -183,6 +184,11 @@ class NativeVideoPlayerController {
   /// This is passed from NativeVideoPlayer widget
   Widget Function(BuildContext, NativeVideoPlayerController)? _overlayBuilder;
 
+  /// Sidecar subtitle style to use in fullscreen mode
+  /// This is passed from the NativeVideoPlayer widget so the Dart fullscreen
+  /// host renders captions identically to the inline player.
+  NativeVideoPlayerSubtitleStyle? _subtitleStyle;
+
   /// Callback to close the Dart fullscreen dialog
   /// Set by FullscreenVideoPlayer when it's created
   VoidCallback? _dartFullscreenCloseCallback;
@@ -322,6 +328,12 @@ class NativeVideoPlayerController {
 
   /// Timer for buffering state debounce (400ms)
   Timer? _bufferingDebounceTimer;
+
+  /// Polls Android PiP state while fullscreen. Android has no native PiP
+  /// enter/exit callback (unlike iOS), and the floating package's status
+  /// stream leaks a 10ms timer it never cancels — so we poll the cheap
+  /// one-shot status ourselves to keep [isPipEnabled] accurate.
+  Timer? _androidPipPollTimer;
 
   /// Track if we're currently in a buffering state (from native)
   bool _isCurrentlyBuffering = false;
@@ -483,6 +495,11 @@ class NativeVideoPlayerController {
         oldState.isFullScreen != newState.isFullScreen) {
       _syncNativeSidecarCaptions(newState);
     }
+    if (oldState.isFullScreen != newState.isFullScreen) {
+      // Start/stop polling Android PiP state (PiP is only reachable from
+      // fullscreen on Android).
+      _updateAndroidPipPolling(newState);
+    }
     if (oldState.currentPosition != newState.currentPosition) {
       if (!_positionController.isClosed) {
         _positionController.add(newState.currentPosition);
@@ -498,6 +515,8 @@ class NativeVideoPlayerController {
       _sidecarSubtitles.onSpeedChanged(newState.speed);
     }
     if (oldState.isPipEnabled != newState.isPipEnabled) {
+      // Suppress oversized native captions while in Android PiP; restore on exit.
+      _suppressSubtitlesForPip(newState.isPipEnabled);
       if (!_isPipEnabledController.isClosed) {
         _isPipEnabledController.add(newState.isPipEnabled);
       }
@@ -1006,6 +1025,15 @@ class NativeVideoPlayerController {
     }
   }
 
+  /// Sets the sidecar subtitle style for fullscreen mode
+  ///
+  /// Typically called by the NativeVideoPlayer widget so the Dart fullscreen
+  /// host (which builds its own NativeVideoPlayer) renders captions with the
+  /// same style as the inline player.
+  void setSubtitleStyle(NativeVideoPlayerSubtitleStyle style) {
+    _subtitleStyle = style;
+  }
+
   /// Sets the callback for closing Dart fullscreen
   /// This is called by FullscreenVideoPlayer to register itself
   void setDartFullscreenCloseCallback(VoidCallback? callback) {
@@ -1508,11 +1536,24 @@ class NativeVideoPlayerController {
         <NativeVideoPlayerSubtitleTrack>[];
     final int? selectedSidecar = _sidecarSubtitles.selectedSource;
     final sources = _sidecarSubtitles.sources;
+
+    // On Android, URL sidecars are also attached natively (so captions can
+    // render in PiP / native fullscreen), so they echo back in `embedded`.
+    // Suppress those native echoes by language — each caption then appears
+    // once, and the Dart sidecar entry below is the canonical, overlay-rendered
+    // representation. On iOS nothing is sideloaded natively, so genuine
+    // embedded tracks (e.g. an HLS "CC") are left untouched.
+    final Set<String> nativelyAttachedLanguages =
+        _androidSidecarMaps(sources) == null
+        ? const <String>{}
+        : sources.where((s) => s.url != null).map((s) => s.language).toSet();
+
     return <NativeVideoPlayerSubtitleTrack>[
       // While a sidecar track renders, embedded tracks are natively disabled,
       // so their stale isSelected flags are cleared.
       for (final track in embedded)
-        selectedSidecar != null ? track.copyWith(isSelected: false) : track,
+        if (!nativelyAttachedLanguages.contains(track.language))
+          selectedSidecar != null ? track.copyWith(isSelected: false) : track,
       for (var i = 0; i < sources.length; i++)
         NativeVideoPlayerSubtitleTrack(
           index: i,
@@ -1597,8 +1638,11 @@ class NativeVideoPlayerController {
     if (selected == null) {
       return;
     }
+    // PiP suppresses captions entirely (see _suppressSubtitlesForPip); only
+    // hand off to the native SubtitleView for non-PiP native-fullscreen
+    // contexts where the Flutter overlay is not visible.
     final bool nativeContext =
-        state.isPipEnabled || (state.isFullScreen && !_hasCustomOverlay);
+        !state.isPipEnabled && state.isFullScreen && !_hasCustomOverlay;
     unawaited(
       _methodChannel?.setNativeSidecarActive(
         active: nativeContext,
@@ -1607,6 +1651,59 @@ class NativeVideoPlayerController {
             : null,
       ),
     );
+  }
+
+  /// Hides all native subtitle rendering while in Android PiP and restores the
+  /// prior selection on leaving it.
+  ///
+  /// In PiP the Flutter subtitle overlay is not part of the (tiny) PiP window,
+  /// so captions are rendered by the native Media3 `SubtitleView` at the system
+  /// default size — which looks oversized in the small window. Toggling the
+  /// player's text track type (shared across views) suppresses every subtitle
+  /// source (embedded and sidecar) with one call; the native side snapshots the
+  /// pre-PiP state so the exact selection resumes on exit. Android-only — iOS
+  /// has no native sideload and already hides the overlay in PiP.
+  void _suppressSubtitlesForPip(bool suppressed) {
+    if (kIsWeb || !Platform.isAndroid) {
+      return;
+    }
+    unawaited(_methodChannel?.setSubtitlesSuppressedForPip(suppressed));
+  }
+
+  /// Starts/stops polling Android's PiP status so [isPipEnabled] reflects the
+  /// real PiP state.
+  ///
+  /// Unlike iOS (which emits `pipStart`/`pipStop` natively), Android surfaces
+  /// no PiP enter/exit callback to the plugin, and the floating package's
+  /// status stream starts a 10ms timer it never cancels. We instead poll the
+  /// cheap one-shot [Floating.pipStatus] only while fullscreen — the only
+  /// state from which Android PiP can be entered — and tear it down otherwise.
+  /// Updating the state here lets the existing `_updateState` cascade hide the
+  /// Flutter subtitle overlay, suppress native captions, and emit the stream.
+  void _updateAndroidPipPolling(NativeVideoPlayerState state) {
+    if (kIsWeb || !Platform.isAndroid || !allowsPictureInPicture) {
+      return;
+    }
+    if (state.isFullScreen && _androidPipPollTimer == null) {
+      _androidPipPollTimer = Timer.periodic(const Duration(milliseconds: 150), (
+        _,
+      ) async {
+        if (_isDisposed) {
+          return;
+        }
+        final bool inPip = (await _floating.pipStatus) == PiPStatus.enabled;
+        if (!_isDisposed && inPip != _state.isPipEnabled) {
+          _updateState(_state.copyWith(isPipEnabled: inPip));
+        }
+      });
+    } else if (!state.isFullScreen && _androidPipPollTimer != null) {
+      _androidPipPollTimer!.cancel();
+      _androidPipPollTimer = null;
+      // Leaving fullscreen necessarily means leaving PiP; reset the flag.
+      if (_state.isPipEnabled) {
+        _updateState(_state.copyWith(isPipEnabled: false));
+      }
+    }
   }
 
   /// Maps URL sources for Android's native sideloading; null on other
@@ -1724,7 +1821,13 @@ class NativeVideoPlayerController {
         final status = await _floating.enable(
           ImmediatePiP(aspectRatio: _getPiPAspectRatio()),
         );
-        return status == PiPStatus.enabled;
+        final bool entered = status == PiPStatus.enabled;
+        if (entered) {
+          // Reflect PiP immediately so the subtitle overlay hides without
+          // waiting for the next poll tick; the poll then tracks the exit.
+          _updateState(_state.copyWith(isPipEnabled: true));
+        }
+        return entered;
       } catch (e) {
         debugPrint('Error entering PiP: $e');
         return false;
@@ -1974,6 +2077,8 @@ class NativeVideoPlayerController {
         return FullscreenVideoPlayer(
           controller: this,
           overlayBuilder: _overlayBuilder,
+          subtitleStyle:
+              _subtitleStyle ?? const NativeVideoPlayerSubtitleStyle(),
         );
       },
       lockToLandscape: lockToLandscape,
@@ -2196,6 +2301,10 @@ class NativeVideoPlayerController {
 
     // Mark as disposed immediately to prevent new events from being added
     _isDisposed = true;
+
+    // Stop the Android PiP status poll.
+    _androidPipPollTimer?.cancel();
+    _androidPipPollTimer = null;
 
     // Remove from the playback coordinator (cap enforcement)
     PlaybackCoordinator.instance.unregister(_playableHandle);
