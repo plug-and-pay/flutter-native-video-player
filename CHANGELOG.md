@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-06-23
+
+Quality-selection and Android background-playback fixes.
+
+### Fixed
+- **Quality switching no longer drops audio (iOS + Android).** Selecting an HLS quality — or switching back to Auto — previously reloaded a single video-only variant playlist, replacing the master. On adaptive streams that carry audio as a separate rendition (`#EXT-X-MEDIA:TYPE=AUDIO`), that silenced the audio while video kept playing. The plugin now keeps the master loaded and constrains the **video track** via the player's track selector (`preferredMaximumResolution`/`preferredPeakBitRate` on iOS, `setMaxVideoSize`/`setMaxVideoBitrate` on Android), so audio is untouched and the switch is instant (no buffering reload).
+- **`qualityChangedStream` now emits the selected quality.** Native emits the quality fields flat in the event map, but the Dart handler only accepted a nested `quality` key, so the stream stayed silent and any UI bound to it was stuck on "Auto". The handler now accepts both shapes.
+- **iOS: position/time updates no longer stop when Auto quality is enabled.** The old auto-quality monitor reused the shared periodic time observer that drives `timeUpdate`, clobbering position reporting. The monitor is removed — AVPlayer's native ABR handles Auto.
+- **Android: background playback (live + VOD) no longer dies after a few minutes.** The plugin posted a media notification but never ran a real foreground service, so Doze/App-Standby cut the app's network and ExoPlayer failed with `UnknownHostException`. Playback now runs as a real foreground service while playing (stopped on pause/stop), and the shared player uses `setWakeMode(WAKE_MODE_NETWORK)` (partial WakeLock + WifiLock). Adds the `WAKE_LOCK` permission to the plugin manifest.
+
 ## [1.2.1] - 2026-06-22
 
 Android Picture-in-Picture subtitle fix.

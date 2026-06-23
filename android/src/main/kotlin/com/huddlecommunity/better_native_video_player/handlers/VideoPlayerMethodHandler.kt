@@ -720,6 +720,17 @@ class VideoPlayerMethodHandler(
         result.success(null)
     }
 
+    /**
+     * Pins or releases the HLS video quality.
+     *
+     * Crucially this does NOT reload a variant playlist. Each QualityLevel.url
+     * is a single video-only variant; on adaptive HLS the audio lives in a
+     * separate `#EXT-X-MEDIA:TYPE=AUDIO` rendition referenced only by the
+     * master. Calling setMediaSource(HlsMediaSource(variantUrl)) therefore
+     * dropped the audio. Instead we keep the master source loaded and constrain
+     * the *video* track via trackSelectionParameters — audio is untouched and
+     * the switch is instant (no buffering reload).
+     */
     private fun handleSetQuality(call: MethodCall, result: MethodChannel.Result) {
         // Check if current video is HLS before attempting quality switch
         if (!currentVideoIsHls) {
@@ -739,104 +750,46 @@ class VideoPlayerMethodHandler(
         isAutoQuality = isAuto
 
         if (isAuto) {
-            // Start with the middle quality for auto mode
-            val midIndex = (availableQualities.size / 2 - 1).coerceAtLeast(0)
-            if (midIndex >= availableQualities.size) {
-                result.error("NO_QUALITIES", "No qualities available", null)
-                return
-            }
-
-            val initialQuality = availableQualities[midIndex]
-            switchToQuality(initialQuality, result)
-
-            // Start monitoring quality
-            startQualityMonitoring()
-        } else {
-            val url = qualityInfo["url"] as? String
-            val label = qualityInfo["label"] as? String
-
-            if (url == null) {
-                result.error("INVALID_QUALITY", "Quality URL is required", null)
-                return
-            }
-
-            eventHandler.sendEvent("loading")
-
-            // Save current state
-            val wasPlaying = player.isPlaying
-            val currentPosition = player.currentPosition
-
-            // Build new media source
-            // Use DefaultDataSource for consistency with load method (cache
-            // wrap so variant revisits hit the disk cache; never DRM here)
-            val dataSourceFactory =
-                maybeWrapWithCache(DefaultDataSource.Factory(context), url, hasDrm = false)
-            val mediaItem = MediaItem.fromUri(url)
-            val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(mediaItem)
-
-            // Switch to new quality
-            player.setMediaSource(mediaSource)
-            player.prepare()
-            player.seekTo(currentPosition)
-
-            // Only resume playback if it was playing before
-            if (wasPlaying) {
-                player.play()
-            }
+            // Lift the manual ceiling so ABR resumes. Use MAX rather than
+            // clearVideoSizeConstraints() — the latter would also wipe the
+            // separate viewport cap (setViewportSize) applied by
+            // PlayerBackendSession, which is an independent constraint.
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .build()
 
             eventHandler.sendEvent("qualityChange", mapOf(
-                "url" to url,
-                "label" to (label ?: ""),
+                "url" to (qualityInfo["url"] as? String ?: ""),
+                "label" to (qualityInfo["label"] as? String ?: "Auto"),
+                "isAuto" to true
+            ))
+            result.success(null)
+        } else {
+            val width = (qualityInfo["width"] as? Number)?.toInt()
+            val height = (qualityInfo["height"] as? Number)?.toInt()
+            val bitrate = (qualityInfo["bitrate"] as? Number)?.toInt()
+
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .apply {
+                    if (width != null && height != null && width > 0 && height > 0) {
+                        setMaxVideoSize(width, height)
+                    }
+                    if (bitrate != null && bitrate > 0) {
+                        setMaxVideoBitrate(bitrate)
+                    }
+                }
+                .build()
+
+            eventHandler.sendEvent("qualityChange", mapOf(
+                "url" to (qualityInfo["url"] as? String ?: ""),
+                "label" to (qualityInfo["label"] as? String ?: ""),
                 "isAuto" to false
             ))
-
             result.success(null)
         }
-    }
-
-    private fun startQualityMonitoring() {
-        // Quality monitoring is simplified for now
-        // In a production app, you would implement bandwidth monitoring here
-        NpLog.d(TAG, "Auto quality monitoring enabled (simplified implementation)")
-    }
-
-    private fun switchToQuality(quality: Map<String, Any>, result: MethodChannel.Result?) {
-        val url = quality["url"] as? String ?: return
-        val label = quality["label"] as? String ?: "Unknown"
-
-        eventHandler.sendEvent("loading")
-
-        // Save current state
-        val wasPlaying = player.isPlaying
-        val currentPosition = player.currentPosition
-
-        // Build new media source
-        // Use DefaultDataSource for consistency with load method (cache wrap
-        // so variant revisits hit the disk cache; never DRM here)
-        val dataSourceFactory =
-            maybeWrapWithCache(DefaultDataSource.Factory(context), url, hasDrm = false)
-        val mediaItem = MediaItem.fromUri(url)
-        val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
-            .createMediaSource(mediaItem)
-
-        // Switch to new quality
-        player.setMediaSource(mediaSource)
-        player.prepare()
-        player.seekTo(currentPosition)
-
-        // Only resume playback if it was playing before
-        if (wasPlaying) {
-            player.play()
-        }
-
-        eventHandler.sendEvent("qualityChange", mapOf(
-            "url" to url,
-            "label" to label,
-            "isAuto" to isAutoQuality
-        ))
-
-        result?.success(null)
     }
 
     /**

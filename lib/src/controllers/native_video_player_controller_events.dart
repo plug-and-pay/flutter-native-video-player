@@ -469,12 +469,22 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
 
               // Handle quality change events
               if (controlEvent.state == PlayerControlState.qualityChanged) {
-                if (controlEvent.data != null &&
-                    controlEvent.data!['quality'] != null) {
-                  final qualityMap = controlEvent.data!['quality'] as Map;
-                  final quality = NativeVideoPlayerQuality.fromMap(qualityMap);
-                  if (!_qualityChangedController.isClosed) {
-                    _qualityChangedController.add(quality);
+                final data = controlEvent.data;
+                if (data != null) {
+                  // Native emits the selected quality's fields flat in the event
+                  // map (url/label/isAuto); the controller's synthetic control
+                  // events nest them under 'quality'. Support both so the
+                  // selected quality reaches qualityChangedStream.
+                  final qualityMap =
+                      (data['quality'] as Map?) ??
+                      ((data['url'] != null || data['label'] != null)
+                          ? data
+                          : null);
+                  if (qualityMap != null &&
+                      !_qualityChangedController.isClosed) {
+                    _qualityChangedController.add(
+                      NativeVideoPlayerQuality.fromMap(qualityMap),
+                    );
                   }
                 }
               }

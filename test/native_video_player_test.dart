@@ -20,10 +20,16 @@ void main() {
 
   late NativeVideoPlayerController controller;
 
+  /// Records every command sent over the shared MethodChannel so tests can
+  /// assert the Dart→native wire contract (e.g. that setQuality forwards
+  /// width/height/bitrate, which the native quality-capping fix relies on).
+  final List<MethodCall> methodCalls = <MethodCall>[];
+
   void installMocks() {
     messenger.setMockMethodCallHandler(methodChannel, (
       MethodCall methodCall,
     ) async {
+      methodCalls.add(methodCall);
       switch (methodCall.method) {
         case 'getAvailableQualities':
           return [
@@ -56,6 +62,7 @@ void main() {
   }
 
   setUp(() {
+    methodCalls.clear();
     installMocks();
     controller = NativeVideoPlayerController(
       id: controllerId,
@@ -143,6 +150,45 @@ void main() {
       final quality = controller.qualities.first;
       await controller.setQuality(quality);
     });
+
+    testWidgets('setQuality forwards width/height/bitrate to native', (
+      tester,
+    ) async {
+      // The native quality fix caps the video track using these fields
+      // (preferredMaximumResolution / setMaxVideoSize + bitrate), so they
+      // MUST reach native. Resolution-style labels ("1920x1080") are what the
+      // native HLS parsers emit, and fromMap parses width/height from them.
+      await attachPlatformView(tester);
+      await controller.load(url: 'https://example.com/video.m3u8');
+
+      final quality = NativeVideoPlayerQuality.fromMap(<String, dynamic>{
+        'label': '1920x1080',
+        'url': 'https://example.com/video_1080p.m3u8',
+        'bitrate': 5000000,
+        'isAuto': false,
+      });
+      await controller.setQuality(quality);
+
+      final setCall = methodCalls.lastWhere((c) => c.method == 'setQuality');
+      final sent = (setCall.arguments as Map)['quality'] as Map;
+      expect(sent['width'], equals(1920));
+      expect(sent['height'], equals(1080));
+      expect(sent['bitrate'], equals(5000000));
+      expect(sent['isAuto'], isFalse);
+    });
+
+    testWidgets('setQuality(auto) forwards isAuto:true to native', (
+      tester,
+    ) async {
+      await attachPlatformView(tester);
+      await controller.load(url: 'https://example.com/video.m3u8');
+
+      await controller.setQuality(NativeVideoPlayerQuality.auto());
+
+      final setCall = methodCalls.lastWhere((c) => c.method == 'setQuality');
+      final sent = (setCall.arguments as Map)['quality'] as Map;
+      expect(sent['isAuto'], isTrue);
+    });
   });
 
   group('NativeVideoPlayerController fullscreen control', () {
@@ -187,6 +233,125 @@ void main() {
 
       expect(receivedEvents.length, equals(1));
       expect(receivedEvents.first.state, equals(PlayerActivityState.playing));
+    });
+
+    testWidgets(
+      'emits selected quality from a flat native qualityChange event',
+      (tester) async {
+        await attachPlatformView(tester);
+
+        // Native sends the selected quality's fields flat in the event map
+        // (url/label/isAuto) — regression test for qualityChangedStream staying
+        // silent when the handler only accepted a nested 'quality' key.
+        final next = controller.qualityChangedStream.first.timeout(
+          const Duration(seconds: 3),
+        );
+
+        await messenger.handlePlatformMessage(
+          'native_video_player_$platformViewId',
+          const StandardMethodCodec().encodeSuccessEnvelope({
+            'event': 'qualityChange',
+            'url': 'https://example.com/video_720p.m3u8',
+            'label': '720p',
+            'isAuto': false,
+          }),
+          (ByteData? data) {},
+        );
+        await tester.pump();
+
+        final quality = await next;
+        expect(quality.label, equals('720p'));
+        expect(quality.isAuto, isFalse);
+      },
+    );
+
+    testWidgets('emits Auto from a flat native qualityChange event', (
+      tester,
+    ) async {
+      await attachPlatformView(tester);
+
+      final next = controller.qualityChangedStream.first.timeout(
+        const Duration(seconds: 3),
+      );
+
+      await messenger.handlePlatformMessage(
+        'native_video_player_$platformViewId',
+        const StandardMethodCodec().encodeSuccessEnvelope({
+          'event': 'qualityChange',
+          'url': '',
+          'label': 'Auto',
+          'isAuto': true,
+        }),
+        (ByteData? data) {},
+      );
+      await tester.pump();
+
+      final quality = await next;
+      expect(quality.label, equals('Auto'));
+      expect(quality.isAuto, isTrue);
+    });
+
+    testWidgets('emits selected quality from a nested qualityChange event', (
+      tester,
+    ) async {
+      // Backward compatibility: synthetic control events nest the quality under
+      // a 'quality' key. The handler must still accept that shape.
+      await attachPlatformView(tester);
+
+      final next = controller.qualityChangedStream.first.timeout(
+        const Duration(seconds: 3),
+      );
+
+      await messenger.handlePlatformMessage(
+        'native_video_player_$platformViewId',
+        const StandardMethodCodec().encodeSuccessEnvelope({
+          'event': 'qualityChange',
+          'quality': {
+            'url': 'https://example.com/video_1080p.m3u8',
+            'label': '1080p',
+            'isAuto': false,
+          },
+        }),
+        (ByteData? data) {},
+      );
+      await tester.pump();
+
+      final quality = await next;
+      expect(quality.label, equals('1080p'));
+      expect(quality.isAuto, isFalse);
+    });
+  });
+
+  group('NativeVideoPlayerQuality model', () {
+    test('fromMap parses width/height from a resolution label', () {
+      final q = NativeVideoPlayerQuality.fromMap(<String, dynamic>{
+        'label': '1920x1080',
+        'url': 'https://example.com/1080p.m3u8',
+        'bitrate': 5000000,
+        'isAuto': false,
+      });
+      expect(q.width, equals(1920));
+      expect(q.height, equals(1080));
+      expect(q.bitrate, equals(5000000));
+      expect(q.isAuto, isFalse);
+    });
+
+    test('toMap carries the fields the native quality cap reads', () {
+      final map = const NativeVideoPlayerQuality(
+        label: '1280x720',
+        url: 'https://example.com/720p.m3u8',
+        bitrate: 2500000,
+        width: 1280,
+        height: 720,
+      ).toMap();
+      expect(map['width'], equals(1280));
+      expect(map['height'], equals(720));
+      expect(map['bitrate'], equals(2500000));
+      expect(map['isAuto'], isFalse);
+    });
+
+    test('auto() is flagged isAuto', () {
+      expect(NativeVideoPlayerQuality.auto().isAuto, isTrue);
     });
   });
 }
