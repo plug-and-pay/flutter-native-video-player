@@ -3,7 +3,6 @@ package com.huddlecommunity.better_native_video_player.manager
 import com.huddlecommunity.better_native_video_player.NpLog
 
 import android.content.Context
-import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -83,6 +82,14 @@ object SharedPlayerManager {
     ): ExoPlayer {
         val builder = ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, false)
+            // Keep the device awake for background playback. WAKE_MODE_NETWORK
+            // holds a partial WakeLock AND a WifiLock so the CPU and WiFi radio
+            // stay powered while playing — without it, screen-off WiFi
+            // power-save/Doze powers the radio down and streaming (live + VOD)
+            // stalls once the buffer drains. ExoPlayer only holds the locks
+            // while actually playing and releases them on pause/stop, so there
+            // is no battery cost when idle. Requires android.permission.WAKE_LOCK.
+            .setWakeMode(C.WAKE_MODE_NETWORK)
         if (prioritizeActivePlayback) {
             builder.setPriorityTaskManager(sharedPriorityTaskManager)
             // Start demoted: loading-while-paused yields to playing players.
@@ -278,11 +285,9 @@ object SharedPlayerManager {
     }
 
     /**
-     * Stops the MediaSessionService
+     * Stops the playback foreground service and removes its notification.
      */
     private fun stopMediaSessionService(context: Context) {
-        VideoPlayerMediaSessionService.setMediaSession(null)
-        val serviceIntent = Intent(context, VideoPlayerMediaSessionService::class.java)
-        context.stopService(serviceIntent)
+        VideoPlayerMediaSessionService.stop(context, removeNotification = true)
     }
 }

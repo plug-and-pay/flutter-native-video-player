@@ -8,144 +8,68 @@ import MediaPlayer
 // Split from VideoPlayerMethodHandler.swift for maintainability;
 // all members keep full access to VideoPlayerView state.
 extension VideoPlayerView {
+    /// Pins or releases the HLS video quality.
+    ///
+    /// Crucially this does NOT reload a variant playlist. Each QualityLevel.url
+    /// is a single video-only variant; on adaptive HLS the audio lives in a
+    /// separate `#EXT-X-MEDIA:TYPE=AUDIO` rendition referenced only by the
+    /// master. Replacing the current item with a variant URL therefore dropped
+    /// the audio. Instead we keep the master item loaded and constrain the
+    /// *video* track via `preferredMaximumResolution` / `preferredPeakBitRate`
+    /// — audio is untouched and the switch is instant (no buffering reload).
     func handleSetQuality(call: FlutterMethodCall, result: @escaping FlutterResult) {
         guard let args = call.arguments as? [String: Any],
               let qualityInfo = args["quality"] as? [String: Any] else {
             result(FlutterError(code: "INVALID_QUALITY", message: "Invalid quality data", details: nil))
             return
         }
-        
+
         let isAuto = qualityInfo["isAuto"] as? Bool ?? false
         isAutoQuality = isAuto
-        
+
         if isAuto {
-            // Start with the middle quality for auto mode
-            let midIndex = max(0, qualityLevels.count / 2 - 1)
-            guard midIndex < qualityLevels.count else {
-                result(FlutterError(code: "NO_QUALITIES", message: "No qualities available", details: nil))
-                return
+            // Lift the manual bitrate ceiling so AVPlayer's native ABR picks
+            // freely. For the resolution ceiling, restore the viewport cap if
+            // it's configured and currently appropriate; otherwise remove it.
+            manualQualitySelected = false
+            player?.currentItem?.preferredPeakBitRate = 0
+            if qualityForViewport, let cap = viewportCapSize,
+               fullscreenPlayerViewController == nil,
+               !(player?.isExternalPlaybackActive ?? false) {
+                player?.currentItem?.preferredMaximumResolution = cap
+            } else {
+                player?.currentItem?.preferredMaximumResolution = .zero
             }
-            
-            let initialQuality = qualityLevels[midIndex]
-            switchToQuality(initialQuality, result: result)
-            
-            // Enable quality monitoring
-            startQualityMonitoring()
-        } else {
-            guard let urlString = qualityInfo["url"] as? String,
-                  let url = URL(string: urlString) else {
-                result(FlutterError(code: "INVALID_URL", message: "Invalid quality URL", details: nil))
-                return
-            }
-            
-            sendEvent("loading")
-            
-            // Store current playback state and position
-            let wasPlaying = player?.rate != 0
-            let currentTime = player?.currentTime() ?? CMTime.zero
-            
-            let newItem = AVPlayerItem(url: url)
-            player?.replaceCurrentItem(with: newItem)
-            player?.seek(to: currentTime)
-            
-            // Only resume playback if it was playing before
-            if wasPlaying {
-                player?.play()
-            }
-            
+
             sendEvent("qualityChange", data: [
-                "url": urlString,
+                "url": qualityInfo["url"] as? String ?? "",
+                "label": qualityInfo["label"] as? String ?? "Auto",
+                "isAuto": true
+            ])
+            result(nil)
+        } else {
+            // Pin to the selected variant by capping the video track. Exact
+            // pinning isn't guaranteed (ABR may still drop lower under
+            // bandwidth pressure) — standard AVPlayer quality-capping behaviour.
+            let width = qualityInfo["width"] as? Int ?? 0
+            let height = qualityInfo["height"] as? Int ?? 0
+            let bitrate = qualityInfo["bitrate"] as? Int ?? 0
+
+            manualQualitySelected = true
+            if width > 0 && height > 0 {
+                player?.currentItem?.preferredMaximumResolution = CGSize(width: width, height: height)
+            }
+            if bitrate > 0 {
+                player?.currentItem?.preferredPeakBitRate = Double(bitrate)
+            }
+
+            sendEvent("qualityChange", data: [
+                "url": qualityInfo["url"] as? String ?? "",
                 "label": qualityInfo["label"] as? String ?? "",
                 "isAuto": false
             ])
             result(nil)
         }
-    }
-
-    func startQualityMonitoring() {
-        // Remove existing observer if any
-        if let timeObserver = timeObserver {
-            player?.removeTimeObserver(timeObserver)
-        }
-        
-        // Monitor playback every second for auto-quality
-        let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-        timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-            self?.checkAndAdjustQuality()
-        }
-    }
-
-    func checkAndAdjustQuality() {
-        guard isAutoQuality,
-              !qualityLevels.isEmpty,
-              CACurrentMediaTime() - lastBitrateCheck >= bitrateCheckInterval else {
-            return
-        }
-        
-        lastBitrateCheck = CACurrentMediaTime()
-        
-        // Get current playback statistics
-        let loadedTimeRanges = player?.currentItem?.loadedTimeRanges ?? []
-        let currentTime = player?.currentTime() ?? CMTime.zero
-        
-        // Calculate buffer health
-        var bufferHealth: TimeInterval = 0
-        for range in loadedTimeRanges {
-            let timeRange = range.timeRangeValue
-            if timeRange.start <= currentTime {
-                bufferHealth += timeRange.duration.seconds
-            }
-        }
-        
-        // Get current quality index
-        guard let urlAsset = player?.currentItem?.asset as? AVURLAsset,
-              let currentUrl = urlAsset.url.absoluteString as String?,
-              let currentIndex = qualityLevels.firstIndex(where: { $0.url == currentUrl }) else {
-            return
-        }
-        
-        // Adjust quality based on buffer health
-        var targetIndex = currentIndex
-        
-        if bufferHealth < 3.0 && currentIndex > 0 {
-            // Buffer is low, decrease quality
-            targetIndex = currentIndex - 1
-        } else if bufferHealth > 10.0 && currentIndex < qualityLevels.count - 1 {
-            // Buffer is healthy, try increasing quality
-            targetIndex = currentIndex + 1
-        }
-        
-        if targetIndex != currentIndex {
-            switchToQuality(qualityLevels[targetIndex], result: nil)
-        }
-    }
-
-    func switchToQuality(_ quality: VideoPlayer.QualityLevel, result: FlutterResult?) {
-        guard let url = URL(string: quality.url) else {
-            result?(FlutterError(code: "INVALID_URL", message: "Invalid quality URL", details: nil))
-            return
-        }
-        
-        sendEvent("loading")
-        
-        let wasPlaying = player?.rate != 0
-        let currentTime = player?.currentTime() ?? CMTime.zero
-        
-        let newItem = AVPlayerItem(url: url)
-        player?.replaceCurrentItem(with: newItem)
-        player?.seek(to: currentTime)
-        
-        if wasPlaying {
-            player?.play()
-        }
-        
-        sendEvent("qualityChange", data: [
-            "url": quality.url,
-            "label": quality.label,
-            "isAuto": isAutoQuality
-        ])
-        
-        result?(nil)
     }
 
     /// Stores the platform view's physical pixel size and caps HLS variant
@@ -188,10 +112,13 @@ extension VideoPlayerView {
     /// or AirPlay external playback (which render beyond the inline view's
     /// size) is active. preferredMaximumResolution is a preference: AVPlayer
     /// still plays the lowest variant if none fits, so this can never stall
-    /// playback. Manual quality selection loads a dedicated variant URL via a
-    /// NEW player item and is therefore never constrained by this.
+    /// playback. An explicit manual quality selection (which sets its own
+    /// resolution ceiling) takes precedence — the automatic cap must not
+    /// silently overwrite it on a viewport resize / fullscreen exit / AirPlay
+    /// end; switching back to Auto re-enables this path.
     func applyViewportCapIfAppropriate() {
         guard qualityForViewport, let size = viewportCapSize else { return }
+        guard !manualQualitySelected else { return }
         guard fullscreenPlayerViewController == nil else { return }
         guard !(player?.isExternalPlaybackActive ?? false) else { return }
         npLog("🎚️ Applying viewport quality cap: \(Int(size.width))x\(Int(size.height))")

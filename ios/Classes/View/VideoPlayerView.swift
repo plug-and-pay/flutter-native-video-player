@@ -71,8 +71,12 @@ import QuartzCore
     var availableQualities: [[String: Any]] = []
     var qualityLevels: [VideoPlayer.QualityLevel] = []
     var isAutoQuality = false
-    var lastBitrateCheck: TimeInterval = 0
-    let bitrateCheckInterval: TimeInterval = 5.0 // Check every 5 seconds
+    /// True while the user has pinned a specific resolution via setQuality.
+    /// Suppresses the automatic viewport cap (see applyViewportCapIfAppropriate)
+    /// so an explicit manual selection isn't silently overwritten on a viewport
+    /// resize / fullscreen exit / AirPlay end. Reset on load and when switching
+    /// back to Auto.
+    var manualQualitySelected = false
     var controllerId: Int?
     var pipController: AVPictureInPictureController?
 

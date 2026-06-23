@@ -1,6 +1,7 @@
 package com.huddlecommunity.better_native_video_player.handlers
 
 import com.huddlecommunity.better_native_video_player.NpLog
+import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -62,9 +63,14 @@ class VideoPlayerNotificationHandler(
     private val playerListener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (playWhenReady) {
+                // showNotification() promotes playback to a foreground service so
+                // the OS keeps the app's network alive for background streaming.
                 showNotification()
                 eventHandler.sendEvent("play")
             } else {
+                // Pause: drop foreground status (we're no longer streaming) but
+                // keep the notification posted so the user can resume.
+                VideoPlayerMediaSessionService.stop(context, removeNotification = false)
                 updateNotification()
                 eventHandler.sendEvent("pause")
             }
@@ -72,7 +78,10 @@ class VideoPlayerNotificationHandler(
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_ENDED, Player.STATE_IDLE -> hideNotification()
+                Player.STATE_ENDED, Player.STATE_IDLE -> {
+                    VideoPlayerMediaSessionService.stop(context, removeNotification = true)
+                    hideNotification()
+                }
                 Player.STATE_READY -> if (player.playWhenReady) showNotification()
             }
         }
@@ -226,8 +235,16 @@ class VideoPlayerNotificationHandler(
     private fun showNotification() {
         try {
             val notification = buildNotification()
-            notificationManager.notify(NOTIFICATION_ID, notification)
-            NpLog.d(TAG, "Notification shown/updated")
+            if (player.playWhenReady) {
+                // While playing, the notification must back a foreground service
+                // so the OS keeps network access for background streaming. The
+                // service refreshes the same NOTIFICATION_ID, so appearance and
+                // later notify()-based updates (artwork) are unchanged.
+                VideoPlayerMediaSessionService.start(context, notification)
+            } else {
+                notificationManager.notify(NOTIFICATION_ID, notification)
+            }
+            NpLog.d(TAG, "Notification shown/updated (playing=${player.playWhenReady})")
         } catch (e: Exception) {
             NpLog.e(TAG, "Error showing notification: ${e.message}", e)
         }
@@ -409,6 +426,7 @@ class VideoPlayerNotificationHandler(
     fun release() {
         stopPositionUpdates()
         player.removeListener(playerListener)
+        VideoPlayerMediaSessionService.stop(context, removeNotification = true)
         hideNotification()
 
         mediaSession?.release()

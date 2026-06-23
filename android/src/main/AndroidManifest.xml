@@ -1,17 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <!-- Media Session Service for video playback notifications and background playback -->
+        <!-- Foreground service that keeps the app's network alive for background
+             video playback (live + VOD). Started only while playing. -->
         <service
             android:name="com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback">
-            <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
-            </intent-filter>
-        </service>
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
     <!-- Required for media playback -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Required by ExoPlayer setWakeMode(WAKE_MODE_NETWORK): partial WakeLock +
+         WifiLock keep the CPU/WiFi radio awake during background playback. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

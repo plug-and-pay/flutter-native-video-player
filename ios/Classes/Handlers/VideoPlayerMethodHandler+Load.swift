@@ -26,6 +26,10 @@ extension VideoPlayerView {
         let drmConfig = arguments["drmConfig"] as? [String: Any]
         let startAtMs = arguments["startAtMs"] as? Int ?? 0
 
+        // New media starts in Auto: clear any manual-quality pin so the
+        // viewport cap (if configured) applies again.
+        manualQualitySelected = false
+
         // Store media info for Now Playing
         if let mediaInfo = mediaInfo {
             currentMediaInfo = mediaInfo
