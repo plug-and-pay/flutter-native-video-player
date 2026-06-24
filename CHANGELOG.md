@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-06-24
+
+iOS Swift Package Manager build fix.
+
+### Fixed
+- **iOS: SwiftPM builds failed with `Cannot find 'npLog' in scope`.** The plugin keeps two parallel iOS source trees: CocoaPods compiles everything under `Classes/` (`s.source_files = 'Classes/**/*.swift'`), while the Swift Package Manager target (`ios/better_native_video_player`) symlinks each *subdirectory* of `Classes/` into its `Sources/` folder. `Logging.swift` — which defines `npLog` and is the only file at the top level of `Classes/` — had no symlink, so it was excluded from the SPM target and any call site (e.g. `VideoPlayerView.swift`) failed to compile under a SwiftPM build. CocoaPods builds were unaffected. Added the missing `Logging.swift` symlink to the SPM target. (#36, #42)
+
 ## [1.3.0] - 2026-06-23
 
 Quality-selection and Android background-playback fixes.

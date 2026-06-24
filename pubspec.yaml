@@ -1,6 +1,6 @@
 name: better_native_video_player
 description: Native video player (AVPlayer on iOS, ExoPlayer on Android) with HLS, DRM, Chromecast & AirPlay casting, Picture-in-Picture, background playback, and fullscreen.
-version: 1.3.0
+version: 1.3.1
 homepage: https://github.com/DaniKemper010/native-video-player
 repository: https://github.com/DaniKemper010/native-video-player.git
 issue_tracker: https://github.com/DaniKemper010/native-video-player/issues
