@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-07-02
+
+### Fixed
+
+- **Android**: dismissing the Dart fullscreen dialog (back button) now disarms the
+  activity-global auto-enter PiP (`cancelOnLeavePiP`). Previously the armed state leaked
+  permanently after one fullscreen visit, so any later app-leave entered PiP — even from
+  inline playback or with no video playing (Huddle HAB-837).
+- **Android**: closing the PiP window with its X button now pauses playback instead of
+  leaving the media session playing audio in the background. Expanding the PiP window back
+  into the app keeps playing as before (Huddle HAB-838).
+- **Android**: the media notification uses a proper monochrome small icon (host
+  `ic_notification` drawable, then the FCM default-notification-icon meta-data) instead of
+  the tinted launcher icon that rendered as a white square (#45).
+- **Cast**: LIVE streams start at the live edge instead of the beginning of the DVR
+  window — `currentTime` is omitted from the LOAD request unless explicitly set (#44).
+
 ## [1.3.1] - 2026-06-24
 
 iOS Swift Package Manager build fix.
