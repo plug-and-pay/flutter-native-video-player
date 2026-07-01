@@ -9,6 +9,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -42,6 +43,38 @@ class VideoPlayerNotificationHandler(
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "video_player_channel"
         private var sessionCounter = 0
+    }
+
+    /**
+     * The status-bar small icon must be a flat, alpha-only drawable — Android tints it, so a
+     * full-color launcher icon renders as a solid white square. Prefer a dedicated
+     * notification icon from the host app and only fall back to the launcher icon when none
+     * is provided:
+     * 1. a drawable named `ic_notification` in the host app,
+     * 2. the FCM default notification icon meta-data (most apps with push already set it),
+     * 3. the launcher icon (previous behavior).
+     */
+    private fun resolveSmallIconRes(): Int {
+        val byName = context.resources.getIdentifier("ic_notification", "drawable", context.packageName)
+        if (byName != 0) {
+            return byName
+        }
+
+        try {
+            val appInfo = context.packageManager.getApplicationInfo(
+                context.packageName,
+                PackageManager.GET_META_DATA
+            )
+            val fcmIcon = appInfo.metaData
+                ?.getInt("com.google.firebase.messaging.default_notification_icon", 0) ?: 0
+            if (fcmIcon != 0) {
+                return fcmIcon
+            }
+        } catch (e: Exception) {
+            NpLog.w(TAG, "Could not read notification icon meta-data: ${e.message}")
+        }
+
+        return context.applicationInfo.icon
     }
 
     private var mediaSession: MediaSession? = null
@@ -291,9 +324,7 @@ class VideoPlayerNotificationHandler(
 
         NpLog.d(TAG, "Building notification - title: $title, subtitle: $artist (from player: ${mediaMetadata != null})")
 
-        // Get notification icon from the app's resources
-        val appInfo = context.applicationInfo
-        val iconResId = appInfo.icon
+        val iconResId = resolveSmallIconRes()
 
         // Convert Media3 SessionToken to MediaSessionCompat.Token for notification
         // Media3 1.4.0+ requires us to extract the token differently
