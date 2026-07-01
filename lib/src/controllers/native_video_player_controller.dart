@@ -1694,6 +1694,10 @@ class NativeVideoPlayerController {
         final bool inPip = (await _floating.pipStatus) == PiPStatus.enabled;
         if (!_isDisposed && inPip != _state.isPipEnabled) {
           _updateState(_state.copyWith(isPipEnabled: inPip));
+
+          if (!inPip) {
+            unawaited(_pauseIfPipDismissed());
+          }
         }
       });
     } else if (!state.isFullScreen && _androidPipPollTimer != null) {
@@ -1704,6 +1708,24 @@ class NativeVideoPlayerController {
         _updateState(_state.copyWith(isPipEnabled: false));
       }
     }
+  }
+
+  /// Pauses playback when the PiP window was dismissed with its close (X)
+  /// button. Dismissing stops the activity without bringing the app back to
+  /// the foreground, so without this the media session keeps playing audio in
+  /// the background. Expanding the PiP window back into the app resumes the
+  /// activity almost immediately — the delayed lifecycle re-check tells the
+  /// two apart.
+  Future<void> _pauseIfPipDismissed() async {
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    if (_isDisposed ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      return;
+    }
+
+    debugPrint('PiP window dismissed while app is backgrounded — pausing');
+    await pause();
   }
 
   /// Maps URL sources for Android's native sideloading; null on other
@@ -2087,6 +2109,16 @@ class NativeVideoPlayerController {
         _dartFullscreenCloseCallback = null;
         if (_state.isFullScreen) {
           _updateState(_state.copyWith(isFullScreen: false));
+
+          // Mirror exitFullScreen(): leaving fullscreen must disarm the
+          // activity-global OnLeavePiP, otherwise auto-PiP stays armed for the
+          // rest of the session and any later app-leave enters PiP — even from
+          // inline playback or with no video playing at all.
+          if (!kIsWeb && Platform.isAndroid) {
+            _floating.cancelOnLeavePiP();
+            debugPrint('Automatic PiP disabled (fullscreen dialog dismissed)');
+            unawaited(_refreshAvailabilityFlags());
+          }
         }
       },
     );
