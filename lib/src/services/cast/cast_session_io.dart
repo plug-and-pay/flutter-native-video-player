@@ -313,11 +313,17 @@ class CastSession {
     bool autoplay = true,
     Duration startAt = Duration.zero,
   }) async {
+    // For LIVE streams an explicit currentTime of 0 makes the receiver start at
+    // the beginning of the DVR window; omitting the field lets it default to the
+    // live edge, matching local playback. Only send it when the caller actually
+    // requested a position (or for regular buffered media).
+    final bool sendCurrentTime = streamType != 'LIVE' || startAt > Duration.zero;
+
     final payload = <String, dynamic>{
       'type': 'LOAD',
       'requestId': _nextRequestId(),
       'autoplay': autoplay,
-      'currentTime': startAt.inMilliseconds / 1000,
+      if (sendCurrentTime) 'currentTime': startAt.inMilliseconds / 1000,
       if (activeTrackIds.isNotEmpty) 'activeTrackIds': activeTrackIds,
       'media': <String, dynamic>{
         'contentId': contentUrl,
