@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-02
+
+### Added
+
+- **Embedded caption text-size scaling** (#43): `NativeVideoPlayerSubtitleStyle.embeddedTextScale`
+  (default `1.0` = platform default) and the convenience method
+  `controller.setNativeSubtitleTextScale(double)` scale the text size of EMBEDDED
+  (native-rendered) subtitle tracks — ExoPlayer's `SubtitleView` on Android (both the
+  lightweight and PlayerView display paths), `AVPlayerItem.textStyleRules` on iOS.
+  Takes effect live without a playback restart, survives quality/audio/variant switches,
+  item reloads, and native view recreation, and scales relative to the user's system
+  caption size preference. Sidecar overlay sizing (`subtitleStyle.fontSize`) is unaffected.
+
 ## [1.3.2] - 2026-07-02
 
 ### Fixed
