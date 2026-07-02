@@ -148,6 +148,14 @@ class TextureVideoPlayer(
                 session.setViewportSize(width, height, isFullScreen = false)
                 result.success(null)
             }
+            "setEmbeddedTextScale" -> {
+                // Texture mode has no native SubtitleView (captions render via
+                // the Flutter sidecar overlay); store so a later platform-view
+                // rebind of the shared session picks it up.
+                val scale = (call.argument<Number>("scale"))?.toFloat() ?: 1f
+                session.setEmbeddedTextScale(scale)
+                result.success(null)
+            }
             "enterFullScreen", "exitFullScreen" -> {
                 // No Android View to move into a fullscreen dialog; the Dart
                 // controller falls back to Dart fullscreen for texture views.

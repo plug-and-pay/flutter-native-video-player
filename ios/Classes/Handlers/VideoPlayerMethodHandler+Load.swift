@@ -164,6 +164,10 @@ extension VideoPlayerView {
         // This allows the video to start loading right away
         player?.replaceCurrentItem(with: playerItem)
 
+        // Re-apply the embedded caption text scale to the fresh item
+        // (textStyleRules live on the AVPlayerItem, not the player)
+        applyEmbeddedTextScale()
+
         // --- Configure HDR settings asynchronously (doesn't block video loading) ---
         // Only apply color space correction if HDR is explicitly disabled AND we detect this might be HDR content
         // For most standard videos, the default handling is fine

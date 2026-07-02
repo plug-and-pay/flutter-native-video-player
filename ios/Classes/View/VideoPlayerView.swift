@@ -152,6 +152,10 @@ import QuartzCore
     // Store desired playback speed
     var desiredPlaybackSpeed: Float = 1.0
 
+    // Text-size scale for embedded (native-rendered) subtitle tracks;
+    // 1.0 = system default. Re-applied to every new AVPlayerItem (issue #43).
+    var embeddedTextScale: CGFloat = 1.0
+
     // Store HDR setting
     var enableHDR: Bool = false
 
@@ -676,6 +680,8 @@ import QuartzCore
             handleGetAvailableSubtitleTracks(result: result)
         case "setSubtitleTrack":
             handleSetSubtitleTrack(call: call, result: result)
+        case "setEmbeddedTextScale":
+            handleSetEmbeddedTextScale(call: call, result: result)
         case "getAvailableAudioTracks":
             handleGetAvailableAudioTracks(result: result)
         case "setAudioTrack":

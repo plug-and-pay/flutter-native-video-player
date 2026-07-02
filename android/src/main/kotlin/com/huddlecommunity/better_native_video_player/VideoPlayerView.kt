@@ -9,6 +9,7 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.accessibility.CaptioningManager
 import android.widget.FrameLayout
 import androidx.annotation.RequiresApi
 import androidx.core.view.WindowCompat
@@ -59,6 +60,7 @@ class VideoPlayerView(
     // SubtitleView wired to the player's cues so captions (including the
     // native sidecar track used during PiP/fullscreen) keep rendering.
     private val lightSurfaceView: SurfaceView?
+    private val lightSubtitleView: SubtitleView?
     private val lightListener: Player.Listener?
 
     // Reports the video's display size to Dart in both display paths so the
@@ -162,11 +164,13 @@ class VideoPlayerView(
             }
             player.addListener(listener)
             lightSurfaceView = surfaceView
+            lightSubtitleView = subtitleView
             lightListener = listener
             videoContentView = contentFrame
             NpLog.d(TAG, "Lightweight SurfaceView configured (controls hidden)")
         } else {
             lightSurfaceView = null
+            lightSubtitleView = null
             lightListener = null
             playerView = PlayerView(context).apply {
                 this.player = this@VideoPlayerView.player
@@ -192,6 +196,8 @@ class VideoPlayerView(
             }
             videoContentView = playerView
         }
+
+        applyEmbeddedTextScale()
 
         // Report the video's display size to Dart so the sidecar subtitle
         // overlay can pin captions to the video's content rect. Covers both
@@ -303,6 +309,12 @@ class VideoPlayerView(
                 val width = (call.argument<Number>("width"))?.toInt() ?: 0
                 val height = (call.argument<Number>("height"))?.toInt() ?: 0
                 session.setViewportSize(width, height, isFullScreen)
+                result.success(null)
+            }
+            "setEmbeddedTextScale" -> {
+                val scale = (call.argument<Number>("scale"))?.toFloat() ?: 1f
+                session.setEmbeddedTextScale(scale)
+                applyEmbeddedTextScale()
                 result.success(null)
             }
             else -> {
@@ -634,6 +646,31 @@ class VideoPlayerView(
     private fun applyLightAspectRatio(frame: AspectRatioFrameLayout, videoSize: VideoSize) {
         if (videoSize.width == 0 || videoSize.height == 0) return
         frame.setAspectRatio(videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height)
+    }
+
+    /**
+     * Applies the session's embedded-caption text scale to both display
+     * paths' SubtitleViews (issue #43). Scales relative to the user's system
+     * caption preference, so 1.0 keeps the platform-default size — identical
+     * to setUserDefaultTextSize().
+     */
+    private fun applyEmbeddedTextScale() {
+        val scale = session.embeddedTextScale
+        for (subtitleView in listOfNotNull(lightSubtitleView, playerView?.subtitleView)) {
+            if (scale == 1f) {
+                subtitleView.setUserDefaultTextSize()
+            } else {
+                subtitleView.setFractionalTextSize(
+                    SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * userCaptionFontScale() * scale
+                )
+            }
+        }
+    }
+
+    private fun userCaptionFontScale(): Float {
+        val captioningManager =
+            context.getSystemService(Context.CAPTIONING_SERVICE) as? CaptioningManager
+        return if (captioningManager?.isEnabled == true) captioningManager.fontScale else 1f
     }
 
     /**

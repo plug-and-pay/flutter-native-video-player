@@ -20,7 +20,7 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 - ✅ Background playback with media notifications
 - ✅ Playback controls: play, pause, seek, volume, speed (0.25x - 2.0x)
 - ✅ Quality selection for HLS streams with real-time switching
-- ✅ **Subtitle/Closed Caption support** for HLS streams (VOD and Live) with language selection
+- ✅ **Subtitle/Closed Caption support** for HLS streams (VOD and Live) with language selection and adjustable embedded-caption text size
 - ✅ **Sidecar subtitles**: load external VTT/SRT files (URL, file, or raw content) with fully styleable, positionable rendering
 - ✅ **Audio track selection**: list and switch alternate audio renditions (languages, audio descriptions)
 - ✅ **Resume positions**: `load(startAt:)` applied natively before the first frame + `PositionCheckpoints` for persistence
@@ -706,6 +706,23 @@ showSubtitlePicker(
 );
 ```
 
+**Scaling Embedded Caption Text Size:**
+
+Embedded tracks are rendered by the platform caption renderers, so `subtitleStyle.fontSize` doesn't affect them. Use the embedded text scale instead — it takes effect live, survives quality switches and item reloads, and scales relative to the user's system caption size preference (`1.0` = platform default):
+
+```dart
+// Convenience method (150% captions)
+await _controller.setNativeSubtitleTextScale(1.5);
+
+// Or drive it through the style object alongside the sidecar styling
+_controller.setSubtitleStyle(
+  const NativeVideoPlayerSubtitleStyle(embeddedTextScale: 1.5),
+);
+
+// Back to the platform default
+await _controller.setNativeSubtitleTextScale(1.0);
+```
+
 **Example HLS Streams with Subtitles:**
 ```dart
 // Apple's example stream with multiple subtitle languages
@@ -721,7 +738,7 @@ final subtitles = await _controller.getAvailableSubtitleTracks();
 - Embedded subtitle tracks are automatically detected from the stream
 - External subtitle files (SRT, VTT) are supported as *sidecar subtitles* — see the next section
 - Both VOD (Video on Demand) and Live streams are supported
-- Font rendering and styling of *embedded* tracks are handled by the native players (AVPlayer on iOS, ExoPlayer on Android); *sidecar* subtitles are rendered by the plugin and fully styleable
+- Font rendering and styling of *embedded* tracks are handled by the native players (AVPlayer on iOS, ExoPlayer on Android) — only the text size can be scaled via `embeddedTextScale` / `setNativeSubtitleTextScale`; *sidecar* subtitles are rendered by the plugin and fully styleable
 
 **Platform-Specific Behavior:**
 - **iOS**: Uses AVFoundation's `AVMediaSelectionGroup` for subtitle track management
