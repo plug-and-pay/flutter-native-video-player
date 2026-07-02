@@ -349,6 +349,63 @@ void main() {
     );
   });
 
+  group('embedded caption text scale', () {
+    testWidgets('is sent on change and re-sent when the view is recreated', (
+      tester,
+    ) async {
+      await tester.pumpWidget(const SizedBox());
+      final context = tester.element(find.byType(SizedBox));
+
+      await tester.runAsync(() async {
+        mockMethodChannel();
+        mockControllerStream(15);
+        mockViewStream(501);
+
+        final controller = NativeVideoPlayerController(id: 15);
+        await flushSetup(controller);
+        await controller.onPlatformViewCreated(501, context);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        log.clear();
+        await controller.setNativeSubtitleTextScale(1.5);
+        expect(log, contains('method:setEmbeddedTextScale'));
+
+        // Recreate the native view (list→detail→back): the scale must be
+        // re-applied because the platform renderer was rebuilt with defaults.
+        controller.onPlatformViewDisposed(501);
+        mockViewStream(502);
+        log.clear();
+        await controller.onPlatformViewCreated(502, context);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        expect(log, contains('method:setEmbeddedTextScale'));
+        expect(flutterErrors, isEmpty);
+
+        await controller.dispose();
+      });
+    });
+
+    testWidgets('default scale is not sent on view creation', (tester) async {
+      await tester.pumpWidget(const SizedBox());
+      final context = tester.element(find.byType(SizedBox));
+
+      await tester.runAsync(() async {
+        mockMethodChannel();
+        mockControllerStream(16);
+        mockViewStream(503);
+
+        final controller = NativeVideoPlayerController(id: 16);
+        await flushSetup(controller);
+        await controller.onPlatformViewCreated(503, context);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        expect(log, isNot(contains('method:setEmbeddedTextScale')));
+
+        await controller.dispose();
+      });
+    });
+  });
+
   group('platform view safety net', () {
     testWidgets('onPlatformViewCreated sets up the channel if setup failed', (
       tester,

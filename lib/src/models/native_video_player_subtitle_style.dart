@@ -4,11 +4,14 @@ import 'package:flutter/widgets.dart';
 /// Flutter overlay (covers the caption customization requested in issue
 /// #29: size, colors, and where on the video the captions sit).
 ///
-/// Applies to sidecar (VTT/SRT) subtitles only; EMBEDDED native subtitle
-/// tracks are rendered by the platform with system caption settings.
+/// Applies to sidecar (VTT/SRT) subtitles only, with one exception:
+/// [embeddedTextScale], which scales EMBEDDED native subtitle tracks
+/// (rendered by the platform caption renderers, issue #43). All other
+/// fields have no effect on embedded tracks.
 ///
 /// To change the style at runtime, rebuild the [NativeVideoPlayer] widget
-/// with a new `subtitleStyle` (the overlay rebuilds immediately).
+/// with a new `subtitleStyle` (the overlay rebuilds immediately;
+/// [embeddedTextScale] is pushed to the platform renderer).
 @immutable
 class NativeVideoPlayerSubtitleStyle {
   const NativeVideoPlayerSubtitleStyle({
@@ -27,6 +30,7 @@ class NativeVideoPlayerSubtitleStyle {
     this.fullscreenLandscapeFontSize,
     this.fullscreenLandscapeFontWeight,
     this.fullscreenLandscapeLineHeight,
+    this.embeddedTextScale = 1.0,
   });
 
   // --- Text ---
@@ -73,6 +77,14 @@ class NativeVideoPlayerSubtitleStyle {
   final FontWeight? fullscreenLandscapeFontWeight;
   final double? fullscreenLandscapeLineHeight;
 
+  // --- Embedded (native-rendered) tracks ---
+
+  /// Text-size scale for EMBEDDED subtitle tracks rendered by the platform
+  /// (ExoPlayer's SubtitleView on Android, AVPlayer captions on iOS).
+  /// 1.0 = platform default (the user's system caption size preference).
+  /// Ignored by the sidecar overlay — use [fontSize] for that.
+  final double embeddedTextScale;
+
   NativeVideoPlayerSubtitleStyle copyWith({
     double? fontSize,
     FontWeight? fontWeight,
@@ -89,6 +101,7 @@ class NativeVideoPlayerSubtitleStyle {
     double? fullscreenLandscapeFontSize,
     FontWeight? fullscreenLandscapeFontWeight,
     double? fullscreenLandscapeLineHeight,
+    double? embeddedTextScale,
   }) {
     return NativeVideoPlayerSubtitleStyle(
       fontSize: fontSize ?? this.fontSize,
@@ -109,6 +122,7 @@ class NativeVideoPlayerSubtitleStyle {
           fullscreenLandscapeFontWeight ?? this.fullscreenLandscapeFontWeight,
       fullscreenLandscapeLineHeight:
           fullscreenLandscapeLineHeight ?? this.fullscreenLandscapeLineHeight,
+      embeddedTextScale: embeddedTextScale ?? this.embeddedTextScale,
     );
   }
 }

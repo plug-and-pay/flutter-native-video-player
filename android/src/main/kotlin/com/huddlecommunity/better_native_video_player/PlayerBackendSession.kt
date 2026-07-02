@@ -62,6 +62,12 @@ class PlayerBackendSession(
     private var lastViewportWidth: Int = 0
     private var lastViewportHeight: Int = 0
 
+    // Text-size scale for embedded (native-rendered) subtitle tracks; 1.0 =
+    // platform default. Stored here so it survives media-item replacement;
+    // Dart re-sends it when the backend view itself is recreated (issue #43).
+    var embeddedTextScale: Float = 1f
+        private set
+
     init {
         // Extract and store media info from args (if provided during initialization)
         // This ensures we have the correct media info even for shared players
@@ -245,6 +251,12 @@ class PlayerBackendSession(
         if (lastViewportWidth > 0 && lastViewportHeight > 0) {
             applyViewportConstraints(lastViewportWidth, lastViewportHeight)
         }
+    }
+
+    /** Stores the embedded-caption text scale; the backend applies it to its SubtitleView(s). */
+    fun setEmbeddedTextScale(scale: Float) {
+        if (scale <= 0f) return
+        embeddedTextScale = scale
     }
 
     /**

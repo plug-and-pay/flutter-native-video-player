@@ -189,6 +189,11 @@ class NativeVideoPlayerController {
   /// host renders captions identically to the inline player.
   NativeVideoPlayerSubtitleStyle? _subtitleStyle;
 
+  /// Text-size scale for embedded (native-rendered) subtitle tracks.
+  /// Cached so it can be re-applied when the native view is recreated
+  /// (list→detail→back) or a new item is loaded. Issue #43.
+  double _embeddedTextScale = 1.0;
+
   /// Callback to close the Dart fullscreen dialog
   /// Set by FullscreenVideoPlayer when it's created
   VoidCallback? _dartFullscreenCloseCallback;
@@ -1030,8 +1035,19 @@ class NativeVideoPlayerController {
   /// Typically called by the NativeVideoPlayer widget so the Dart fullscreen
   /// host (which builds its own NativeVideoPlayer) renders captions with the
   /// same style as the inline player.
+  ///
+  /// [NativeVideoPlayerSubtitleStyle.embeddedTextScale] is additionally
+  /// pushed to the platform caption renderer (fire-and-forget) when it
+  /// changed since the last call.
   void setSubtitleStyle(NativeVideoPlayerSubtitleStyle style) {
     _subtitleStyle = style;
+
+    if (style.embeddedTextScale != _embeddedTextScale) {
+      _embeddedTextScale = style.embeddedTextScale;
+      unawaited(
+        _methodChannel?.setEmbeddedTextScale(style.embeddedTextScale),
+      );
+    }
   }
 
   /// Sets the callback for closing Dart fullscreen
@@ -1071,6 +1087,13 @@ class NativeVideoPlayerController {
       if (_methodChannel != null) {
         await _methodChannel!.ensureSurfaceConnected();
       }
+
+      // Re-apply the embedded caption text scale — the recreated native view
+      // builds its SubtitleView with the platform default size.
+      if (_embeddedTextScale != 1.0 && _methodChannel != null) {
+        await _methodChannel!.setEmbeddedTextScale(_embeddedTextScale);
+      }
+
       // Re-fetch availability flags from native side FIRST (wait for it to complete)
       // This ensures the state is up-to-date before we emit it
       await _refreshAvailabilityFlags();
@@ -1314,6 +1337,11 @@ class NativeVideoPlayerController {
         startAtMs: startAt?.inMilliseconds,
       );
 
+      // Re-apply the embedded caption text scale to the fresh player item.
+      if (_embeddedTextScale != 1.0) {
+        await _methodChannel!.setEmbeddedTextScale(_embeddedTextScale);
+      }
+
       // Fetch available qualities after loading
       final qualities = await _methodChannel!.getAvailableQualities();
 
@@ -1513,6 +1541,18 @@ class NativeVideoPlayerController {
   /// Sets the playback speed
   Future<void> setSpeed(double speed) async {
     await _methodChannel?.setSpeed(speed);
+  }
+
+  /// Scales the text size of EMBEDDED (native-rendered) subtitle tracks.
+  /// 1.0 = platform default. No effect on the sidecar overlay (use
+  /// [setSubtitleStyle] / `subtitleStyle.fontSize` for that). Issue #43.
+  ///
+  /// Takes effect live and survives item reloads and native view recreation.
+  Future<void> setNativeSubtitleTextScale(double scale) async {
+    _embeddedTextScale = scale;
+    _subtitleStyle = (_subtitleStyle ?? const NativeVideoPlayerSubtitleStyle())
+        .copyWith(embeddedTextScale: scale);
+    await _methodChannel?.setEmbeddedTextScale(scale);
   }
 
   /// Sets whether the video should loop

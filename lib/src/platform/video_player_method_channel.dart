@@ -192,6 +192,20 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Sets the text-size scale for embedded (native-rendered) subtitle
+  /// tracks. 1.0 = platform default. Issue #43.
+  Future<void> setEmbeddedTextScale(double scale) async {
+    try {
+      await _methodChannel
+          .invokeMethod<void>('setEmbeddedTextScale', <String, Object>{
+        'viewId': primaryPlatformViewId,
+        'scale': scale,
+      });
+    } catch (e) {
+      debugPrint('Error calling setEmbeddedTextScale: $e');
+    }
+  }
+
   /// Sets the playback speed
   Future<void> setSpeed(double speed) async {
     try {

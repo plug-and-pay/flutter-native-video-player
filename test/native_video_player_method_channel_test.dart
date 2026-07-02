@@ -26,6 +26,8 @@ void main() {
               return null;
             case 'setSpeed':
               return null;
+            case 'setEmbeddedTextScale':
+              return null;
             case 'setQuality':
               return null;
             case 'getAvailableQualities':
@@ -130,6 +132,26 @@ void main() {
         isA<MethodCall>()
             .having((c) => c.method, 'method', 'setSpeed')
             .having((c) => c.arguments, 'arguments', speed),
+      ),
+    );
+  });
+
+  test('setEmbeddedTextScale method sends correct value', () async {
+    const double scale = 1.5;
+    await channel.invokeMethod<void>('setEmbeddedTextScale', {
+      'viewId': 1,
+      'scale': scale,
+    });
+    expect(
+      methodCalls,
+      contains(
+        isA<MethodCall>()
+            .having((c) => c.method, 'method', 'setEmbeddedTextScale')
+            .having(
+              (c) => c.arguments,
+              'arguments',
+              containsPair('scale', scale),
+            ),
       ),
     );
   });
