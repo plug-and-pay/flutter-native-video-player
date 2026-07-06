@@ -77,3 +77,6 @@ coverage/
 # Local-only notes
 *.local.md
 PROMPT_*.md
+
+# Example build output
+example/**/build/

@@ -45,8 +45,7 @@ class BackgroundPlaybackGuard with WidgetsBindingObserver {
             AirPlayStateManager.instance.isAirPlayConnected) {
           return;
         }
-        _pausedByGuard = true;
-        unawaited(controller.pause());
+        unawaited(_pauseUnlessInPictureInPicture());
       case AppLifecycleState.resumed:
         if (_pausedByGuard) {
           _pausedByGuard = false;
@@ -56,6 +55,23 @@ class BackgroundPlaybackGuard with WidgetsBindingObserver {
       case AppLifecycleState.detached:
         break;
     }
+  }
+
+  /// The synchronous [NativeVideoPlayerController.isPipEnabled] flag is
+  /// poll-derived on Android and can be stale at exactly the
+  /// background-transition moment — pausing on it would silence an active
+  /// PiP session (and abandon audio focus with it, HAB-836). Confirm
+  /// against the platform's ground truth, and re-check the playback state
+  /// after the await before pausing.
+  Future<void> _pauseUnlessInPictureInPicture() async {
+    final bool isInPictureInPicture = await controller
+        .getPictureInPictureStatus();
+    if (isInPictureInPicture || !controller.activityState.isPlaying) {
+      return;
+    }
+
+    _pausedByGuard = true;
+    await controller.pause();
   }
 
   void dispose() {

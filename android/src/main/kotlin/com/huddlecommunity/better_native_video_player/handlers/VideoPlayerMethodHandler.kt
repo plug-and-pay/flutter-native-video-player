@@ -8,6 +8,8 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -52,6 +54,11 @@ class VideoPlayerMethodHandler(
     companion object {
         private const val TAG = "VideoPlayerMethod"
 
+        // Grace period before a plain pause abandons audio focus — long
+        // enough to survive the background→PiP transition, short enough to
+        // stay polite to other audio apps.
+        private const val AUDIO_FOCUS_PAUSE_ABANDON_DELAY_MS = 30_000L
+
         /**
          * Determines if a URL is an HLS stream (.m3u8 extension or common
          * HLS patterns). Shared with VideoCacheManager.precache, which must
@@ -92,12 +99,24 @@ class VideoPlayerMethodHandler(
     private var audioFocusRequest: AudioFocusRequest? = null
     private val legacyAudioFocusListener = AudioManager.OnAudioFocusChangeListener { }
 
+    // Deferred audio-focus abandon for plain pauses ("paused with intent to
+    // resume"): abandoning the instant isPlaying flips false silences the
+    // session when a lifecycle race pauses playback right as the app enters
+    // Picture-in-Picture (HAB-836). Stop/end/dispose still abandon
+    // immediately; a resume within the grace window cancels the abandon.
+    private val audioFocusHandler = Handler(Looper.getMainLooper())
+    private var pendingAudioFocusAbandon: Runnable? = null
+
     private val audioFocusPlaybackListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 requestAudioFocusForPlayback()
-            } else {
+            } else if (player.playbackState == Player.STATE_IDLE ||
+                player.playbackState == Player.STATE_ENDED
+            ) {
                 abandonAudioFocusForPlayback()
+            } else {
+                scheduleDeferredAudioFocusAbandon()
             }
         }
     }
@@ -127,7 +146,23 @@ class VideoPlayerMethodHandler(
     // Callback to handle fullscreen requests from Flutter
     var onFullscreenRequest: ((Boolean) -> Unit)? = null
 
+    private fun scheduleDeferredAudioFocusAbandon() {
+        cancelPendingAudioFocusAbandon()
+        val abandonRunnable = Runnable {
+            pendingAudioFocusAbandon = null
+            abandonAudioFocusForPlayback()
+        }
+        pendingAudioFocusAbandon = abandonRunnable
+        audioFocusHandler.postDelayed(abandonRunnable, AUDIO_FOCUS_PAUSE_ABANDON_DELAY_MS)
+    }
+
+    private fun cancelPendingAudioFocusAbandon() {
+        pendingAudioFocusAbandon?.let { audioFocusHandler.removeCallbacks(it) }
+        pendingAudioFocusAbandon = null
+    }
+
     private fun requestAudioFocusForPlayback() {
+        cancelPendingAudioFocusAbandon()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (audioFocusRequest == null) {
                 val attrs = AudioAttributes.Builder()
@@ -155,6 +190,7 @@ class VideoPlayerMethodHandler(
     }
 
     private fun abandonAudioFocusForPlayback() {
+        cancelPendingAudioFocusAbandon()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             audioFocusRequest?.let { request ->
                 audioManager.abandonAudioFocusRequest(request)
@@ -424,7 +460,10 @@ class VideoPlayerMethodHandler(
      */
     private fun handlePause(result: MethodChannel.Result) {
         player.pause()
-        abandonAudioFocusForPlayback()
+        // Deferred, not immediate: a pause is "with intent to resume", and an
+        // immediate abandon silences the session when a lifecycle race pauses
+        // right as the app enters Picture-in-Picture (HAB-836).
+        scheduleDeferredAudioFocusAbandon()
         result.success(null)
     }
 

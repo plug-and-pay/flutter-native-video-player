@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-07-07
+
+Playback resilience release: stalled-load watchdog, Android decoder fallback, iOS total-player cap, and PiP audio fixes.
+
+### Added
+- **Stalled-playback watchdog.** New `NativeVideoPlayerConfig.loadTimeout` (default 30 s) and `bufferingTimeout` (default off). The native load path only ever reports "ready" or an explicit player error — a stalled decoder emits neither, leaving apps on an infinite spinner. When a player now sits in `initializing`/`loading` (or, opted-in, `buffering`) past the timeout, the controller synthesizes the same `error` activity event a native failure produces (message: "Load timed out…"/"Buffering timed out…") and best-effort pauses the stuck pipeline, so app error/retry UI actually shows. `null` disables either watchdog.
+- **Android decoder fallback (default on).** The shared player is now built with `DefaultRenderersFactory.setEnableDecoderFallback(true)`: when the primary hardware decoder fails to initialize, ExoPlayer falls back to the next decoder instead of failing playback.
+- **`androidForceSoftwareDecoders` (opt-in, default off).** Restricts `MediaCodec` selection to software decoders (`OMX.google.*` / `c2.android.*`) via a custom `MediaCodecSelector`, falling back to the default list when no software decoder exists for a mime type. Escape hatch for devices whose vendor hardware decoders crash; expect higher CPU use and possibly dropped frames on high-res content.
+- **iOS total-player cap with LRU eviction.** New `NativeVideoPlayerConfig.iosMaxTotalPlayers` (default 6). `maxConcurrentPlayingPlayers` bounds *playing* players, but paused players keep their `AVPlayerItem` alive — and iOS's finite decode pipeline makes NEW items fail once enough accumulate. Creating a player beyond the cap now tears down the least-recently-used player that is not playing, not in PiP, not on AirPlay, and not texture-backed (soft cap: active playback is never killed). The evicted controller is notified (`playerEvicted`) and transparently re-loads its last source at the eviction position on its next `play()`.
+- **`getPictureInPictureStatus()`.** Ground-truth PiP query: `isPipEnabled` is event-driven on iOS but poll-derived on Android (150 ms, fullscreen-only), so it can be stale exactly when the app backgrounds into PiP. The new call queries the platform directly on Android and refreshes the flag.
+
+### Fixed
+- **Android PiP no longer goes silent.** Two races conspired to mute PiP (video kept playing without sound): (1) `BackgroundPlaybackGuard` read the stale polled `isPipEnabled` on the `paused`/`hidden` transition and could pause an active PiP session — it now confirms via `getPictureInPictureStatus()` and re-checks the playback state after the await; the Android PiP poll also fires its first check immediately instead of after the first 150 ms tick. (2) Audio focus was abandoned the instant `isPlaying` flipped false — a plain pause now defers the abandon by a 30 s grace period (cancelled on resume; stop/end/dispose still abandon immediately), so a transient pause during the PiP transition no longer surrenders the audio session.
+
 ## [1.4.0] - 2026-07-02
 
 ### Added

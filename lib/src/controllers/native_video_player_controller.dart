@@ -1898,6 +1898,32 @@ class NativeVideoPlayerController {
     unawaited(_methodChannel?.setSubtitlesSuppressedForPip(suppressed));
   }
 
+  /// Ground-truth Picture-in-Picture status.
+  ///
+  /// [isPipEnabled] is event-driven on iOS but poll-derived on Android
+  /// (150 ms cadence, and only while fullscreen), so it can be stale at
+  /// exactly the moment the app backgrounds into PiP. On Android this
+  /// queries the platform's `isInPictureInPictureMode` directly and
+  /// refreshes the synchronous flag with the result; pause decisions made
+  /// on lifecycle transitions (see BackgroundPlaybackGuard) must use this
+  /// instead of [isPipEnabled]. Falls back to the last known flag if the
+  /// platform query fails.
+  Future<bool> getPictureInPictureStatus() async {
+    if (kIsWeb || _isDisposed || !Platform.isAndroid) {
+      return _state.isPipEnabled;
+    }
+
+    try {
+      final bool inPip = (await _floating.pipStatus) == PiPStatus.enabled;
+      if (!_isDisposed && inPip != _state.isPipEnabled) {
+        _updateState(_state.copyWith(isPipEnabled: inPip));
+      }
+      return inPip;
+    } catch (_) {
+      return _state.isPipEnabled;
+    }
+  }
+
   /// Starts/stops polling Android's PiP status so [isPipEnabled] reflects the
   /// real PiP state.
   ///
@@ -1913,9 +1939,7 @@ class NativeVideoPlayerController {
       return;
     }
     if (state.isFullScreen && _androidPipPollTimer == null) {
-      _androidPipPollTimer = Timer.periodic(const Duration(milliseconds: 150), (
-        _,
-      ) async {
+      Future<void> checkPipStatus() async {
         if (_isDisposed) {
           return;
         }
@@ -1927,7 +1951,15 @@ class NativeVideoPlayerController {
             unawaited(_pauseIfPipDismissed());
           }
         }
-      });
+      }
+
+      _androidPipPollTimer = Timer.periodic(
+        const Duration(milliseconds: 150),
+        (_) => unawaited(checkPipStatus()),
+      );
+      // First check at t=0 — waiting a full tick leaves [isPipEnabled] stale
+      // exactly when lifecycle-transition pause decisions read it.
+      unawaited(checkPipStatus());
     } else if (!state.isFullScreen && _androidPipPollTimer != null) {
       _androidPipPollTimer!.cancel();
       _androidPipPollTimer = null;
