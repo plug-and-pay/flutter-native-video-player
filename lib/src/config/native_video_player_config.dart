@@ -29,6 +29,8 @@ class NativeVideoPlayerConfig {
     this.androidPrecacheBytes = 2 * 1024 * 1024,
     this.androidTextureMode = false,
     this.iosTextureMode = false,
+    this.loadTimeout = const Duration(seconds: 30),
+    this.bufferingTimeout,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
@@ -207,6 +209,34 @@ class NativeVideoPlayerConfig {
   /// texture shows the last local frame instead of the native placard.
   /// Applies to views created after the config is set.
   final bool iosTextureMode;
+
+  /// Maximum time a player may stay in a load-pipeline state
+  /// (initializing/loading) before the controller gives up (default 30
+  /// seconds; null disables the watchdog).
+  ///
+  /// A stalled native pipeline emits no event at all — Android's ExoPlayer
+  /// listener only reports `STATE_READY` ('loaded') or `onPlayerError`
+  /// ('error'), so a decoder that hangs while preparing leaves the Dart
+  /// state at loading forever and the UI shows an infinite spinner. On
+  /// expiry the controller synthesizes the exact error event a real native
+  /// failure produces (activity state `error` with a
+  /// 'Load timed out after Ns' message, delivered to the same activity
+  /// listeners) and best-effort pauses the pipeline so the app can show its
+  /// error UI and offer a retry. Read each time a player enters a loading
+  /// state, so changes apply to the next load.
+  final Duration? loadTimeout;
+
+  /// Maximum time a player may stay buffering before the controller gives
+  /// up (default null = disabled).
+  ///
+  /// Same contract as [loadTimeout], but armed on the buffering state: on
+  /// expiry the controller synthesizes a native-shaped error event
+  /// ('Buffering timed out after Ns') and best-effort pauses the pipeline.
+  /// Disabled by default because long rebuffers on slow networks usually do
+  /// recover; enable it for feeds where a spinner-forever tile is worse
+  /// than an error state. Read each time a player enters the buffering
+  /// state.
+  final Duration? bufferingTimeout;
 }
 
 /// ExoPlayer `DefaultLoadControl` parameters (Android only).

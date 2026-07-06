@@ -334,6 +334,20 @@ class NativeVideoPlayerController {
   /// Timer for buffering state debounce (400ms)
   Timer? _bufferingDebounceTimer;
 
+  /// Watchdog bounding how long the player may sit in a load-pipeline state
+  /// (initializing/loading). A stalled native pipeline emits no event at all
+  /// — Android's ExoPlayer listener only reports STATE_READY ('loaded') or
+  /// onPlayerError ('error') — so without this the Dart state stays loading
+  /// forever and the UI shows an infinite spinner. Configured via
+  /// [NativeVideoPlayerConfig.loadTimeout]; on expiry the stall is surfaced
+  /// as a regular error event (see [_onWatchdogExpired]).
+  Timer? _loadWatchdogTimer;
+
+  /// Watchdog bounding how long the player may stay buffering. Opt-in via
+  /// [NativeVideoPlayerConfig.bufferingTimeout] (null = disabled, the
+  /// default); same expiry behavior as [_loadWatchdogTimer].
+  Timer? _bufferingWatchdogTimer;
+
   /// Polls Android PiP state while fullscreen. Android has no native PiP
   /// enter/exit callback (unlike iOS), and the floating package's status
   /// stream leaks a 10ms timer it never cancels — so we poll the cheap
@@ -492,6 +506,11 @@ class NativeVideoPlayerController {
       if (wasPlaying != isPlaying) {
         _sidecarSubtitles.onPlayingChanged(isPlaying);
       }
+
+      // Re-evaluate the stalled-playback watchdogs on every activity-state
+      // transition: arm while spinning up / buffering, disarm on any state
+      // that proves the pipeline made progress.
+      _updateWatchdogs(newState.activityState);
     }
     // Hand sidecar caption rendering to the native SubtitleView while the
     // Flutter overlay is invisible (Android PiP / native fullscreen) and
@@ -585,6 +604,110 @@ class NativeVideoPlayerController {
         _updateState(_state.copyWith(activityState: restoredState));
       }
     }
+  }
+
+  /// Arms/disarms the stalled-playback watchdogs for [state].
+  ///
+  /// Called on every activity-state transition:
+  /// - The load watchdog is (re-)armed while the pipeline is spinning up
+  ///   (initializing/loading) and cancelled on every other state — reaching
+  ///   initialized/loaded/playing/paused/buffering/completed/stopped, a real
+  ///   native error, or idle all prove the pipeline responded.
+  /// - The buffering watchdog is armed on buffering (only when
+  ///   [NativeVideoPlayerConfig.bufferingTimeout] is set) and cancelled on
+  ///   any other state.
+  ///
+  /// Re-entering an armed state restarts its timer, so each stage of a
+  /// multi-step spin-up (initializing → loading) gets a fresh budget.
+  void _updateWatchdogs(PlayerActivityState state) {
+    _loadWatchdogTimer?.cancel();
+    _loadWatchdogTimer = null;
+    final Duration? loadTimeout = NativeVideoPlayerConfig.global.loadTimeout;
+    if (loadTimeout != null &&
+        (state == PlayerActivityState.initializing ||
+            state == PlayerActivityState.loading)) {
+      _loadWatchdogTimer = Timer(
+        loadTimeout,
+        () => _onWatchdogExpired(loadTimeout, isBufferingWatchdog: false),
+      );
+    }
+
+    _bufferingWatchdogTimer?.cancel();
+    _bufferingWatchdogTimer = null;
+    final Duration? bufferingTimeout =
+        NativeVideoPlayerConfig.global.bufferingTimeout;
+    if (bufferingTimeout != null && state == PlayerActivityState.buffering) {
+      _bufferingWatchdogTimer = Timer(
+        bufferingTimeout,
+        () => _onWatchdogExpired(bufferingTimeout, isBufferingWatchdog: true),
+      );
+    }
+  }
+
+  /// Cancels both stalled-playback watchdogs (release/dispose paths).
+  void _cancelWatchdogs() {
+    _loadWatchdogTimer?.cancel();
+    _loadWatchdogTimer = null;
+    _bufferingWatchdogTimer?.cancel();
+    _bufferingWatchdogTimer = null;
+  }
+
+  /// Fires when a stalled-playback watchdog expires: surfaces the stall as a
+  /// regular player error.
+  ///
+  /// Synthesizes the exact event shape a real native error produces — the
+  /// native sides emit `{'event': 'error', 'message': ...}` which the event
+  /// channel listener turns into a [PlayerActivityEvent] with
+  /// [PlayerActivityState.error], updates the state, and hands to the
+  /// activity listeners — so app listeners can't tell a timeout apart from
+  /// any other playback failure. Afterwards the pipeline is best-effort
+  /// paused to stop a wedged decoder/network stack from spinning.
+  void _onWatchdogExpired(
+    Duration timeout, {
+    required bool isBufferingWatchdog,
+  }) {
+    if (_isDisposed) {
+      return;
+    }
+
+    // A state transition would have cancelled the timer, but guard against
+    // a fire that raced the cancel.
+    final PlayerActivityState current = _state.activityState;
+    final bool stillStalled = isBufferingWatchdog
+        ? current == PlayerActivityState.buffering
+        : current == PlayerActivityState.initializing ||
+              current == PlayerActivityState.loading;
+    if (!stillStalled) {
+      return;
+    }
+
+    final String timeoutLabel = timeout.inSeconds >= 1
+        ? '${timeout.inSeconds}s'
+        : '${timeout.inMilliseconds}ms';
+    final String message = isBufferingWatchdog
+        ? 'Buffering timed out after $timeoutLabel'
+        : 'Load timed out after $timeoutLabel';
+    debugPrint('Stalled-playback watchdog fired for controller $id: $message');
+
+    // Same wire shape as a native error event, parsed by the same factory.
+    final activityEvent = PlayerActivityEvent.fromMap(<dynamic, dynamic>{
+      'event': 'error',
+      'message': message,
+    });
+
+    _updateState(_state.copyWith(activityState: activityEvent.state));
+
+    for (final handler in _activityEventHandlers) {
+      handler(activityEvent);
+    }
+
+    // Best-effort quiesce; no-ops when no platform view provides a method
+    // channel yet (e.g. a stall during initialize()).
+    unawaited(
+      pause().catchError((Object e) {
+        debugPrint('Watchdog pause failed for controller $id: $e');
+      }),
+    );
   }
 
   /// Emits the current state to all streams
@@ -2324,6 +2447,10 @@ class NativeVideoPlayerController {
     _bufferingDebounceTimer?.cancel();
     _bufferingDebounceTimer = null;
 
+    // Cancel the stalled-playback watchdogs — the handlers they would
+    // notify are cleared below, and the native player is paused anyway.
+    _cancelWatchdogs();
+
     // Clear all event handlers
     _activityEventHandlers.clear();
     _controlEventHandlers.clear();
@@ -2377,6 +2504,9 @@ class NativeVideoPlayerController {
     // Stop the Android PiP status poll.
     _androidPipPollTimer?.cancel();
     _androidPipPollTimer = null;
+
+    // Stop the stalled-playback watchdogs.
+    _cancelWatchdogs();
 
     // Remove from the playback coordinator (cap enforcement)
     PlaybackCoordinator.instance.unregister(_playableHandle);
