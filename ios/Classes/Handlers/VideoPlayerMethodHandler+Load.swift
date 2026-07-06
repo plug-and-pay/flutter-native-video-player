@@ -20,6 +20,31 @@ extension VideoPlayerView {
             return
         }
 
+        if let controllerIdValue = controllerId {
+            // Evicted-player recovery: the total-player LRU cap
+            // (SharedPlayerManager.maxTotalPlayers) may have torn down this
+            // controller's shared player while this platform view stayed
+            // mounted. Re-acquire a fresh shared player and re-attach it to
+            // this view's display path so the Dart controller's transparent
+            // re-load just works.
+            if player == nil {
+                let (revivedPlayer, _) = SharedPlayerManager.shared.getOrCreatePlayer(for: controllerIdValue)
+                player = revivedPlayer
+
+                if usesLightView {
+                    lightView?.playerLayer.player = revivedPlayer
+                } else if usesViewControllerDisplay {
+                    playerViewController.player = revivedPlayer
+                }
+
+                SharedPlayerManager.shared.registerVideoPlayerView(self, viewId: viewId)
+                npLog("♻️ Re-acquired shared player after LRU eviction for controller \(controllerIdValue)")
+            }
+
+            // Loading counts as "use" for the total-player LRU cap
+            SharedPlayerManager.shared.touchController(controllerIdValue)
+        }
+
         let autoPlay = arguments["autoPlay"] as? Bool ?? false
         let headers = arguments["headers"] as? [String: String]
         let mediaInfo = arguments["mediaInfo"] as? [String: Any]

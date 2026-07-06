@@ -72,6 +72,22 @@ extension VideoPlayerView {
         hasPlayerStateObservers = false
     }
 
+    /// Called by SharedPlayerManager just before the total-player LRU cap
+    /// tears down this view's shared player (see enforceTotalPlayerCap):
+    /// balances every registration made against the player and its item so
+    /// the player deallocates cleanly, and resets the bookkeeping so a later
+    /// evicted-player re-load registers fresh observers on the revived player
+    /// (handleLoad's recovery path).
+    func prepareForPlayerEviction() {
+        removeItemObservers()
+        removePlayerStateObservers()
+
+        if let timeObserver = timeObserver {
+            player?.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
+    }
+
     public override func observeValue(
         forKeyPath keyPath: String?,
         of object: Any?,

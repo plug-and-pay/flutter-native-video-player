@@ -224,6 +224,22 @@ class NativeVideoPlayerController {
   /// Video URL set when load() is called
   String? _url;
 
+  /// Set when the native side evicted this controller's player under the iOS
+  /// total-player LRU cap ([NativeVideoPlayerConfig.iosMaxTotalPlayers]). The
+  /// next [play] transparently re-loads the last source at
+  /// [_evictionResumePosition] instead of no-oping against the torn-down
+  /// player (see [_reloadEvictedSource]).
+  bool _needsReloadAfterEviction = false;
+
+  /// Playback position captured natively just before eviction; restored by
+  /// the eviction re-load.
+  Duration _evictionResumePosition = Duration.zero;
+
+  /// Headers and DRM config of the last [load] call, retained so an eviction
+  /// re-load can replay the same request.
+  Map<String, String>? _lastLoadHeaders;
+  Map<String, dynamic>? _lastLoadDrmConfig;
+
   /// Method channel wrapper for platform communication
   VideoPlayerMethodChannel? _methodChannel;
 
@@ -961,6 +977,36 @@ class NativeVideoPlayerController {
   /// Returns null if load() has not been called yet
   String? get url => _url;
 
+  /// Re-loads the last source after the native player was evicted by the iOS
+  /// total-player LRU cap, restoring the pre-eviction position: a forced
+  /// [load] of the retained source. The flag stays set on failure so the
+  /// next [play] retries.
+  Future<void> _reloadEvictedSource() async {
+    final source = _url;
+    if (source == null) {
+      // Nothing was ever loaded, so there is nothing to restore.
+      _needsReloadAfterEviction = false;
+      return;
+    }
+
+    if (_isDisposed || _methodChannel == null) {
+      return;
+    }
+
+    try {
+      // A successful load clears _needsReloadAfterEviction itself.
+      await load(
+        url: source,
+        headers: _lastLoadHeaders,
+        drmConfig: _lastLoadDrmConfig,
+        startAt: _evictionResumePosition,
+        force: true,
+      );
+    } catch (e) {
+      debugPrint('Post-eviction re-load failed: $e');
+    }
+  }
+
   /// Available video qualities (HLS variants)
   List<NativeVideoPlayerQuality> get qualities => _state.qualities;
 
@@ -1131,6 +1177,7 @@ class NativeVideoPlayerController {
         NativeVideoPlayerConfig.global.androidDiskCacheMaxBytes,
     'androidForceSoftwareDecoders':
         NativeVideoPlayerConfig.global.androidForceSoftwareDecoders,
+    'iosMaxTotalPlayers': NativeVideoPlayerConfig.global.iosMaxTotalPlayers,
     if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
       'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
           .toMap(),
@@ -1441,6 +1488,10 @@ class NativeVideoPlayerController {
 
     _url = url;
 
+    // Retained for the eviction re-load (see _reloadEvictedSource).
+    _lastLoadHeaders = headers;
+    _lastLoadDrmConfig = drmConfig;
+
     // An A-B range only makes sense for the video it was set on.
     _playbackRange = null;
 
@@ -1466,6 +1517,10 @@ class NativeVideoPlayerController {
       if (_embeddedTextScale != 1.0) {
         await _methodChannel!.setEmbeddedTextScale(_embeddedTextScale);
       }
+
+      // The native load (re)created the player, so any pending eviction
+      // re-load is satisfied.
+      _needsReloadAfterEviction = false;
 
       // Fetch available qualities after loading
       final qualities = await _methodChannel!.getAvailableQualities();
@@ -1583,7 +1638,15 @@ class NativeVideoPlayerController {
   }
 
   /// Starts or resumes video playback
+  ///
+  /// If the native player was torn down by the iOS total-player LRU cap
+  /// (see [NativeVideoPlayerConfig.iosMaxTotalPlayers]), the last source is
+  /// transparently re-loaded at the pre-eviction position first.
   Future<void> play() async {
+    if (_needsReloadAfterEviction) {
+      await _reloadEvictedSource();
+    }
+
     await _methodChannel?.play();
   }
 

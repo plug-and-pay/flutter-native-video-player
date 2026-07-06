@@ -9,6 +9,11 @@ import MediaPlayer
 // all members keep full access to VideoPlayerView state.
 extension VideoPlayerView {
     func handlePlay(result: @escaping FlutterResult) {
+        // Playing counts as "use" for the total-player LRU cap
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.touchController(controllerIdValue)
+        }
+
         // Prepare audio session, Now Playing info, and PiP before playback
         prepareForPlayback()
 

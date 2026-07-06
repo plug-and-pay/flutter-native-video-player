@@ -210,6 +210,13 @@ import QuartzCore
         let argsDict = args as? [String: Any]
         let isDartFullscreen = argsDict?["isDartFullscreen"] as? Bool ?? false
 
+        // Total-player LRU cap from the Dart NativeVideoPlayerConfig — applied
+        // before the shared player is created below so this creation is
+        // already capped (mirrors the iosBufferConfig plumbing).
+        if let maxTotalPlayers = argsDict?["iosMaxTotalPlayers"] as? Int {
+            SharedPlayerManager.shared.maxTotalPlayers = maxTotalPlayers
+        }
+
         // Lightweight display mode: bare AVPlayerLayer instead of a per-tile
         // AVPlayerViewController. Only when the app opted in AND this view
         // hides native controls (the layer can't render controls).

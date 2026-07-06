@@ -24,6 +24,19 @@ class SharedPlayerManager: NSObject {
 
     private var players: [Int: AVPlayer] = [:]
 
+    /// Least-recently-used order of controller IDs with live players (index 0
+    /// = least recently used). Touched on player create/reuse, load, and play;
+    /// drives eviction when the player count exceeds maxTotalPlayers.
+    private var lruControllerOrder: [Int] = []
+
+    /// Maximum number of live AVPlayer instances kept in [players] (from the
+    /// Dart NativeVideoPlayerConfig.iosMaxTotalPlayers; <= 0 disables the
+    /// cap). iOS has a finite media decode pipeline — enough live
+    /// AVPlayerItems makes NEW ones fail to load — so creating a player
+    /// beyond this cap evicts the least-recently-used inactive player (see
+    /// enforceTotalPlayerCap).
+    var maxTotalPlayers: Int = 6
+
     /// Shared AVPlayerViewController instances (persist across view disposal)
     /// Keeps view controllers alive so PiP delegate callbacks can fire even when platform views are disposed
     private var playerViewControllers: [Int: AVPlayerViewController] = [:]
@@ -94,12 +107,15 @@ class SharedPlayerManager: NSObject {
     /// Returns a tuple (AVPlayer, Bool) where the Bool indicates if the player already existed (true) or was newly created (false)
     func getOrCreatePlayer(for controllerId: Int) -> (AVPlayer, Bool) {
         if let existingPlayer = players[controllerId] {
+            touchController(controllerId)
             return (existingPlayer, true)
         }
 
         let newPlayer = AVPlayer()
         configurePlayerForBackgroundPlayback(newPlayer)
         players[controllerId] = newPlayer
+        touchController(controllerId)
+        enforceTotalPlayerCap(protecting: controllerId)
         return (newPlayer, false)
     }
 
@@ -125,6 +141,99 @@ class SharedPlayerManager: NSObject {
 
         npLog("✅ [SharedPlayerManager] Created \(playerExisted ? "view controller for existing player" : "new player AND view controller") for controller ID: \(controllerId)")
         return (player, newViewController, playerExisted)
+    }
+
+    // MARK: - Total-Player LRU Cap
+
+    /// Marks a controller as most-recently-used for the total-player cap.
+    /// Called on player create/reuse, load, and play.
+    func touchController(_ controllerId: Int) {
+        assertMainThread()
+        guard players[controllerId] != nil else { return }
+
+        if let index = lruControllerOrder.firstIndex(of: controllerId) {
+            lruControllerOrder.remove(at: index)
+        }
+
+        lruControllerOrder.append(controllerId)
+    }
+
+    /// Enforces [maxTotalPlayers] by evicting least-recently-used players
+    /// (HAB-783 backstop: iOS's decode pipeline is finite, and enough live
+    /// AVPlayerItems makes new ones fail to load).
+    ///
+    /// A player is never evicted while it is actively used: playing
+    /// (rate > 0), in Picture-in-Picture, on external playback (AirPlay), or
+    /// rendered by a texture-backed view (whose renderer cannot re-bind to a
+    /// revived player). If only exempt players remain the cap is allowed to
+    /// be exceeded — active playback is never killed.
+    private func enforceTotalPlayerCap(protecting protectedControllerId: Int) {
+        guard maxTotalPlayers > 0, players.count > maxTotalPlayers else { return }
+
+        npLog("📊 [SharedPlayerManager] Player count \(players.count) exceeds cap \(maxTotalPlayers) - looking for LRU eviction candidates")
+
+        // Snapshot: eviction mutates lruControllerOrder via removePlayer.
+        let lruSnapshot = lruControllerOrder
+        for candidateId in lruSnapshot {
+            if players.count <= maxTotalPlayers { break }
+
+            if candidateId == protectedControllerId { continue }
+
+            guard let candidatePlayer = players[candidateId] else { continue }
+
+            if candidatePlayer.rate > 0 {
+                npLog("   ⏭️ Keeping controller \(candidateId) - playing (rate: \(candidatePlayer.rate))")
+                continue
+            }
+
+            if isPipActiveForController(candidateId) || isManualPiPActive(candidateId) {
+                npLog("   ⏭️ Keeping controller \(candidateId) - PiP active")
+                continue
+            }
+
+            if candidatePlayer.isExternalPlaybackActive {
+                npLog("   ⏭️ Keeping controller \(candidateId) - external playback (AirPlay) active")
+                continue
+            }
+
+            if findAllViewsForController(candidateId).contains(where: { $0.usesTextureView }) {
+                npLog("   ⏭️ Keeping controller \(candidateId) - texture-backed view attached")
+                continue
+            }
+
+            evictPlayer(for: candidateId, player: candidatePlayer)
+        }
+
+        if players.count > maxTotalPlayers {
+            npLog("⚠️ [SharedPlayerManager] Still over cap (\(players.count)/\(maxTotalPlayers)) - all remaining players are active, exceeding is allowed")
+        }
+    }
+
+    /// Tears down an LRU-evicted player and tells the Dart controller via the
+    /// controller-scoped event channel, so it can transparently re-load its
+    /// last source at the reported position on the next play().
+    private func evictPlayer(for controllerId: Int, player candidatePlayer: AVPlayer) {
+        // Capture the resume position before teardown so Dart can restore it.
+        var positionMs = 0
+        if candidatePlayer.currentItem != nil {
+            let seconds = CMTimeGetSeconds(candidatePlayer.currentTime())
+            if seconds.isFinite && seconds > 0 {
+                positionMs = Int(seconds * 1000)
+            }
+        }
+
+        npLog("🗑️ [SharedPlayerManager] Evicting LRU player for controller \(controllerId) at \(positionMs)ms (players: \(players.count), cap: \(maxTotalPlayers))")
+
+        // Balance the observer registrations of views that stay mounted so
+        // the player deallocates cleanly and a later load can register fresh
+        // observers on a revived player (see handleLoad's recovery path).
+        for view in findAllViewsForController(controllerId) {
+            view.prepareForPlayerEviction()
+        }
+
+        removePlayer(for: controllerId)
+
+        sendControllerEvent("playerEvicted", data: ["positionMs": positionMs], for: controllerId)
     }
 
     /// Sets PiP settings for a controller
@@ -282,6 +391,7 @@ class SharedPlayerManager: NSObject {
         // Remove player from manager
         npLog("🧹 [SharedPlayerManager] Removing player from players dict for controllerId: \(controllerId)")
         players.removeValue(forKey: controllerId)
+        lruControllerOrder.removeAll { $0 == controllerId }
         npLog("✅ [SharedPlayerManager] Player removed. New players count: \(players.count), players: \(players.keys.sorted())")
 
         // Remove and dispose view controller
@@ -331,6 +441,7 @@ class SharedPlayerManager: NSObject {
         playerViewControllers.removeAll()
 
         players.removeAll()
+        lruControllerOrder.removeAll()
         videoPlayerViews.removeAll()
         primaryViewIdForController.removeAll()
         pipSettings.removeAll()

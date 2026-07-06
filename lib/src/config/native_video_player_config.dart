@@ -30,12 +30,14 @@ class NativeVideoPlayerConfig {
     this.androidTextureMode = false,
     this.iosTextureMode = false,
     this.androidForceSoftwareDecoders = false,
+    this.iosMaxTotalPlayers = 6,
     this.loadTimeout = const Duration(seconds: 30),
     this.bufferingTimeout,
   }) : assert(
          maxConcurrentPlayingPlayers == null || maxConcurrentPlayingPlayers > 0,
          'maxConcurrentPlayingPlayers must be > 0 (or null for unlimited)',
-       );
+       ),
+       assert(iosMaxTotalPlayers > 0, 'iosMaxTotalPlayers must be > 0');
 
   /// The active configuration. Replace it to change behavior; changes to the
   /// playing cap take effect on the next playback-state transition, while
@@ -230,6 +232,23 @@ class NativeVideoPlayerConfig {
   /// toggled remotely for known-bad models), not an app-wide default.
   /// Applies to players created after the config is set.
   final bool androidForceSoftwareDecoders;
+
+  /// Maximum number of live iOS AVPlayer instances the shared player
+  /// manager keeps allocated (default 6; iOS only).
+  ///
+  /// [maxConcurrentPlayingPlayers] bounds how many players PLAY at once,
+  /// but paused players keep their AVPlayerItem alive — and iOS has a
+  /// finite media decode pipeline, so enough live items makes NEW ones fail
+  /// to load (the HAB-783 failure mode in long feed sessions). When
+  /// creating a player would exceed this cap, the least-recently-used
+  /// player that is not playing, not in Picture-in-Picture, and not on
+  /// AirPlay external playback is torn down natively and its controller is
+  /// notified; the next `play()` on that controller transparently re-loads
+  /// the last source at the position it was evicted at. If only active
+  /// players remain, the cap is allowed to be exceeded (soft cap — active
+  /// playback is never killed). Applies to players created after the
+  /// config is set; Android ignores this.
+  final int iosMaxTotalPlayers;
 
   /// Maximum time a player may stay in a load-pipeline state
   /// (initializing/loading) before the controller gives up (default 30

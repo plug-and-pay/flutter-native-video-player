@@ -153,6 +153,24 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
       return;
     }
 
+    // The iOS total-player LRU cap evicted this controller's native player
+    // (NativeVideoPlayerConfig.iosMaxTotalPlayers): remember the resume
+    // position and mark for a transparent re-load on the next play() — the
+    // torn-down player would otherwise silently no-op every command.
+    if (eventName == 'playerEvicted') {
+      final int positionMs = (map['positionMs'] as num?)?.toInt() ?? 0;
+      _evictionResumePosition = positionMs > 0
+          ? Duration(milliseconds: positionMs)
+          : _state.currentPosition;
+      _needsReloadAfterEviction = _url != null;
+
+      debugPrint(
+        'Controller-level event: playerEvicted '
+        '(resume position: $_evictionResumePosition)',
+      );
+      return;
+    }
+
     // Handle AirPlay availability
     if (eventName == 'airPlayAvailabilityChanged') {
       final bool isAvailable = map['isAvailable'] as bool? ?? false;
