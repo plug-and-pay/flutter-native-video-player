@@ -1129,6 +1129,8 @@ class NativeVideoPlayerController {
         NativeVideoPlayerConfig.global.androidEnableDiskCache,
     'androidDiskCacheMaxBytes':
         NativeVideoPlayerConfig.global.androidDiskCacheMaxBytes,
+    'androidForceSoftwareDecoders':
+        NativeVideoPlayerConfig.global.androidForceSoftwareDecoders,
     if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
       'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
           .toMap(),

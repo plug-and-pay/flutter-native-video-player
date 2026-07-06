@@ -29,6 +29,7 @@ class NativeVideoPlayerConfig {
     this.androidPrecacheBytes = 2 * 1024 * 1024,
     this.androidTextureMode = false,
     this.iosTextureMode = false,
+    this.androidForceSoftwareDecoders = false,
     this.loadTimeout = const Duration(seconds: 30),
     this.bufferingTimeout,
   }) : assert(
@@ -209,6 +210,26 @@ class NativeVideoPlayerConfig {
   /// texture shows the last local frame instead of the native placard.
   /// Applies to views created after the config is set.
   final bool iosTextureMode;
+
+  /// Restricts MediaCodec selection to software decoders (Android only;
+  /// default: false = current behavior).
+  ///
+  /// Some devices ship vendor hardware decoders that fail to initialize or
+  /// misbehave after initializing. Decoder fallback (always on) already
+  /// retries with the next decoder when the primary one fails to
+  /// *initialize*, but it cannot help when a hardware decoder initializes
+  /// fine and then decodes incorrectly or stalls. With this enabled, players
+  /// prefer the platform software decoders (`OMX.google.*` / `c2.android.*`)
+  /// outright and use synchronous MediaCodec queueing for maximum
+  /// compatibility. If no software decoder exists for a mime type, the
+  /// regular decoder list is used, so enabling this never makes a previously
+  /// playable stream unplayable.
+  ///
+  /// Software decoding costs CPU/battery and may struggle with high
+  /// resolutions — intended as a per-device compatibility switch (e.g.
+  /// toggled remotely for known-bad models), not an app-wide default.
+  /// Applies to players created after the config is set.
+  final bool androidForceSoftwareDecoders;
 
   /// Maximum time a player may stay in a load-pipeline state
   /// (initializing/loading) before the controller gives up (default 30

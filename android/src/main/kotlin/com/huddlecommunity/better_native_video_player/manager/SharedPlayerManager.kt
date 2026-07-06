@@ -9,7 +9,9 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PriorityTaskManager
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerNotificationHandler
 import com.huddlecommunity.better_native_video_player.handlers.VideoPlayerEventHandler
@@ -49,6 +51,24 @@ object SharedPlayerManager {
     // Priorities only coordinate between players sharing this instance.
     private val sharedPriorityTaskManager = PriorityTaskManager()
 
+    // Software-only MediaCodec selection (androidForceSoftwareDecoders):
+    // prefer the platform software decoders (OMX.google.* / c2.android.*),
+    // which behave far more consistently across devices than vendor
+    // hardware decoders. Falls back to the default (full) decoder list when
+    // no software decoder exists for a mime type, so enabling this can
+    // never make a stream unplayable that was playable before.
+    private val softwareMediaCodecSelector =
+        MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+            val defaultDecoderInfos = MediaCodecSelector.DEFAULT.getDecoderInfos(
+                mimeType, requiresSecureDecoder, requiresTunnelingDecoder
+            )
+            val softwareDecoderInfos = defaultDecoderInfos.filter { decoderInfo ->
+                decoderInfo.name.startsWith("OMX.google.") ||
+                    decoderInfo.name.startsWith("c2.android.")
+            }
+            softwareDecoderInfos.ifEmpty { defaultDecoderInfos }
+        }
+
     /**
      * Gets or creates a player for the given controller ID
      * Returns a Pair<ExoPlayer, Boolean> where the Boolean indicates if the player already existed (true) or was newly created (false)
@@ -57,30 +77,54 @@ object SharedPlayerManager {
      * DefaultLoadControl and only applies when the player is first created
      * for this controller ID; null keeps ExoPlayer's defaults.
      * [prioritizeActivePlayback] attaches the shared PriorityTaskManager.
+     * [forceSoftwareDecoders] restricts MediaCodec selection to software
+     * decoders (from the Dart NativeVideoPlayerConfig.androidForceSoftwareDecoders).
      */
     fun getOrCreatePlayer(
         context: Context,
         controllerId: Int,
         bufferConfig: Map<*, *>? = null,
-        prioritizeActivePlayback: Boolean = false
+        prioritizeActivePlayback: Boolean = false,
+        forceSoftwareDecoders: Boolean = false
     ): Pair<ExoPlayer, Boolean> {
         val alreadyExisted = players.containsKey(controllerId)
         val player = players.getOrPut(controllerId) {
-            buildPlayer(context, bufferConfig, prioritizeActivePlayback)
+            buildPlayer(context, bufferConfig, prioritizeActivePlayback, forceSoftwareDecoders)
         }
         return Pair(player, alreadyExisted)
     }
 
     /**
-     * Builds an ExoPlayer, optionally with a tuned DefaultLoadControl and the
-     * shared PriorityTaskManager.
+     * Builds an ExoPlayer with decoder-init fallback enabled, optionally with
+     * a tuned DefaultLoadControl, the shared PriorityTaskManager, and a
+     * software-only decoder preference.
      */
     fun buildPlayer(
         context: Context,
         bufferConfig: Map<*, *>? = null,
-        prioritizeActivePlayback: Boolean = false
+        prioritizeActivePlayback: Boolean = false,
+        forceSoftwareDecoders: Boolean = false
     ): ExoPlayer {
-        val builder = ExoPlayer.Builder(context)
+        // Decoder fallback is always on: when the primary decoder for a
+        // format fails to initialize (flaky vendor hardware decoders are a
+        // recurring cause of playback dying with a fatal
+        // DecoderInitializationException), Media3 retries with the next
+        // decoder in the list instead of surfacing the error. This only
+        // engages when the primary decoder fails to initialize — devices
+        // with healthy decoders behave exactly as before.
+        val renderersFactory = DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+        if (forceSoftwareDecoders) {
+            // Opt-in compatibility mode: prefer software decoders outright
+            // (decoder fallback can't help when a hardware decoder
+            // initializes fine but then misbehaves) and use synchronous
+            // MediaCodec queueing, the most conservative codec
+            // interaction mode.
+            renderersFactory.setMediaCodecSelector(softwareMediaCodecSelector)
+            renderersFactory.forceDisableMediaCodecAsynchronousQueueing()
+            NpLog.d(TAG, "Building player with software-only decoder preference")
+        }
+        val builder = ExoPlayer.Builder(context, renderersFactory)
             .setAudioAttributes(AudioAttributes.DEFAULT, false)
             // Keep the device awake for background playback. WAKE_MODE_NETWORK
             // holds a partial WakeLock AND a WifiLock so the CPU and WiFi radio

@@ -77,19 +77,22 @@ class PlayerBackendSession(
             NpLog.d(TAG, "📱 Stored media info during init: $title")
         }
 
-        // Get or create shared player. The optional buffer config and
-        // playback prioritization (from the Dart NativeVideoPlayerConfig)
-        // only apply at first creation.
+        // Get or create shared player. The optional buffer config, playback
+        // prioritization and software-decoder preference (from the Dart
+        // NativeVideoPlayerConfig) only apply at first creation.
         val bufferConfig = args?.get("androidBufferConfig") as? Map<*, *>
         val prioritizeActivePlayback =
             args?.get("prioritizeActivePlayback") as? Boolean ?: false
+        val forceSoftwareDecoders =
+            args?.get("androidForceSoftwareDecoders") as? Boolean ?: false
         val sharedFlag: Boolean
         player = if (controllerId != null) {
             val (sharedPlayer, alreadyExisted) = SharedPlayerManager.getOrCreatePlayer(
                 context,
                 controllerId,
                 bufferConfig,
-                prioritizeActivePlayback
+                prioritizeActivePlayback,
+                forceSoftwareDecoders
             )
             sharedFlag = alreadyExisted
             if (alreadyExisted) {
@@ -101,7 +104,12 @@ class PlayerBackendSession(
         } else {
             NpLog.d(TAG, "No controller ID provided, creating new player")
             sharedFlag = false
-            SharedPlayerManager.buildPlayer(context, bufferConfig, prioritizeActivePlayback)
+            SharedPlayerManager.buildPlayer(
+                context,
+                bufferConfig,
+                prioritizeActivePlayback,
+                forceSoftwareDecoders
+            )
         }
         isSharedPlayer = sharedFlag
 
