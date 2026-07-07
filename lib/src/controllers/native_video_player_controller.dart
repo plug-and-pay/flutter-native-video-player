@@ -1973,14 +1973,27 @@ class NativeVideoPlayerController {
   /// Pauses playback when the PiP window was dismissed with its close (X)
   /// button. Dismissing stops the activity without bringing the app back to
   /// the foreground, so without this the media session keeps playing audio in
-  /// the background. Expanding the PiP window back into the app resumes the
-  /// activity almost immediately — the delayed lifecycle re-check tells the
-  /// two apart.
+  /// the background. Expanding the PiP window back into the app also flips the
+  /// PiP flag off, but Flutter only reports `resumed` after the exit animation
+  /// finishes and the window regains focus — on many devices well after a
+  /// fixed short delay. So instead of sampling the lifecycle once, wait for
+  /// `resumed` and only pause when it never arrives.
   Future<void> _pauseIfPipDismissed() async {
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    const Duration pollInterval = Duration(milliseconds: 100);
+    const Duration resumeTimeout = Duration(seconds: 2);
 
-    if (_isDisposed ||
-        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+    final Stopwatch stopwatch = Stopwatch()..start();
+    while (stopwatch.elapsed < resumeTimeout) {
+      if (_isDisposed || _state.isPipEnabled) {
+        return;
+      }
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        return;
+      }
+      await Future<void>.delayed(pollInterval);
+    }
+
+    if (_isDisposed || _state.isPipEnabled) {
       return;
     }
 

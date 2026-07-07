@@ -1,6 +1,6 @@
 name: better_native_video_player
 description: Native video player (AVPlayer on iOS, ExoPlayer on Android) with HLS, DRM, Chromecast & AirPlay casting, Picture-in-Picture, background playback, and fullscreen.
-version: 1.5.1
+version: 1.5.2
 homepage: https://github.com/plug-and-pay/flutter-native-video-player
 repository: https://github.com/plug-and-pay/flutter-native-video-player.git
 issue_tracker: https://github.com/plug-and-pay/flutter-native-video-player/issues
