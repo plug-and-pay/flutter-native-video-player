@@ -1,9 +1,9 @@
 name: better_native_video_player
 description: Native video player (AVPlayer on iOS, ExoPlayer on Android) with HLS, DRM, Chromecast & AirPlay casting, Picture-in-Picture, background playback, and fullscreen.
-version: 1.5.0
-homepage: https://github.com/DaniKemper010/native-video-player
-repository: https://github.com/DaniKemper010/native-video-player.git
-issue_tracker: https://github.com/DaniKemper010/native-video-player/issues
+version: 1.5.1
+homepage: https://github.com/plug-and-pay/flutter-native-video-player
+repository: https://github.com/plug-and-pay/flutter-native-video-player.git
+issue_tracker: https://github.com/plug-and-pay/flutter-native-video-player/issues
 
 environment:
   sdk: ">=3.9.0 <4.0.0"
@@ -12,7 +12,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  dismissible_page: ^1.0.2
   floating: ^6.0.0
   # Pure-Dart mDNS for Chromecast device discovery (io-only via the
   # conditional-import facade; web/WASM gets the stub).

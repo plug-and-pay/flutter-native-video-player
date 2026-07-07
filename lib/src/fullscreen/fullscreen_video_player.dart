@@ -1,9 +1,9 @@
-import 'package:dismissible_page/dismissible_page.dart';
 import 'package:flutter/material.dart';
 
 import '../controllers/native_video_player_controller.dart';
 import '../models/native_video_player_subtitle_style.dart';
 import '../native_video_player_widget.dart';
+import 'swipe_down_dismissible.dart';
 
 /// A fullscreen video player widget that displays the video in fullscreen mode
 ///
@@ -81,11 +81,9 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
       ),
     );
     if (widget.overlayBuilder != null) {
-      return DismissiblePage(
+      return SwipeDownDismissible(
         onDismissed: _closeFullscreen,
-        direction: DismissiblePageDismissDirection.down,
         backgroundColor: widget.backgroundColor,
-        isFullScreen: true,
         child: content,
       );
     }
