@@ -143,6 +143,9 @@ await controller.loadUrl(
 | `licenseUrl` | `String` | Yes* | Both | License server URL for key requests (*not required for AES-128) |
 | `certificateUrl` | `String` | Yes (FairPlay) | iOS | Certificate URL for FairPlay DRM |
 | `headers` | `Map<String, String>` | No | Both | HTTP headers for license requests (authentication, etc.) |
+| `certificateEncoding` | `String` | No | iOS | FairPlay certificate response encoding: `'binary'` (default) or `'base64'` |
+| `licenseRequestFormat` | `String` | No | iOS | FairPlay SPC request format: `'binary'` (default) or `'base64Form'` (`spc=<Base64 SPC>`) |
+| `licenseResponseEncoding` | `String` | No | iOS | FairPlay CKC response encoding: `'binary'` (default) or `'base64'` |
 
 ### Platform-Specific Examples
 
@@ -167,6 +170,28 @@ await controller.loadUrl(
 - Certificate is automatically fetched and used for license requests
 - License server must implement FairPlay Streaming protocol
 - Works with HLS streams only
+
+FairPlay license servers do not all use the same HTTP wire format. For example,
+DoveRunner returns Base64 certificate and CKC data and accepts the SPC as a
+form-encoded value:
+
+```dart
+await controller.loadUrl(
+  url: 'https://example.com/fairplay-stream.m3u8',
+  drmConfig: {
+    'type': 'fairplay',
+    'licenseUrl': 'https://license-global.pallycon.com/ri/licenseManager.do',
+    'certificateUrl':
+        'https://license-global.pallycon.com/ri/fpsKeyManager.do?siteId=ABCD',
+    'certificateEncoding': 'base64',
+    'licenseRequestFormat': 'base64Form',
+    'licenseResponseEncoding': 'base64',
+    'headers': {
+      'pallycon-customdata-v2': '<license-token>',
+    },
+  },
+);
+```
 
 #### Android - Widevine
 
@@ -234,7 +259,7 @@ await controller.loadUrl(
 
 1. **Secure License Requests**: Always use HTTPS for license URLs and include authentication headers
 2. **Error Handling**: Implement proper error handling for DRM failures (license denied, network errors, etc.)
-3. **Certificate Management**: For FairPlay, ensure your certificate URL is accessible and returns valid DER-encoded certificates
+3. **Certificate Management**: For FairPlay, ensure your certificate URL is accessible and configure `certificateEncoding` when it returns Base64 instead of binary DER
 4. **Testing**: Test DRM playback on physical devices (simulators may have limitations)
 5. **Platform Differences**: Be aware that FairPlay (iOS) and Widevine (Android) have different license request formats
 
