@@ -492,6 +492,25 @@ class VideoPlayerMethodChannel {
     }
   }
 
+  /// Enables/disables a native idle keep-alive for paused AirPlay sessions
+  /// (iOS only). Some third-party AirPlay receivers drop the route ~30s
+  /// after playback is paused; while enabled, a paused controller with an
+  /// active external route is nudged periodically at the native layer to
+  /// keep the receiver's idle timeout from firing.
+  Future<void> setAirPlayIdleKeepAliveEnabled(bool enabled) async {
+    try {
+      await _methodChannel.invokeMethod<void>(
+        'setAirPlayIdleKeepAliveEnabled',
+        <String, Object>{
+          'viewId': primaryPlatformViewId,
+          'enabled': enabled,
+        },
+      );
+    } catch (e) {
+      debugPrint('Error calling setAirPlayIdleKeepAliveEnabled: $e');
+    }
+  }
+
   /// Starts AirPlay device detection (iOS only)
   ///
   /// Begins monitoring for available AirPlay devices. This should be called

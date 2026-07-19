@@ -2468,6 +2468,32 @@ class NativeVideoPlayerController {
     await _methodChannel!.disconnectAirPlay();
   }
 
+  /// Enables or disables a native idle keep-alive for paused AirPlay
+  /// sessions (iOS only). On Android, this method does nothing.
+  ///
+  /// Some third-party AirPlay receivers (observed on Samsung Crystal UHD
+  /// TVs) drop the AirPlay route roughly 30 seconds after the user pauses
+  /// playback. When enabled, and only while the player is paused with an
+  /// active AirPlay route, the native layer periodically nudges the
+  /// underlying `AVPlayer`'s rate to a near-zero value and back, which
+  /// keeps the receiver's idle timeout from firing without emitting any
+  /// user-facing play/pause events or visible motion on screen.
+  ///
+  /// This is a native (AVPlayer-level) alternative to nudging playback
+  /// from Dart, which is unreliable on some AirPlay receivers and can
+  /// desync the phone UI from the TV.
+  ///
+  /// Example:
+  /// ```dart
+  /// await controller.setAirPlayIdleKeepAliveEnabled(true);
+  /// ```
+  Future<void> setAirPlayIdleKeepAliveEnabled(bool enabled) async {
+    if (_methodChannel == null) {
+      return;
+    }
+    await _methodChannel!.setAirPlayIdleKeepAliveEnabled(enabled);
+  }
+
   /// Locks the custom overlay to be always visible
   ///
   /// When the overlay is locked, it cannot be dismissed by tapping or by auto-hide timer.

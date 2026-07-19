@@ -724,6 +724,8 @@ import QuartzCore
             handleStartAirPlayDetection(result: result)
         case "stopAirPlayDetection":
             handleStopAirPlayDetection(result: result)
+        case "setAirPlayIdleKeepAliveEnabled":
+            handleSetAirPlayIdleKeepAliveEnabled(call: call, result: result)
         case "dispose":
             handleDispose(result: result)
         default:

@@ -82,6 +82,132 @@ class SharedPlayerManager: NSObject {
     /// These persist to send PiP and AirPlay events even when all views are disposed
     private var controllerEventSinks: [Int: FlutterEventSink] = [:]
 
+    // MARK: - AirPlay Idle Keep-Alive (issue #54)
+
+    /// Per-controller opt-in, set via setAirPlayIdleKeepAliveEnabled. Some
+    /// third-party AirPlay receivers (observed on Samsung Crystal UHD TVs)
+    /// drop the route ~30s after playback is paused. While enabled, a paused
+    /// controller with an active external playback route gets a periodic
+    /// near-zero-rate nudge to keep the receiver's idle timeout from firing.
+    private var keepAliveEnabled: [Int: Bool] = [:]
+
+    /// Active keep-alive timers, one per controller with a running timer.
+    private var keepAliveTimers: [Int: Timer] = [:]
+
+    /// Controllers currently inside a keep-alive rate nudge. The nudge
+    /// briefly sets `player.rate` above zero, which flips `timeControlStatus`
+    /// to `.playing` and back — this set lets observers suppress the
+    /// resulting synthetic play/pause events instead of forwarding them to
+    /// Flutter or triggering PiP-related side effects.
+    private var keepAliveNudgeInProgress: Set<Int> = []
+
+    /// Interval between nudges; shorter than the ~30s idle timeout observed
+    /// on affected receivers, per the issue's suggested approach.
+    private let keepAliveInterval: TimeInterval = 25.0
+
+    /// Rate applied during the nudge. Must be > 0 to keep AVPlayer's
+    /// timeControlStatus as "playing" for the receiver, but small enough
+    /// that no perceptible motion/crawl happens on screen.
+    private let keepAliveNudgeRate: Float = 0.003
+
+    /// How long the nudge holds the non-zero rate before returning to 0.
+    private let keepAliveNudgeDuration: TimeInterval = 0.05
+
+    /// Extra delay after the nudge ends before the suppression flag clears,
+    /// covering the asynchronous delivery of the resulting `.paused` KVO
+    /// notification so that one gets swallowed too.
+    private let keepAliveSuppressionTail: TimeInterval = 0.15
+
+    /// Enables or disables the AirPlay idle keep-alive for a controller.
+    /// Safe to call at any time; only actually starts a timer once the
+    /// controller is both paused and externally active.
+    func setAirPlayIdleKeepAliveEnabled(for controllerId: Int, enabled: Bool) {
+        assertMainThread()
+        keepAliveEnabled[controllerId] = enabled
+        if enabled {
+            startKeepAliveTimerIfAppropriate(for: controllerId)
+        } else {
+            stopKeepAliveTimer(for: controllerId)
+        }
+    }
+
+    /// Starts the keep-alive timer if enabled and the controller is
+    /// currently paused with an active external (AirPlay) route. No-op if a
+    /// timer is already running, or the preconditions aren't met. Safe to
+    /// call speculatively from play/pause/AirPlay-route-change handlers.
+    func startKeepAliveTimerIfAppropriate(for controllerId: Int) {
+        assertMainThread()
+        guard keepAliveEnabled[controllerId] == true else { return }
+        guard keepAliveTimers[controllerId] == nil else { return }
+        guard let player = players[controllerId] else { return }
+        guard player.isExternalPlaybackActive else { return }
+        guard player.timeControlStatus == .paused else { return }
+
+        npLog("💓 [SharedPlayerManager] Starting AirPlay idle keep-alive for controller \(controllerId)")
+        let timer = Timer(timeInterval: keepAliveInterval, repeats: true) { [weak self] _ in
+            self?.performKeepAliveNudge(for: controllerId)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        keepAliveTimers[controllerId] = timer
+    }
+
+    /// Stops and clears the keep-alive timer for a controller, if running.
+    func stopKeepAliveTimer(for controllerId: Int) {
+        assertMainThread()
+        guard let timer = keepAliveTimers.removeValue(forKey: controllerId) else { return }
+        timer.invalidate()
+        npLog("⏹️ [SharedPlayerManager] Stopped AirPlay idle keep-alive for controller \(controllerId)")
+    }
+
+    /// True while a keep-alive rate nudge for this controller is in flight
+    /// (including its suppression tail). Observers use this to swallow the
+    /// synthetic play/pause blip the nudge produces.
+    func isPerformingKeepAliveNudge(for controllerId: Int) -> Bool {
+        keepAliveNudgeInProgress.contains(controllerId)
+    }
+
+    private func performKeepAliveNudge(for controllerId: Int) {
+        assertMainThread()
+        guard let player = players[controllerId] else {
+            stopKeepAliveTimer(for: controllerId)
+            return
+        }
+
+        // Re-check preconditions each tick: the user may have resumed
+        // playback or the route may have dropped since the timer started.
+        guard keepAliveEnabled[controllerId] == true,
+              player.timeControlStatus == .paused,
+              player.isExternalPlaybackActive else {
+            stopKeepAliveTimer(for: controllerId)
+            return
+        }
+
+        // Skip near end-of-file: nudging this close to the end risks
+        // tripping AVPlayerItemDidPlayToEndTime.
+        if let currentItem = player.currentItem {
+            let duration = CMTimeGetSeconds(currentItem.duration)
+            let position = CMTimeGetSeconds(player.currentTime())
+            if duration.isFinite && duration > 0 && (duration - position) < 1.0 {
+                npLog("⏭️ [SharedPlayerManager] Skipping keep-alive nudge for controller \(controllerId) - near end of file")
+                return
+            }
+        }
+
+        npLog("💓 [SharedPlayerManager] AirPlay idle keep-alive nudge for controller \(controllerId)")
+        keepAliveNudgeInProgress.insert(controllerId)
+        player.rate = keepAliveNudgeRate
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + keepAliveNudgeDuration) { [weak self] in
+            guard let self = self else { return }
+            if let player = self.players[controllerId], player.rate != 0 {
+                player.rate = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.keepAliveSuppressionTail) {
+                self.keepAliveNudgeInProgress.remove(controllerId)
+            }
+        }
+    }
+
     struct PipSettings {
         let allowsPictureInPicture: Bool
         let canStartPictureInPictureAutomatically: Bool
@@ -428,6 +554,11 @@ class SharedPlayerManager: NSObject {
         // Clear manual PiP flag
         controllersWithManualPiP.remove(controllerId)
 
+        // Stop and clear AirPlay idle keep-alive state
+        stopKeepAliveTimer(for: controllerId)
+        keepAliveEnabled.removeValue(forKey: controllerId)
+        keepAliveNudgeInProgress.remove(controllerId)
+
         npLog("✅ [SharedPlayerManager] Fully removed player for controller ID: \(controllerId)")
     }
 
@@ -451,6 +582,13 @@ class SharedPlayerManager: NSObject {
         controllerWithAutomaticPiP = nil
         controllersWithManualPiP.removeAll()
         controllerEventSinks.removeAll()
+
+        for (_, timer) in keepAliveTimers {
+            timer.invalidate()
+        }
+        keepAliveTimers.removeAll()
+        keepAliveEnabled.removeAll()
+        keepAliveNudgeInProgress.removeAll()
     }
 
     // MARK: - AirPlay Route Detection

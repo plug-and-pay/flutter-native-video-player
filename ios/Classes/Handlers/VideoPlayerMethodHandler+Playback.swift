@@ -23,6 +23,13 @@ extension VideoPlayerView {
         player?.rate = desiredPlaybackSpeed
         npLog("Applied playback rate: \(player?.rate ?? 0)")
         updateNowPlayingPlaybackTime()
+
+        // Real playback resumed - the AirPlay idle keep-alive nudge is no
+        // longer needed (see issue #54).
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.stopKeepAliveTimer(for: controllerIdValue)
+        }
+
         // Play event will be sent automatically by timeControlStatus observer
         result(nil)
     }
@@ -30,6 +37,14 @@ extension VideoPlayerView {
     func handlePause(result: @escaping FlutterResult) {
         player?.pause()
         updateNowPlayingPlaybackTime()
+
+        // If AirPlay idle keep-alive is enabled for this controller and an
+        // external route is currently active, start nudging so third-party
+        // receivers (e.g. Samsung Crystal UHD) don't drop the route after
+        // their idle timeout (see issue #54).
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.startKeepAliveTimerIfAppropriate(for: controllerIdValue)
+        }
 
         // DON'T disable automatic PiP on pause anymore
         // The system will handle when to trigger automatic PiP based on playback state

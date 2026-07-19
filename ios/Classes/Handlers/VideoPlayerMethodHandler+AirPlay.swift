@@ -129,4 +129,25 @@ extension VideoPlayerView {
             result(FlutterError(code: "NOT_SUPPORTED", message: "AirPlay detection requires iOS 11.0+", details: nil))
         }
     }
+
+    /// Enables/disables the native idle keep-alive that prevents some
+    /// third-party AirPlay receivers (e.g. Samsung Crystal UHD) from
+    /// dropping the route ~30s after the user pauses (issue #54). See
+    /// SharedPlayerManager's AirPlay Idle Keep-Alive section for the
+    /// nudge implementation.
+    func handleSetAirPlayIdleKeepAliveEnabled(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let arguments = call.arguments as? [String: Any],
+              let enabled = arguments["enabled"] as? Bool else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "Invalid arguments", details: nil))
+            return
+        }
+
+        guard let controllerIdValue = controllerId else {
+            result(FlutterError(code: "NO_CONTROLLER", message: "Controller not initialized", details: nil))
+            return
+        }
+
+        SharedPlayerManager.shared.setAirPlayIdleKeepAliveEnabled(for: controllerIdValue, enabled: enabled)
+        result(nil)
+    }
 }

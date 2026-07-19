@@ -157,6 +157,16 @@ extension VideoPlayerView {
             case "timeControlStatus":
                 guard let player = player else { return }
 
+                // The AirPlay idle keep-alive nudge (issue #54) briefly sets
+                // player.rate above zero to keep a paused external route
+                // alive, which flips timeControlStatus to .playing and back.
+                // Swallow both synthetic transitions instead of forwarding
+                // them to Flutter or running PiP/Now-Playing side effects.
+                if let controllerIdValue = controllerId,
+                   SharedPlayerManager.shared.isPerformingKeepAliveNudge(for: controllerIdValue) {
+                    return
+                }
+
                 // The texture frame pump only runs while playing (plus
                 // one-shot expectFrame renders while paused)
                 textureRenderer?.setRunning(player.timeControlStatus == .playing)
@@ -266,6 +276,13 @@ extension VideoPlayerView {
                     // lift the viewport quality cap while external playback is on
                     liftViewportCap()
 
+                    // Route just came up while paused - start the idle
+                    // keep-alive if the app opted in (see issue #54). No-op
+                    // if keep-alive isn't enabled or player isn't paused.
+                    if let controllerIdValue = controllerId {
+                        SharedPlayerManager.shared.startKeepAliveTimerIfAppropriate(for: controllerIdValue)
+                    }
+
                     // Try to get device name immediately
                     let deviceName = getAirPlayDeviceName()
                     npLog("📱 Initial device name check: \(deviceName ?? "nil")")
@@ -299,6 +316,11 @@ extension VideoPlayerView {
 
                     // Back to local rendering: restore the viewport quality cap
                     applyViewportCapIfAppropriate()
+
+                    // Route dropped - no external playback left to keep alive.
+                    if let controllerIdValue = controllerId {
+                        SharedPlayerManager.shared.stopKeepAliveTimer(for: controllerIdValue)
+                    }
 
                     var eventData: [String: Any] = ["isConnected": false, "isConnecting": false]
 
