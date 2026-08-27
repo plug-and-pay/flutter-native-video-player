@@ -2356,6 +2356,52 @@ class NativeVideoPlayerController {
     }
   }
 
+  /// Applies a fullscreen change that the native side has *already* performed.
+  ///
+  /// The native platform view emits `fullscreenChange` after every toggle,
+  /// including toggles it made itself (the user tapping PlayerView's
+  /// fullscreen button). Routing that event through [enterFullScreen] /
+  /// [exitFullScreen] sent the command straight back down the method channel,
+  /// so one tap ran the native transition twice — on entry that built a second
+  /// fullscreen Dialog over the first, orphaning it as an opaque black window
+  /// that only the back button could dismiss.
+  ///
+  /// This mirrors their bookkeeping — state, Android auto-PiP arming, and
+  /// closing a Dart fullscreen host — without re-issuing the platform call.
+  Future<void> _syncFullScreenFromNative(bool isFullscreen) async {
+    if (_state.isFullScreen == isFullscreen) {
+      return;
+    }
+
+    _updateState(_state.copyWith(isFullScreen: isFullscreen));
+
+    if (!kIsWeb && Platform.isAndroid) {
+      if (isFullscreen) {
+        await _enableAutomaticPiP();
+      } else {
+        _floating.cancelOnLeavePiP();
+        debugPrint('Automatic PiP disabled (native exited fullscreen)');
+      }
+      await _refreshAvailabilityFlags();
+    }
+
+    // A Dart fullscreen host is Dart's to close; native cannot dismiss it.
+    if (!isFullscreen && (_hasCustomOverlay || _usedDartFullscreen)) {
+      _usedDartFullscreen = false;
+      _dartFullscreenCloseCallback?.call();
+    }
+
+    final controlEvent = PlayerControlEvent(
+      state: isFullscreen
+          ? PlayerControlState.fullscreenEntered
+          : PlayerControlState.fullscreenExited,
+      data: <String, dynamic>{'isFullscreen': isFullscreen},
+    );
+    for (final handler in _controlEventHandlers) {
+      handler(controlEvent);
+    }
+  }
+
   /// Enters Dart-based fullscreen mode
   Future<void> _enterDartFullscreen() async {
     final context = _fullscreenContext;
