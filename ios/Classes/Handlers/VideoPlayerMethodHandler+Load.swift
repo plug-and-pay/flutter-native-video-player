@@ -185,6 +185,13 @@ extension VideoPlayerView {
             playerItem.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: nil)
         }
 
+        // A new asset has its own legible options: forget the previous item's
+        // subtitle choice (Dart re-selects after load) and its report state.
+        lastReportedLegibleIndex = nil
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.clearLegibleSelection(for: controllerIdValue)
+        }
+
         // Replace current item immediately - don't wait for HDR configuration
         // This allows the video to start loading right away
         player?.replaceCurrentItem(with: playerItem)

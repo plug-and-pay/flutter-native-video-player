@@ -194,6 +194,13 @@ class NativeVideoPlayerController {
   /// (list→detail→back) or a new item is loaded. Issue #43.
   double _embeddedTextScale = 1.0;
 
+  /// The subtitle track last requested via [setSubtitleTrack] for the current
+  /// source (null = never chosen since load). Re-sent to the native side when
+  /// a new platform view attaches (Dart fullscreen host, second inline view)
+  /// so the app's choice — including "off" — survives the view's own
+  /// attach-time media selection.
+  NativeVideoPlayerSubtitleTrack? _lastSubtitleTrack;
+
   /// Callback to close the Dart fullscreen dialog
   /// Set by FullscreenVideoPlayer when it's created
   VoidCallback? _dartFullscreenCloseCallback;
@@ -1216,9 +1223,7 @@ class NativeVideoPlayerController {
 
     if (style.embeddedTextScale != _embeddedTextScale) {
       _embeddedTextScale = style.embeddedTextScale;
-      unawaited(
-        _methodChannel?.setEmbeddedTextScale(style.embeddedTextScale),
-      );
+      unawaited(_methodChannel?.setEmbeddedTextScale(style.embeddedTextScale));
     }
   }
 
@@ -1251,6 +1256,20 @@ class NativeVideoPlayerController {
     // Always update to use the most recent platform view
     // This ensures commands go to the active view
     _updateMethodChannel(platformViewId);
+
+    // A freshly attached view runs the platform's own media selection; put
+    // the app's subtitle choice back (the native side re-applies it too, this
+    // keeps the contract explicit on both platforms). Sidecar tracks render in
+    // Dart, so for those the native track must stay off.
+    final NativeVideoPlayerSubtitleTrack? lastSubtitleTrack =
+        _lastSubtitleTrack;
+    if (lastSubtitleTrack != null && _methodChannel != null) {
+      await _methodChannel!.setSubtitleTrack(
+        lastSubtitleTrack.source == SubtitleTrackSource.sidecar
+            ? NativeVideoPlayerSubtitleTrack.off()
+            : lastSubtitleTrack,
+      );
+    }
 
     // If we're reconnecting after all platform views were disposed, refresh availability flags
     if (wasDisconnected) {
@@ -1494,6 +1513,9 @@ class NativeVideoPlayerController {
 
     // An A-B range only makes sense for the video it was set on.
     _playbackRange = null;
+
+    // Track indices belong to the previous source.
+    _lastSubtitleTrack = null;
 
     if (sidecarSubtitles != null) {
       _sidecarSubtitles.setSources(sidecarSubtitles);
@@ -1799,6 +1821,8 @@ class NativeVideoPlayerController {
   /// [NativeVideoPlayerSubtitleTrack.source]). Pass a track with index -1 or
   /// use NativeVideoPlayerSubtitleTrack.off() to disable subtitles.
   Future<void> setSubtitleTrack(NativeVideoPlayerSubtitleTrack track) async {
+    _lastSubtitleTrack = track;
+
     if (track.source == SubtitleTrackSource.sidecar) {
       try {
         await _sidecarSubtitles.select(track.index);

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2026-09-08
+
+### Fixed
+- **iOS: embedded subtitles no longer switch themselves on when the player
+  enters fullscreen** (or when a second inline view / the native fullscreen
+  controller attaches to the shared `AVPlayer`). Each attachment re-ran AVKit's
+  automatic media selection, which picked a legible rendition from the system
+  language / accessibility caption settings on top of the app's explicit
+  "off". Shared players now run with `appliesMediaSelectionCriteriaAutomatically
+  = false`, the app's last `setSubtitleTrack` choice is remembered per
+  controller and re-applied after every view attachment, and the Dart
+  controller re-sends it to each newly created platform view.
+- **iOS: `subtitleTrackChanged` is now emitted for native-initiated subtitle
+  changes** (the item's `currentMediaSelection` is observed), so an app's
+  subtitle picker can mirror what the player actually renders instead of
+  trusting its own last write.
+- `NativeVideoPlayerSubtitleTrack.toMap()`/`fromMap()` round-trip `source`, so
+  a sidecar selection delivered through `PlayerControlState.subtitleTrackChanged`
+  is no longer mistaken for an embedded track (old payloads without `source`
+  still decode as embedded).
+
 ## [1.5.2] - 2026-07-07
 
 ### Fixed

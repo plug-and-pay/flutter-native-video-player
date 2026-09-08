@@ -160,6 +160,7 @@ extension VideoPlayerView {
         // Index -1 means disable subtitles
         if index == -1 {
             npLog("📝 Disabling subtitles")
+            rememberLegibleSelection(-1)
             playerItem.select(nil, in: mediaSelectionGroup)
             sendEvent("subtitleChange", data: [
                 "index": -1,
@@ -179,9 +180,64 @@ extension VideoPlayerView {
 
         // Select the subtitle option
         let option = mediaSelectionGroup.options[index]
+        rememberLegibleSelection(index)
         playerItem.select(option, in: mediaSelectionGroup)
 
-        let languageCode = option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
+        npLog("📝 Selected subtitle track: \(option.displayName) (\(languageCode(of: option)))")
+
+        sendEvent("subtitleChange", data: subtitleChangePayload(index: index, option: option))
+
+        result(nil)
+    }
+
+    /// Records Dart's subtitle choice on the shared player so it survives view
+    /// (re)attachment, and marks it as already reported so the media-selection
+    /// observer doesn't echo it a second time.
+    private func rememberLegibleSelection(_ index: Int) {
+        lastReportedLegibleIndex = index
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setLegibleSelection(index, for: controllerIdValue)
+        }
+    }
+
+    /// Reports the item's current legible selection to Dart when it differs
+    /// from what was last reported by this view — the selection can change
+    /// without a setSubtitleTrack call (AVKit's attach-time media selection,
+    /// the native fullscreen controls' CC menu), and the Dart side must
+    /// mirror what the player actually renders.
+    func reportLegibleSelectionIfChanged() {
+        guard let playerItem = player?.currentItem,
+              let asset = playerItem.asset as? AVURLAsset,
+              let mediaSelectionGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
+            return
+        }
+
+        let selectedOption = playerItem.currentMediaSelection.selectedMediaOption(in: mediaSelectionGroup)
+        let selectedIndex = selectedOption.flatMap { mediaSelectionGroup.options.firstIndex(of: $0) } ?? -1
+
+        guard selectedIndex != lastReportedLegibleIndex else { return }
+        lastReportedLegibleIndex = selectedIndex
+
+        if let option = selectedOption, selectedIndex >= 0 {
+            npLog("📝 Legible selection changed outside setSubtitleTrack: \(option.displayName) (\(selectedIndex))")
+            sendEvent("subtitleChange", data: subtitleChangePayload(index: selectedIndex, option: option))
+        } else {
+            npLog("📝 Legible selection changed outside setSubtitleTrack: off")
+            sendEvent("subtitleChange", data: [
+                "index": -1,
+                "language": "off",
+                "displayName": "Off",
+                "isSelected": false
+            ])
+        }
+    }
+
+    private func languageCode(of option: AVMediaSelectionOption) -> String {
+        option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
+    }
+
+    private func subtitleChangePayload(index: Int, option: AVMediaSelectionOption) -> [String: Any] {
+        let languageCode = languageCode(of: option)
         var displayName = option.displayName
 
         if displayName.isEmpty, let locale = option.locale {
@@ -192,15 +248,11 @@ extension VideoPlayerView {
             displayName = languageCode
         }
 
-        npLog("📝 Selected subtitle track: \(displayName) (\(languageCode))")
-
-        sendEvent("subtitleChange", data: [
+        return [
             "index": index,
             "language": languageCode,
             "displayName": displayName,
             "isSelected": true
-        ])
-
-        result(nil)
+        ]
     }
 }

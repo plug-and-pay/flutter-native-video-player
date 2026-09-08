@@ -82,6 +82,17 @@ class SharedPlayerManager: NSObject {
     /// These persist to send PiP and AirPlay events even when all views are disposed
     private var controllerEventSinks: [Int: FlutterEventSink] = [:]
 
+    /// The legible (subtitle) selection Dart last asked for, per controller:
+    /// the option index in the asset's legible media selection group, or -1
+    /// for "off". Absent = Dart never chose, leave the item alone.
+    ///
+    /// AVFoundation stores the selection on the AVPlayerItem, but attaching a
+    /// fresh AVPlayerViewController to the shared player (Dart fullscreen host,
+    /// second inline view, native fullscreen, inline re-bind) re-runs AVKit's
+    /// automatic media selection and can silently turn captions back on. The
+    /// recorded choice is re-applied after every such attachment.
+    private var legibleSelectionByController: [Int: Int] = [:]
+
     struct PipSettings {
         let allowsPictureInPicture: Bool
         let canStartPictureInPictureAutomatically: Bool
@@ -100,6 +111,71 @@ class SharedPlayerManager: NSObject {
             npLog("✅ [SharedPlayerManager] Set audiovisualBackgroundPlaybackPolicy to continuesIfPossible")
         } else {
             npLog("ℹ️ [SharedPlayerManager] audiovisualBackgroundPlaybackPolicy not available (iOS < 15.0)")
+        }
+        configureMediaSelection(player)
+    }
+
+    /// Subtitles are chosen by the app (setSubtitleTrack), never by the OS:
+    /// with automatic criteria on, AVFoundation/AVKit picks a legible rendition
+    /// from the system language and accessibility caption settings — and does
+    /// so again every time a view controller attaches to the player, which is
+    /// how captions appeared on entering fullscreen without the user asking.
+    /// Manifest DEFAULT flags still apply, so audio selection is unaffected.
+    static func configureMediaSelection(_ player: AVPlayer) {
+        player.appliesMediaSelectionCriteriaAutomatically = false
+    }
+
+    private func configureMediaSelection(_ player: AVPlayer) {
+        SharedPlayerManager.configureMediaSelection(player)
+    }
+
+    // MARK: - Legible (Subtitle) Selection
+
+    /// Records the subtitle choice Dart made for [controllerId] (-1 = off) so it
+    /// can be re-applied after a view (re)attaches to the shared player.
+    func setLegibleSelection(_ optionIndex: Int, for controllerId: Int) {
+        assertMainThread()
+        legibleSelectionByController[controllerId] = optionIndex
+    }
+
+    /// Forgets the recorded subtitle choice — the next load carries a new
+    /// asset whose option indices don't line up with the previous one.
+    func clearLegibleSelection(for controllerId: Int) {
+        assertMainThread()
+        legibleSelectionByController.removeValue(forKey: controllerId)
+    }
+
+    /// Re-applies the recorded subtitle choice to the controller's current
+    /// item. Runs on the next main-queue tick so it lands after AVKit's own
+    /// attach-time media selection. No-op when Dart never chose or nothing is
+    /// loaded; views then report the resulting selection to Dart.
+    func reapplyLegibleSelection(for controllerId: Int) {
+        assertMainThread()
+        guard let optionIndex = legibleSelectionByController[controllerId] else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  self.legibleSelectionByController[controllerId] == optionIndex,
+                  let player = self.players[controllerId],
+                  let playerItem = player.currentItem,
+                  let asset = playerItem.asset as? AVURLAsset,
+                  let group = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
+                return
+            }
+
+            if optionIndex < 0 {
+                playerItem.select(nil, in: group)
+            } else if optionIndex < group.options.count {
+                playerItem.select(group.options[optionIndex], in: group)
+            } else {
+                return
+            }
+
+            npLog("📝 [SharedPlayerManager] Re-applied legible selection \(optionIndex) for controller \(controllerId)")
+
+            for view in self.findAllViewsForController(controllerId) {
+                view.reportLegibleSelectionIfChanged()
+            }
         }
     }
 
@@ -420,6 +496,8 @@ class SharedPlayerManager: NSObject {
         // Remove media info cache
         mediaInfoCache.removeValue(forKey: controllerId)
 
+        legibleSelectionByController.removeValue(forKey: controllerId)
+
         // If this was the controller with automatic PiP, clear it
         if controllerWithAutomaticPiP == controllerId {
             controllerWithAutomaticPiP = nil
@@ -448,6 +526,7 @@ class SharedPlayerManager: NSObject {
         qualitiesCache.removeAll()
         qualityLevelsCache.removeAll()
         mediaInfoCache.removeAll()
+        legibleSelectionByController.removeAll()
         controllerWithAutomaticPiP = nil
         controllersWithManualPiP.removeAll()
         controllerEventSinks.removeAll()

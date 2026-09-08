@@ -26,6 +26,12 @@ class NativeVideoPlayerSubtitleTrack {
       language: map['language'] as String,
       displayName: map['displayName'] as String,
       isSelected: map['isSelected'] as bool? ?? false,
+      // The native side never sends a source (its tracks are embedded);
+      // Dart-emitted sidecar events do, so a listener can tell them apart.
+      source: SubtitleTrackSource.values.firstWhere(
+        (SubtitleTrackSource s) => s.name == map['source'],
+        orElse: () => SubtitleTrackSource.embedded,
+      ),
     );
   }
 
@@ -62,6 +68,7 @@ class NativeVideoPlayerSubtitleTrack {
     'language': language,
     'displayName': displayName,
     'isSelected': isSelected,
+    'source': source.name,
   };
 
   NativeVideoPlayerSubtitleTrack copyWith({
