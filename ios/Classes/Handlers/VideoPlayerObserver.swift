@@ -105,6 +105,11 @@ extension VideoPlayerView {
             case "status":
                 switch item.status {
                 case .readyToPlay:
+                    // The legible group is normally resolved by now: apply a choice
+                    // that was made while it wasn't, in case selecting it never
+                    // produced a currentMediaSelection change of its own.
+                    applyRecordedLegibleSelection()
+
                     // Only send isInitialized for new players, not for shared players
                     // Shared players already sent their state in the init
                     if !isSharedPlayer {
@@ -153,7 +158,7 @@ extension VideoPlayerView {
                     ])
                 }
             case "currentMediaSelection":
-                reportLegibleSelectionIfChanged()
+                onLegibleSelectionChanged()
             default: break
             }
         }

@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-09-09
+
+### Changed
+- **iOS: an item starts with subtitles off instead of with no opinion.** 1.5.3
+  stopped AVFoundation picking a legible rendition from the system language and
+  accessibility caption settings, but `appliesMediaSelectionCriteriaAutomatically
+  = false` does not cover the manifest: an HLS caption rendition flagged
+  `DEFAULT` was still selected by the item itself as soon as the legible group
+  resolved. Loading a source now records "off" as the controller's selection, so
+  that rendition is corrected away and captions appear only once the app calls
+  `setSubtitleTrack`. Apps that relied on a `DEFAULT`-flagged caption track
+  turning itself on must select it explicitly.
+
+### Fixed
+- **iOS: entering fullscreen no longer turns captions on.** The recorded choice
+  was re-applied one main-queue tick after the fullscreen `AVPlayerViewController`
+  was created, which is before AVKit runs its own media selection during
+  presentation — so the correction landed first and AVKit's pick stood. The
+  item's `currentMediaSelection` is now the trigger: any selection that deviates
+  from the recorded choice is put back whenever it happens, so attach-time
+  selection loses regardless of its timing. A view showing native playback
+  controls is exempt after its first correction, so a pick from AVKit's own CC
+  menu still sticks.
+- **iOS: a subtitle choice made before the legible group resolved is no longer
+  dropped.** HLS legible renditions can arrive after the item reports ready, and
+  `setSubtitleTrack` then failed with `NO_SUBTITLES` *without recording the
+  choice* — leaving nothing to oppose the manifest's `DEFAULT` rendition for the
+  rest of the session, since the per-controller re-apply had nothing to re-apply.
+  The choice is now recorded and applied as soon as the group shows up, and the
+  call reports success rather than an error the Dart side only logged.
+- **iOS: media-selection changes are handled on the main thread.** The
+  `currentMediaSelection` observer ran wherever AVFoundation happened to be,
+  touching per-view report state and the Flutter event sink off the platform
+  thread.
+
 ## [1.5.3] - 2026-09-08
 
 ### Fixed

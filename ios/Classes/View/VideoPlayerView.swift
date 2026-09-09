@@ -161,6 +161,12 @@ import QuartzCore
     // media-selection observer report only genuine changes.
     var lastReportedLegibleIndex: Int?
 
+    // Whether the item's own first legible selection has been corrected for the
+    // current item. Until it has, a selection change can't be a CC-menu pick —
+    // there was no chance to make one — so it is corrected even on a view with
+    // native controls.
+    var hasCorrectedInitialLegibleSelection: Bool = false
+
     // Store HDR setting
     var enableHDR: Bool = false
 

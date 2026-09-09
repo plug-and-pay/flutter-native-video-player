@@ -185,11 +185,15 @@ extension VideoPlayerView {
             playerItem.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: nil)
         }
 
-        // A new asset has its own legible options: forget the previous item's
-        // subtitle choice (Dart re-selects after load) and its report state.
+        // A new asset has its own legible options, so the previous item's choice
+        // and report state go. The new item starts at "off" rather than at "no
+        // opinion": an HLS manifest can flag a caption rendition DEFAULT, and
+        // the app — which owns subtitle selection here — has not asked for one
+        // yet. Its own setSubtitleTrack replaces this.
         lastReportedLegibleIndex = nil
+        hasCorrectedInitialLegibleSelection = false
         if let controllerIdValue = controllerId {
-            SharedPlayerManager.shared.clearLegibleSelection(for: controllerIdValue)
+            SharedPlayerManager.shared.setLegibleSelection(-1, for: controllerIdValue)
         }
 
         // Replace current item immediately - don't wait for HDR configuration

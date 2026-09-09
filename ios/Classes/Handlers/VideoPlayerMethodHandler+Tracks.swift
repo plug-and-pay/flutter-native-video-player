@@ -153,7 +153,15 @@ extension VideoPlayerView {
         }
 
         guard let mediaSelectionGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
-            result(FlutterError(code: "NO_SUBTITLES", message: "No subtitle tracks available", details: nil))
+            // HLS legible renditions resolve after the item reports ready, and a
+            // choice made in that window used to be dropped with NO_SUBTITLES —
+            // leaving nothing to oppose the rendition the manifest flagged
+            // DEFAULT, on this attach and every later one. Record it instead and
+            // apply it as soon as the group shows up (onLegibleSelectionChanged
+            // and the readyToPlay observer); the index is validated there.
+            rememberLegibleSelection(index)
+            npLog("📝 Subtitle choice \(index) recorded before the legible group resolved; applying once it does")
+            result(nil)
             return
         }
 
@@ -198,6 +206,60 @@ extension VideoPlayerView {
         if let controllerIdValue = controllerId {
             SharedPlayerManager.shared.setLegibleSelection(index, for: controllerIdValue)
         }
+    }
+
+    /// Handles a change of the item's legible selection that nobody asked for:
+    /// the rendition an HLS manifest flags DEFAULT, or AVKit's media selection
+    /// re-run when a view controller attaches. The recorded choice wins, so the
+    /// selection is put back and the re-select's own change reports instead.
+    ///
+    /// The exception is a view showing native playback controls: its CC menu is
+    /// the user picking a track, and that must stick. The item's very first
+    /// selection after a load is still corrected there — no user could have made
+    /// it that early — so a DEFAULT rendition never sneaks past.
+    func onLegibleSelectionChanged() {
+        onMainQueue { [weak self] in
+            self?.handleLegibleSelectionChange()
+        }
+    }
+
+    /// Applies the recorded subtitle choice to the current item, for callers that
+    /// know the legible group may just have resolved.
+    func applyRecordedLegibleSelection() {
+        onMainQueue { [weak self] in
+            guard let self = self, let controllerIdValue = self.controllerId else { return }
+
+            SharedPlayerManager.shared.applyLegibleSelection(for: controllerIdValue)
+        }
+    }
+
+    /// Runs [work] on the main queue, straight away when already there. KVO
+    /// notifications arrive on whichever queue AVFoundation used, while the
+    /// recorded selection, this view's report state and the Flutter event sink
+    /// are all main-thread only.
+    func onMainQueue(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
+    private func handleLegibleSelectionChange() {
+        let hasUserReachableCCMenu = usesViewControllerDisplay
+            && playerViewController.showsPlaybackControls
+            && hasCorrectedInitialLegibleSelection
+
+        if !hasUserReachableCCMenu, let controllerIdValue = controllerId {
+            hasCorrectedInitialLegibleSelection = true
+
+            if SharedPlayerManager.shared.applyLegibleSelection(for: controllerIdValue) {
+                // The re-select fires this observer again; report from that pass.
+                return
+            }
+        }
+
+        reportLegibleSelectionIfChanged()
     }
 
     /// Reports the item's current legible selection to Dart when it differs
