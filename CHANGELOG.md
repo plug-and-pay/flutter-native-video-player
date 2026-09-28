@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-09-28
+
+### Fixed
+- **iOS: ready for the mandatory UIScene life cycle (iOS 27 SDK).** Native
+  fullscreen, the AirPlay picker and the texture renderer looked up their host
+  through the deprecated `UIApplication.keyWindow`, which does not follow the
+  scene life cycle. They now resolve the key window through the
+  foreground-active window scene. The example app is migrated to UIScene.
+- Static analysis: no more analyzer warnings, lints or formatting issues
+  (`await` inside `try` in the subtitle loader, null-aware map entries).
+
 ## [1.6.1] - 2026-09-28
 
 ### Fixed
