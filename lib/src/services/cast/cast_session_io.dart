@@ -317,7 +317,8 @@ class CastSession {
     // the beginning of the DVR window; omitting the field lets it default to the
     // live edge, matching local playback. Only send it when the caller actually
     // requested a position (or for regular buffered media).
-    final bool sendCurrentTime = streamType != 'LIVE' || startAt > Duration.zero;
+    final bool sendCurrentTime =
+        streamType != 'LIVE' || startAt > Duration.zero;
 
     final payload = <String, dynamic>{
       'type': 'LOAD',
@@ -336,8 +337,8 @@ class CastSession {
         if (title != null || subtitle != null || imageUrl != null)
           'metadata': <String, dynamic>{
             'metadataType': 0, // GENERIC
-            if (title != null) 'title': title,
-            if (subtitle != null) 'subtitle': subtitle,
+            'title': ?title,
+            'subtitle': ?subtitle,
             if (imageUrl != null)
               'images': <Map<String, dynamic>>[
                 {'url': imageUrl},

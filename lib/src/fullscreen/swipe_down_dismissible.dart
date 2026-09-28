@@ -51,10 +51,7 @@ class _SwipeDownDismissibleState extends State<SwipeDownDismissible>
   @override
   void initState() {
     super.initState();
-    _dragController = AnimationController(
-      vsync: this,
-      duration: Duration.zero,
-    );
+    _dragController = AnimationController(vsync: this, duration: Duration.zero);
   }
 
   @override
@@ -115,8 +112,9 @@ class _SwipeDownDismissibleState extends State<SwipeDownDismissible>
           return ColoredBox(
             color: widget.backgroundColor == Colors.transparent
                 ? Colors.transparent
-                : widget.backgroundColor
-                      .withValues(alpha: (1 - dragValue).clamp(0.0, 1.0)),
+                : widget.backgroundColor.withValues(
+                    alpha: (1 - dragValue).clamp(0.0, 1.0),
+                  ),
             child: FractionalTranslation(
               translation: Offset(0, min(dragValue, _maxTranslation)),
               child: Transform.scale(

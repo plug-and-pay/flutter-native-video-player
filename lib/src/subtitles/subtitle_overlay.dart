@@ -71,10 +71,7 @@ class SubtitleOverlay extends StatelessWidget {
               // alignment/padding are measured against the video, not the
               // letterbox bars (mirrors the texture path's letterbox fit).
               return Center(
-                child: AspectRatio(
-                  aspectRatio: aspectRatio,
-                  child: cueBlock,
-                ),
+                child: AspectRatio(aspectRatio: aspectRatio, child: cueBlock),
               );
             },
           ),

@@ -42,7 +42,7 @@ abstract final class NativeVideoPlayerCache {
       final result = await const MethodChannel('native_video_player')
           .invokeMethod<bool>('precacheVideo', {
             'url': url,
-            if (headers != null) 'headers': headers,
+            'headers': ?headers,
             'precacheBytes':
                 maxBytes ?? NativeVideoPlayerConfig.global.androidPrecacheBytes,
             'cacheMaxBytes':

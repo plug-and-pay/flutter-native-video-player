@@ -124,7 +124,7 @@ class VideoPlayerMethodChannel {
       await _methodChannel.invokeMethod<void>('setNativeSidecarActive', {
         'viewId': primaryPlatformViewId,
         'active': active,
-        if (language != null) 'language': language,
+        'language': ?language,
       });
     } catch (e) {
       debugPrint('Failed to toggle native sidecar captions: $e');
@@ -196,11 +196,10 @@ class VideoPlayerMethodChannel {
   /// tracks. 1.0 = platform default. Issue #43.
   Future<void> setEmbeddedTextScale(double scale) async {
     try {
-      await _methodChannel
-          .invokeMethod<void>('setEmbeddedTextScale', <String, Object>{
-        'viewId': primaryPlatformViewId,
-        'scale': scale,
-      });
+      await _methodChannel.invokeMethod<void>(
+        'setEmbeddedTextScale',
+        <String, Object>{'viewId': primaryPlatformViewId, 'scale': scale},
+      );
     } catch (e) {
       debugPrint('Error calling setEmbeddedTextScale: $e');
     }

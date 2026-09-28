@@ -602,9 +602,7 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
           builder: (context, sizeSnapshot) {
             final videoSize = sizeSnapshot.data;
             final double? videoAspectRatio =
-                videoSize != null &&
-                    videoSize.width > 0 &&
-                    videoSize.height > 0
+                videoSize != null && videoSize.width > 0 && videoSize.height > 0
                 ? videoSize.aspectRatio
                 : null;
             return SubtitleOverlay(
