@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-09-28
+
+### Fixed
+- **iOS: a player no longer spins forever when its first view is replaced
+  before it initialized.** When a list tile rebuilds right after mounting, the
+  controller's first platform view is disposed before its event listener
+  attaches, so `isInitialized` from that view is never delivered. The next view
+  is created while the previous native view still holds the shared player and
+  therefore counts as a shared player, whose listener only replayed playback
+  state when an item was loaded — with nothing loaded it sent nothing,
+  `initialize()` never completed, and the player showed a spinner until the
+  load watchdog turned it into an error. A shared player without an item now
+  sends `isInitialized` like a new one (Android already sent `idle` here).
+- The iOS podspec version now matches the package version.
+
 ## [1.6.0] - 2026-09-09
 
 ### Changed
