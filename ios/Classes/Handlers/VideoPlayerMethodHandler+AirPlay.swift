@@ -56,7 +56,7 @@ extension VideoPlayerView {
         }
 
         // Find the root view controller
-        guard let rootViewController = UIApplication.shared.keyWindow?.rootViewController else {
+        guard let rootViewController = UIApplication.shared.sceneKeyWindow?.rootViewController else {
             result(FlutterError(code: "NO_VIEW_CONTROLLER", message: "Could not find root view controller", details: nil))
             return
         }

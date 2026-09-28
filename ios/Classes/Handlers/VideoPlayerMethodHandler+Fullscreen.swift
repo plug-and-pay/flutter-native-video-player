@@ -9,7 +9,7 @@ import MediaPlayer
 // all members keep full access to VideoPlayerView state.
 extension VideoPlayerView {
     func handleEnterFullScreen(result: @escaping FlutterResult) {
-        if let viewController = UIApplication.shared.keyWindow?.rootViewController {
+        if let viewController = UIApplication.shared.sceneKeyWindow?.rootViewController {
             // Create a NEW player view controller for fullscreen
             // This prevents the embedded view from being removed from Flutter's view hierarchy
             let fullscreenPlayerViewController = AVPlayerViewController()

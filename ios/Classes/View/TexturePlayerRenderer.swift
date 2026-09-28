@@ -68,7 +68,7 @@ final class TexturePlayerRenderer: NSObject, FlutterTexture {
         // never draws. Same placement as video_player_avfoundation.
         let layer = AVPlayerLayer(player: player)
         layer.frame = .zero
-        if let hostLayer = UIApplication.shared.keyWindow?.rootViewController?.view.layer {
+        if let hostLayer = UIApplication.shared.sceneKeyWindow?.rootViewController?.view.layer {
             hostLayer.addSublayer(layer)
         }
         fixLayer = layer
