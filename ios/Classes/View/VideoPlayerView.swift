@@ -929,6 +929,14 @@ import QuartzCore
                 @unknown default:
                     break
                 }
+            } else {
+                // Shared player with nothing loaded yet. A fresh Dart controller
+                // whose first view was disposed before its listener attached
+                // (e.g. a list tile rebuilt right after mount) never received
+                // isInitialized from that view, and nothing else would complete
+                // its initialize(). Android sends "idle" here for the same reason.
+                npLog("[\(channelName)] Shared player without an item - sending isInitialized event to new listener")
+                sendEvent("isInitialized")
             }
 
         } else {
