@@ -97,7 +97,15 @@ class VideoPlayerMethodHandler(
     private val audioManager: AudioManager =
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
-    private val legacyAudioFocusListener = AudioManager.OnAudioFocusChangeListener { }
+    // Another app taking focus for good (the user resumed Spotify while our
+    // video was paused) must end our claim: forget the request so nothing
+    // holds or re-uses it, and the next play() asks again.
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+            NpLog.d(TAG, "Audio focus lost permanently - releasing our request")
+            abandonAudioFocusForPlayback()
+        }
+    }
 
     // Deferred audio-focus abandon for plain pauses ("paused with intent to
     // resume"): abandoning the instant isPlaying flips false silences the
@@ -171,6 +179,7 @@ class VideoPlayerMethodHandler(
                     .build()
                 audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setAudioAttributes(attrs)
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener)
                     .build()
             }
             audioFocusRequest?.let { request ->
@@ -182,7 +191,7 @@ class VideoPlayerMethodHandler(
         } else {
             @Suppress("DEPRECATION")
             audioManager.requestAudioFocus(
-                legacyAudioFocusListener,
+                audioFocusChangeListener,
                 AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN
             )
@@ -198,7 +207,7 @@ class VideoPlayerMethodHandler(
             }
         } else {
             @Suppress("DEPRECATION")
-            audioManager.abandonAudioFocus(legacyAudioFocusListener)
+            audioManager.abandonAudioFocus(audioFocusChangeListener)
         }
     }
 
