@@ -5,9 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.2] - 2026-09-28
+## [1.6.2] - 2026-09-29
+
+### Added
+- **`NativeVideoPlayerConfig.iosAllowsVideoFrameAnalysis`** (default `false`).
+  iOS 16+ showed its own Live Text / Visual Look Up button on a paused frame
+  that contains text, on top of custom overlays. It is now off by default;
+  set the flag to `true` to get Apple's behavior back. Applies to every
+  `AVPlayerViewController` the plugin shows (inline, shared, Dart and native
+  fullscreen). Android ignores it.
 
 ### Fixed
+- **iOS: other apps' audio is only interrupted while a video plays.** The
+  plugin re-activated its non-mixable `playback` audio session on every return
+  to the foreground, on backgrounding, when an interruption ended and when Now
+  Playing was refreshed — also for a paused video. Pausing a video, resuming
+  Spotify and returning to the app therefore stopped Spotify again. The session
+  is now only (re)activated while the player is playing, in Picture-in-Picture
+  or on AirPlay.
+- **iOS: an interruption no longer starts a video the user had paused.** When
+  an interruption ended with `shouldResume`, the player resumed even if it had
+  been paused before the interruption began. It now only resumes playback the
+  user had actually started.
+- **Android: losing audio focus for good releases the plugin's request.** The
+  focus request had no listener, so a permanent loss (another app taking over)
+  left a stale request behind. It is now abandoned on `AUDIOFOCUS_LOSS`; the
+  next `play()` requests focus again.
+- **Android: Chromecast discovery no longer floods the log with
+  `` `reusePort` not supported on this platform``** (#51, #52). mDNS sockets
+  are bound without `reusePort`, which Android does not support.
 - **iOS: ready for the mandatory UIScene life cycle (iOS 27 SDK).** Native
   fullscreen, the AirPlay picker and the texture renderer looked up their host
   through the deprecated `UIApplication.keyWindow`, which does not follow the
@@ -15,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   foreground-active window scene. The example app is migrated to UIScene.
 - Static analysis: no more analyzer warnings, lints or formatting issues
   (`await` inside `try` in the subtitle loader, null-aware map entries).
+- Example app: Android build updated for Flutter 3.47 (Gradle 8.14.3, AGP
+  8.11.1, Kotlin 2.2.20).
 
 ## [1.6.1] - 2026-09-28
 
