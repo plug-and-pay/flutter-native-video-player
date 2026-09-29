@@ -122,8 +122,19 @@ class CastDeviceDiscovery {
     return error;
   }
 
+  static Future<RawDatagramSocket> _bindWithoutReusePort(
+    dynamic host,
+    int port, {
+    bool reuseAddress = true,
+    bool reusePort = false,
+    int ttl = 1,
+  }) => RawDatagramSocket.bind(host, port, reuseAddress: true, ttl: ttl);
+
   static Future<List<CastDevice>> _discover({required Duration timeout}) async {
-    final client = MDnsClient();
+    // multicast_dns binds with reusePort: true, which Android does not
+    // support: every bind logs "`reusePort` not supported on this platform"
+    // (issues #51/#52). reuseAddress alone is enough to share port 5353.
+    final client = MDnsClient(rawDatagramSocketFactory: _bindWithoutReusePort);
     final found = <String, CastDevice>{};
     await client.start();
     try {
