@@ -334,6 +334,19 @@ class VideoPlayerView(
             return
         }
 
+        // Every toggle emits a "fullscreenChange" event, which the Dart
+        // controller may mirror back down the method channel — so a toggle can
+        // arrive here twice. Re-entering while already in that state built a
+        // SECOND Dialog over the first and overwrote the field, orphaning the
+        // original: exitFullscreenNative() then dismissed only the newer one
+        // and the orphan stayed on the window stack as an opaque black
+        // fullscreen window (Theme_Black_NoTitleBar_Fullscreen), which only
+        // the back button could dismiss. Ignore the redundant call.
+        if (enteringFullScreen == isFullScreen) {
+            NpLog.d(TAG, "Ignoring fullscreen toggle - already ${if (isFullScreen) "in" else "out of"} fullscreen")
+            return
+        }
+
         // Get activity from plugin (most reliable) or context
         val activity = NativeVideoPlayerPlugin.getActivity() ?: getActivity(context)
         if (activity == null) {
@@ -398,6 +411,17 @@ class VideoPlayerView(
      */
     private fun enterFullscreenNative(activity: Activity) {
         NpLog.d(TAG, "Entering fullscreen natively")
+
+        // Never leak a previous dialog: the field is reassigned below, so any
+        // dialog still held here would become unreachable and stay showing as
+        // an opaque black window that only the back button could dismiss.
+        fullscreenDialog?.let { stale ->
+            NpLog.w(TAG, "Dismissing stale fullscreen dialog before creating a new one")
+            (videoContentView.parent as? ViewGroup)?.removeView(videoContentView)
+            stale.setOnDismissListener(null)
+            stale.dismiss()
+            fullscreenDialog = null
+        }
 
         // Store original orientation
         originalOrientation = activity.requestedOrientation

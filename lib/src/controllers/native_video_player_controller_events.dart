@@ -425,15 +425,13 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
                     unawaited(enterFullScreen());
                   }
                 } else {
-                  // Normal fullscreen change from native side (e.g., PiP exit restoration)
-                  // Actually call the fullscreen methods to sync UI state
-                  if (isFullscreen && !_state.isFullScreen) {
-                    // Native side entered fullscreen, sync Flutter state
-                    unawaited(enterFullScreen());
-                  } else if (!isFullscreen && _state.isFullScreen) {
-                    // Native side exited fullscreen, sync Flutter state
-                    unawaited(exitFullScreen());
-                  }
+                  // Normal fullscreen change from native side (e.g. the user
+                  // tapping PlayerView's own fullscreen button, or PiP exit
+                  // restoration). Native has already performed the transition,
+                  // so only mirror it in Dart — calling enterFullScreen() /
+                  // exitFullScreen() here would send the command back down the
+                  // method channel and run the native transition a second time.
+                  unawaited(_syncFullScreenFromNative(isFullscreen));
                 }
 
                 // Always update state for fullscreen changes
