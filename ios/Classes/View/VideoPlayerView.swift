@@ -19,6 +19,7 @@ import QuartzCore
         viewController.showsPlaybackControls = false
         viewController.updatesNowPlayingInfoCenter = false
         viewController.delegate = self
+        SharedPlayerManager.shared.configureVideoFrameAnalysis(viewController)
         return viewController
     }()
 
@@ -227,6 +228,9 @@ import QuartzCore
         if let maxTotalPlayers = argsDict?["iosMaxTotalPlayers"] as? Int {
             SharedPlayerManager.shared.maxTotalPlayers = maxTotalPlayers
         }
+        if let allowsVideoFrameAnalysis = argsDict?["iosAllowsVideoFrameAnalysis"] as? Bool {
+            SharedPlayerManager.shared.allowsVideoFrameAnalysis = allowsVideoFrameAnalysis
+        }
 
         // Lightweight display mode: bare AVPlayerLayer instead of a per-tile
         // AVPlayerViewController. Only when the app opted in AND this view
@@ -336,6 +340,7 @@ import QuartzCore
             // Configure playback controls
             playerViewController.showsPlaybackControls = argsShowNativeControls
             playerViewController.delegate = self
+            SharedPlayerManager.shared.configureVideoFrameAnalysis(playerViewController)
 
             // Disable automatic Now Playing updates - we'll handle it manually
             playerViewController.updatesNowPlayingInfoCenter = false
@@ -666,6 +671,22 @@ import QuartzCore
         } catch {
             npLog("❌ Audio session error: \(error.localizedDescription)")
         }
+    }
+
+    /// Whether this view may (re)activate the non-mixable playback session.
+    /// Activating it interrupts other apps' audio (Spotify, podcasts), so it is
+    /// only done while a video is actually playing or kept alive by PiP or
+    /// AirPlay — never for a paused player.
+    var shouldHoldAudioSession: Bool {
+        guard let player = player else { return false }
+        if player.timeControlStatus != .paused || player.rate > 0 { return true }
+        if player.isExternalPlaybackActive { return true }
+        if isPipCurrentlyActive { return true }
+        if let controllerIdValue = controllerId,
+           SharedPlayerManager.shared.isPipActiveForController(controllerIdValue) {
+            return true
+        }
+        return false
     }
 
     public func handleMethodCall(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -1187,11 +1208,13 @@ import QuartzCore
 
         // CRITICAL: Ensure audio session stays active when screen locks
         // This prevents iOS from pausing the video
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-            npLog("   → Audio session kept active during background/lock")
-        } catch {
-            npLog("   ⚠️ Failed to keep audio session active: \(error.localizedDescription)")
+        if shouldHoldAudioSession {
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                npLog("   → Audio session kept active during background/lock")
+            } catch {
+                npLog("   ⚠️ Failed to keep audio session active: \(error.localizedDescription)")
+            }
         }
 
         // CRITICAL: iOS will pause AVPlayer when screen locks
@@ -1216,12 +1239,16 @@ import QuartzCore
     @objc func handleAppWillEnterForeground() {
         npLog("📱 App entering foreground - restoring Now Playing info for view \(viewId)")
 
-        // CRITICAL: Reactivate audio session first
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-            npLog("   → Audio session reactivated")
-        } catch {
-            npLog("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+        // Reactivate the audio session only for a player that is actually
+        // playing: re-activating it for a paused video interrupts whatever
+        // the user started in another app meanwhile.
+        if shouldHoldAudioSession {
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                npLog("   → Audio session reactivated")
+            } catch {
+                npLog("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+            }
         }
 
         // Check if this view owns the remote commands
@@ -1284,12 +1311,22 @@ import QuartzCore
                 }
             }
 
-            // Reactivate audio session
-            do {
-                try AVAudioSession.sharedInstance().setActive(true)
-                npLog("   → Audio session reactivated")
-            } catch {
-                npLog("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+            // The interruption already paused the player, so its rate cannot
+            // tell whether the user had paused before it; the recorded play
+            // request can. Only a video the user was playing gets its session
+            // back and resumes.
+            let wasPlaybackRequested = controllerId.map {
+                SharedPlayerManager.shared.isPlaybackRequested(for: $0)
+            } ?? false
+            shouldResume = shouldResume && wasPlaybackRequested
+
+            if shouldResume || shouldHoldAudioSession {
+                do {
+                    try AVAudioSession.sharedInstance().setActive(true)
+                    npLog("   → Audio session reactivated")
+                } catch {
+                    npLog("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
+                }
             }
 
             // Restore Now Playing info and resume playback if needed

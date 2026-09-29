@@ -93,12 +93,16 @@ extension VideoPlayerView {
         lastAppliedNowPlayingInfoKey = infoKey
 
         // CRITICAL: Ensure audio session is active
-        // iOS won't show Now Playing info if the audio session is not active
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-            npLog("   → Audio session activated successfully")
-        } catch {
-            npLog("   ⚠️ Failed to activate audio session: \(error.localizedDescription)")
+        // iOS won't show Now Playing info if the audio session is not active.
+        // A paused player keeps its metadata but doesn't take the session:
+        // that would interrupt other apps' audio.
+        if shouldHoldAudioSession {
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                npLog("   → Audio session activated successfully")
+            } catch {
+                npLog("   ⚠️ Failed to activate audio session: \(error.localizedDescription)")
+            }
         }
 
         var nowPlayingInfo: [String: Any] = [:]
@@ -219,6 +223,9 @@ extension VideoPlayerView {
             // Ensure audio session is active before resuming playback
             // This is critical after interruptions (e.g., phone calls)
             self.prepareAudioSession()
+            if let controllerIdValue = self.controllerId {
+                SharedPlayerManager.shared.setPlaybackRequested(true, for: controllerIdValue)
+            }
 
             self.player?.play()
             self.sendEvent("play")
@@ -237,6 +244,9 @@ extension VideoPlayerView {
             }
 
             self.player?.pause()
+            if let controllerIdValue = self.controllerId {
+                SharedPlayerManager.shared.setPlaybackRequested(false, for: controllerIdValue)
+            }
             self.sendEvent("pause")
             self.updateNowPlayingPlaybackTime()
             return .success

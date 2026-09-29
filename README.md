@@ -18,6 +18,8 @@ A Flutter plugin for native video playback on iOS and Android with advanced feat
 - ✅ **Custom overlay controls** - Build your own UI on top of native player
 - ✅ **Now Playing** integration (Control Center on iOS, lock screen notifications on Android)
 - ✅ Background playback with media notifications
+- ✅ **Respects other apps' audio**: music or podcasts from other apps are only interrupted while a video is actually playing — pausing a video and resuming Spotify keeps it playing when you return to the app
+- ✅ **Live Text control** (iOS 16+): Apple's "select text" button on paused frames is off by default, opt back in with `iosAllowsVideoFrameAnalysis`
 - ✅ Playback controls: play, pause, seek, volume, speed (0.25x - 2.0x)
 - ✅ Quality selection for HLS streams with real-time switching
 - ✅ **Subtitle/Closed Caption support** for HLS streams (VOD and Live) with language selection and adjustable embedded-caption text size
@@ -951,6 +953,18 @@ All flags default to off / current behavior. See `PERFORMANCE_ROADMAP.md` for th
 - **`lightweightInlineViews`** — when a tile hides native controls (`showNativeControls: false`), renders it with a bare `AVPlayerLayer` (iOS) / `SurfaceView` + subtitle overlay (Android) instead of a full `AVPlayerViewController` / Media3 `PlayerView`. Fullscreen, PiP (including automatic PiP on backgrounding), Now Playing and AirPlay all still work — verified on physical devices.
 - **`prioritizeActivePlayback`** (Android) — playing tiles get network/IO priority over paused/preloading ones via Media3's `PriorityTaskManager`.
 
+#### Live Text on Paused Frames (iOS)
+
+On iOS 16+ AVKit analyzes a paused video frame and, when it finds text, shows its own Live Text / Visual Look Up button on top of the video — also on top of a custom overlay. The plugin turns this **off by default** so the player UI stays under your control. To get Apple's behavior back:
+
+```dart
+NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
+  iosAllowsVideoFrameAnalysis: true, // default: false
+);
+```
+
+It maps to `AVPlayerViewController.allowsVideoFrameAnalysis` and applies to players created after the config is set (inline, shared, Dart and native fullscreen). Android has no equivalent and ignores the flag.
+
 #### Disk Cache and Precaching (Android)
 
 Opt-in Media3 disk cache so revisited feed items skip the network, plus a precache API for upcoming items:
@@ -1851,6 +1865,13 @@ _controller = NativeVideoPlayerController(
 **Background audio stops:**
 - Verify Background Modes are enabled in Xcode capabilities
 - Ensure "Audio, AirPlay, and Picture in Picture" is checked
+
+**A "select text" button appears on a paused video:**
+- That is iOS Live Text. It is off by default since 1.6.2; if you still see it, check that `NativeVideoPlayerConfig.global` doesn't set `iosAllowsVideoFrameAnalysis: true` and that the config is set before the controller is created.
+
+**Other apps' audio (Spotify, podcasts) stops:**
+- Starting a video interrupts other audio — expected, the player uses the non-mixable `playback` audio session.
+- Since 1.6.2 the plugin only (re)activates that session while a video is playing, in Picture-in-Picture or on AirPlay. Returning to the app with a paused video, or an interruption ending while the video was paused, no longer stops the other app.
 
 ### Android
 

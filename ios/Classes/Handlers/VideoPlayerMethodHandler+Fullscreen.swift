@@ -16,6 +16,7 @@ extension VideoPlayerView {
             fullscreenPlayerViewController.player = player
             fullscreenPlayerViewController.showsPlaybackControls = true
             fullscreenPlayerViewController.delegate = self
+            SharedPlayerManager.shared.configureVideoFrameAnalysis(fullscreenPlayerViewController)
 
             // Attaching a view controller re-runs AVKit's media selection; keep Dart's subtitle choice.
             if let controllerIdValue = controllerId {

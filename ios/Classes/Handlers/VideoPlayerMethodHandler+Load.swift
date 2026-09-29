@@ -378,6 +378,9 @@ extension VideoPlayerView {
         // CRITICAL: Activate audio session BEFORE calling player.play()
         // This ensures audio continues when the screen locks
         prepareAudioSession()
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setPlaybackRequested(true, for: controllerIdValue)
+        }
 
         // ALWAYS set media item on play to ensure this player has control
         // This is critical for both normal playback and PiP mode

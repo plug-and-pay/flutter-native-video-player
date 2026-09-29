@@ -29,6 +29,9 @@ extension VideoPlayerView {
 
     func handlePause(result: @escaping FlutterResult) {
         player?.pause()
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setPlaybackRequested(false, for: controllerIdValue)
+        }
         updateNowPlayingPlaybackTime()
 
         // DON'T disable automatic PiP on pause anymore

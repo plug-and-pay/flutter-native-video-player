@@ -37,6 +37,17 @@ class SharedPlayerManager: NSObject {
     /// enforceTotalPlayerCap).
     var maxTotalPlayers: Int = 6
 
+    /// Whether AVKit may analyze paused frames for Live Text / Visual Look Up
+    /// (Dart NativeVideoPlayerConfig.iosAllowsVideoFrameAnalysis, default
+    /// false). Applied to every AVPlayerViewController the plugin shows.
+    var allowsVideoFrameAnalysis: Bool = false
+
+    func configureVideoFrameAnalysis(_ viewController: AVPlayerViewController) {
+        if #available(iOS 16.0, *) {
+            viewController.allowsVideoFrameAnalysis = allowsVideoFrameAnalysis
+        }
+    }
+
     /// Shared AVPlayerViewController instances (persist across view disposal)
     /// Keeps view controllers alive so PiP delegate callbacks can fire even when platform views are disposed
     private var playerViewControllers: [Int: AVPlayerViewController] = [:]
@@ -95,6 +106,12 @@ class SharedPlayerManager: NSObject {
     /// media selection. Both are corrected back to the recorded choice — see
     /// VideoPlayerView.onLegibleSelectionChanged.
     private var legibleSelectionByController: [Int: Int] = [:]
+
+    /// Controllers whose playback was last requested to play (Dart play or the
+    /// lock-screen play command) and not paused since. A system interruption
+    /// pauses the AVPlayer before the app hears about it, so the rate cannot
+    /// tell "was playing" from "the user had paused" when it ends.
+    private var playbackRequestedControllers: Set<Int> = []
 
     struct PipSettings {
         let allowsPictureInPicture: Bool
@@ -511,6 +528,7 @@ class SharedPlayerManager: NSObject {
         mediaInfoCache.removeValue(forKey: controllerId)
 
         legibleSelectionByController.removeValue(forKey: controllerId)
+        playbackRequestedControllers.remove(controllerId)
 
         // If this was the controller with automatic PiP, clear it
         if controllerWithAutomaticPiP == controllerId {
@@ -531,6 +549,7 @@ class SharedPlayerManager: NSObject {
             viewController.delegate = nil
         }
         playerViewControllers.removeAll()
+        playbackRequestedControllers.removeAll()
 
         players.removeAll()
         lruControllerOrder.removeAll()
@@ -722,6 +741,18 @@ class SharedPlayerManager: NSObject {
     /// Check if manual PiP is active for a controller
     func isManualPiPActive(_ controllerId: Int) -> Bool {
         return controllersWithManualPiP.contains(controllerId)
+    }
+
+    func setPlaybackRequested(_ isRequested: Bool, for controllerId: Int) {
+        if isRequested {
+            playbackRequestedControllers.insert(controllerId)
+        } else {
+            playbackRequestedControllers.remove(controllerId)
+        }
+    }
+
+    func isPlaybackRequested(for controllerId: Int) -> Bool {
+        playbackRequestedControllers.contains(controllerId)
     }
 
     /// Check if ANY view for this controller currently has PiP active

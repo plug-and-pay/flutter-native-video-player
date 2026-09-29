@@ -1185,6 +1185,8 @@ class NativeVideoPlayerController {
     'androidForceSoftwareDecoders':
         NativeVideoPlayerConfig.global.androidForceSoftwareDecoders,
     'iosMaxTotalPlayers': NativeVideoPlayerConfig.global.iosMaxTotalPlayers,
+    'iosAllowsVideoFrameAnalysis':
+        NativeVideoPlayerConfig.global.iosAllowsVideoFrameAnalysis,
     if (NativeVideoPlayerConfig.global.androidBufferConfig != null)
       'androidBufferConfig': NativeVideoPlayerConfig.global.androidBufferConfig!
           .toMap(),

@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 
 /// Global, opt-in tuning knobs for the plugin.
 ///
-/// All defaults preserve the plugin's existing behavior; set
+/// All defaults preserve the plugin's existing behavior (except
+/// [iosAllowsVideoFrameAnalysis], which turns iOS Live Text off); set
 /// [NativeVideoPlayerConfig.global] (typically once, at app startup, before
 /// creating controllers) to opt in:
 ///
@@ -31,6 +32,7 @@ class NativeVideoPlayerConfig {
     this.iosTextureMode = false,
     this.androidForceSoftwareDecoders = false,
     this.iosMaxTotalPlayers = 6,
+    this.iosAllowsVideoFrameAnalysis = false,
     this.loadTimeout = const Duration(seconds: 30),
     this.bufferingTimeout,
   }) : assert(
@@ -249,6 +251,17 @@ class NativeVideoPlayerConfig {
   /// playback is never killed). Applies to players created after the
   /// config is set; Android ignores this.
   final int iosMaxTotalPlayers;
+
+  /// Whether iOS may analyze a paused video frame for Live Text and Visual
+  /// Look Up (default false).
+  ///
+  /// With it on, iOS 16+ shows its own "select text" button on a paused
+  /// frame that contains text, on top of any custom overlay. The plugin turns
+  /// it off by default so the player UI stays under the app's control; set it
+  /// to true to get Apple's behavior back. Maps to
+  /// `AVPlayerViewController.allowsVideoFrameAnalysis`; applies to players
+  /// created after the config is set. Android ignores this.
+  final bool iosAllowsVideoFrameAnalysis;
 
   /// Maximum time a player may stay in a load-pipeline state
   /// (initializing/loading) before the controller gives up (default 30
