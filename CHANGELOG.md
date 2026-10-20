@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `completed`, so `activityState` went `playing` → `paused` → `completed`.
   It sends `completed` first now, like Android, and the pause after it is
   kept out of the state.
+- **iOS: loading into a player that had a video flashed `paused`.** Replacing
+  the item reports a pause before the new video's `loaded`, so a reload went
+  `loading` → `paused` → `loaded`. `loading` now stays until `loaded`.
 - **Android: a seek on a paused video left the state at `loaded`.** ExoPlayer
   reports READY again when the seek lands, and that was sent as `loaded`, so
   `activityState` read as "not started yet" (iOS reports `paused`). Only the

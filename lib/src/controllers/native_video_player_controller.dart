@@ -2147,6 +2147,9 @@ class NativeVideoPlayerController {
   ///   playbackLikelyToKeepUp). `loaded` stays until playback starts, the
   ///   viewer seeks or another video loads, so it means "not started yet"
   ///   on both platforms.
+  /// - **During a load**: loading into a player that already had a video
+  ///   (iOS replaces the item) reports a pause before `loaded`. `loading`
+  ///   stays until the new video's `loaded`.
   ///
   /// Kept through: paused, buffering, loading and loaded. Any other state
   /// (playing, completed, error, stopped, idle) applies and ends the hold.
@@ -2175,7 +2178,9 @@ class NativeVideoPlayerController {
     }
     final bool holding =
         (_completedUntilAction && current.isCompleted) ||
-        (_loadedUntilAction && current.isLoaded);
+        (_loadedUntilAction && current.isLoaded) ||
+        // Only the new video's loaded ends a loading.
+        (_loadedUntilAction && current.isLoading && !state.isLoaded);
     final bool quiet =
         state.isPaused ||
         state.isBuffering ||

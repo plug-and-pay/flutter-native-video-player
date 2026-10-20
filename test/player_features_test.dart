@@ -691,6 +691,58 @@ img.jpg#xywh=oops,0,160
       await sendEvent(tester, {'event': 'play'});
       expect(controller.activityState, PlayerActivityState.playing);
     });
+
+    testWidgets('iOS: loading into a played player stays loading until '
+        'loaded', (tester) async {
+      await loadVideo(tester);
+      await sendEvent(tester, {'event': 'play'});
+      await sendEvent(tester, {'event': 'pause'});
+      // The native load answers once the new item is ready; its events
+      // arrive before that.
+      final Completer<void> nativeLoad = Completer<void>();
+      messenger.setMockMethodCallHandler(methodChannel, (call) async {
+        calls.add(call);
+        if (call.method == 'load') await nativeLoad.future;
+        return call.method == 'getAvailableQualities' ? <Object?>[] : null;
+      });
+      final states = <PlayerActivityState>[];
+      final sub = controller.playerStateStream.listen(states.add);
+      final Future<void> load = controller.load(
+        url: 'https://example.com/b.m3u8',
+      );
+      // AVPlayer replacing the item (seen on an iPhone): loading, the old
+      // item's pause twice (timeControlStatus, playbackLikelyToKeepUp),
+      // then loaded.
+      await sendEvent(tester, {'event': 'loading'});
+      await sendEvent(tester, {'event': 'pause'});
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.loading);
+      await sendEvent(tester, {'event': 'loaded', 'duration': 30000});
+      expect(controller.activityState, PlayerActivityState.loaded);
+      nativeLoad.complete();
+      await load;
+      expect(controller.activityState, PlayerActivityState.loaded);
+      expect(states, isNot(contains(PlayerActivityState.paused)));
+      unawaited(sub.cancel());
+    });
+
+    testWidgets('a load that fails still ends in error', (tester) async {
+      await attachView(tester);
+      final Completer<void> nativeLoad = Completer<void>();
+      messenger.setMockMethodCallHandler(methodChannel, (call) async {
+        calls.add(call);
+        if (call.method == 'load') await nativeLoad.future;
+        return null;
+      });
+      unawaited(controller.load(url: 'https://example.com/a.m3u8'));
+      await sendEvent(tester, {'event': 'loading'});
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.loading);
+      await sendEvent(tester, {'event': 'error', 'message': 'boom'});
+      expect(controller.activityState, PlayerActivityState.error);
+      nativeLoad.complete();
+      await tester.pump();
+    });
   });
 
   group('completed', () {
