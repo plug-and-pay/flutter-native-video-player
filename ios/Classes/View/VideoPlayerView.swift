@@ -161,7 +161,9 @@ import QuartzCore
     var canStartPictureInPictureAutomatically: Bool = true
 
     // Whether this player's audio session mixes with other apps' audio
-    // (creation param `mixWithOthers`, see prepareAudioSession)
+    // (creation param `mixWithOthers`, see prepareAudioSession). A mixing
+    // player also leaves Now Playing, the remote commands and automatic PiP
+    // to the real videos.
     var mixWithOthers: Bool = false
 
     // Separate player view controller for fullscreen (prevents removing embedded view)
@@ -428,8 +430,12 @@ import QuartzCore
             // Looping configuration from args
             enableLooping = args["enableLooping"] as? Bool ?? false
 
-            // Audio mixing with other apps from args
+            // Audio mixing with other apps from args. Recorded right away, not
+            // only on play: automatic PiP is set up before the first play.
             mixWithOthers = args["mixWithOthers"] as? Bool ?? false
+            if let controllerIdValue = controllerId {
+                SharedPlayerManager.shared.setMixesWithOthers(mixWithOthers, for: controllerIdValue)
+            }
 
             // Fullscreen swipe-to-dismiss configuration from args
             preventFullscreenSwipeDismiss = args["preventFullscreenSwipeDismiss"] as? Bool ?? true
@@ -824,7 +830,7 @@ import QuartzCore
         if let controllerIdValue = controllerId {
             SharedPlayerManager.shared.setMixesWithOthers(mixWithOthers, for: controllerIdValue)
         }
-        if mixWithOthers && SharedPlayerManager.shared.isNonMixingPlaybackRequested() {
+        if mixWithOthers && SharedPlayerManager.shared.isNonMixingPlaybackActive() {
             npLog("🔊 Mixing view \(viewId) leaves the audio session to a video that doesn't mix")
             return
         }
@@ -843,7 +849,7 @@ import QuartzCore
     /// interrupts other apps' audio, so a `mixWithOthers` view first puts the
     /// mixable category back (unless such a video is playing).
     func reactivateAudioSession() throws {
-        if mixWithOthers && !SharedPlayerManager.shared.isNonMixingPlaybackRequested() {
+        if mixWithOthers && !SharedPlayerManager.shared.isNonMixingPlaybackActive() {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
         }
         try AVAudioSession.sharedInstance().setActive(true)

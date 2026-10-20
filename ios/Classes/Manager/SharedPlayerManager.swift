@@ -815,11 +815,23 @@ class SharedPlayerManager: NSObject {
         }
     }
 
-    /// Whether a video that doesn't mix with other apps' audio was asked to
-    /// play: it holds the non-mixable session, and a mixing video must not
-    /// switch it to mixable under it.
-    func isNonMixingPlaybackRequested() -> Bool {
-        !playbackRequestedControllers.subtracting(mixingControllers).isEmpty
+    /// Whether a video that doesn't mix with other apps' audio holds the
+    /// session: asked to play and still playing (or waiting to), or kept alive
+    /// by AirPlay or PiP. A mixing video must not switch the session to
+    /// mixable under it.
+    ///
+    /// The play request alone doesn't count: it outlives a video that played
+    /// to its end and one that an interruption paused (Spotify, a call), so
+    /// the interruption can resume it. Such a video no longer holds the
+    /// session, and a mixing video that re-activated the non-mixable session
+    /// would stop Spotify again.
+    func isNonMixingPlaybackActive() -> Bool {
+        playbackRequestedControllers.subtracting(mixingControllers).contains { controllerId in
+            guard let player = players[controllerId] else { return false }
+            return player.timeControlStatus != .paused || player.rate > 0
+                || player.isExternalPlaybackActive
+                || isPipActiveForController(controllerId)
+        }
     }
 
     /// Check if ANY view for this controller currently has PiP active
@@ -867,6 +879,13 @@ class SharedPlayerManager: NSObject {
         }
         
         if enabled {
+            // A mixing player is a muted tile or a background loop: it doesn't
+            // take automatic PiP from a real video.
+            if mixingControllers.contains(controllerId) {
+                npLog("🎬 Not enabling automatic PiP for mixing controller \(controllerId)")
+                return
+            }
+
             // Check if manual PiP is active for this controller
             if isManualPiPActive(controllerId) {
                 npLog("⚠️ Cannot enable automatic PiP for controller \(controllerId) - manual PiP is active")

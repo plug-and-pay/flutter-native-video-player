@@ -655,7 +655,7 @@ NativeVideoPlayerController(
 );
 ```
 
-iOS doesn't show a mixing player on the lock screen. While a player that doesn't mix plays, mixing ones leave the audio session to it.
+A mixing player stays off the lock screen and out of the media notification, and doesn't take automatic Picture-in-Picture, so a real video playing next to it keeps those. While a player that doesn't mix plays, mixing ones leave the audio session to it.
 
 ## Live streams
 

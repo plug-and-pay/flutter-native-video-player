@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.mixWithOthers` (also when it is re-activated on background, foreground,
   interruptions and Now Playing updates) and Android never requests audio
   focus. While a player that doesn't mix plays, a mixing one leaves the
-  session to it. Defaults to `false`, so existing players are unchanged.
+  session to it; one that ended or that an interruption paused no longer
+  counts. A mixing player stays off the lock screen and out of the media
+  notification, and doesn't take automatic Picture-in-Picture, so a real
+  video next to it keeps them. Defaults to `false`, so existing players are
+  unchanged.
 
 ## [1.7.3] - 2026-10-20
 

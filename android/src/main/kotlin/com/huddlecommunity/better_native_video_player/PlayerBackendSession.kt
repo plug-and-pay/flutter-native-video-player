@@ -137,6 +137,8 @@ class PlayerBackendSession(
         } else {
             VideoPlayerNotificationHandler(context, player, eventHandler)
         }
+        val mixWithOthers = args?.get("mixWithOthers") as? Boolean ?: false
+        notificationHandler.mixWithOthers = mixWithOthers
 
         // Setup method handler with callback to update media info
         methodHandler = VideoPlayerMethodHandler(
@@ -151,7 +153,7 @@ class PlayerBackendSession(
             enableDiskCache = args?.get("androidEnableDiskCache") as? Boolean ?: false,
             diskCacheMaxBytes = (args?.get("androidDiskCacheMaxBytes") as? Number)?.toLong()
                 ?: VideoCacheManager.DEFAULT_MAX_BYTES,
-            mixWithOthers = args?.get("mixWithOthers") as? Boolean ?: false
+            mixWithOthers = mixWithOthers
         )
 
         // Setup observer with notification handler and media info getter

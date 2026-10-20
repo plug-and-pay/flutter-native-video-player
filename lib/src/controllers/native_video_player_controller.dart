@@ -166,9 +166,10 @@ class NativeVideoPlayerController {
   /// app, even a muted one: iOS takes a non-mixable audio session and Android
   /// requests audio focus. Set to true for muted feed tiles and decorative
   /// background loops: on iOS the session gets `mixWithOthers`, on Android
-  /// the player never requests audio focus. iOS doesn't show a mixing player
-  /// on the lock screen or in Control Center. While a player that doesn't
-  /// mix plays, a mixing one leaves the session to it.
+  /// the player never requests audio focus. A mixing player stays off the
+  /// lock screen, Control Center and the media notification, and doesn't
+  /// take automatic Picture-in-Picture. While a player that doesn't mix
+  /// plays, a mixing one leaves the session to it.
   final bool mixWithOthers;
 
   /// Whether to show native player controls (default: true)
