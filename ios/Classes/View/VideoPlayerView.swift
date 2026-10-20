@@ -160,6 +160,12 @@ import QuartzCore
     // Store whether automatic PiP was requested in creation params
     var canStartPictureInPictureAutomatically: Bool = true
 
+    // Whether this player's audio session mixes with other apps' audio
+    // (creation param `mixWithOthers`, see prepareAudioSession). A mixing
+    // player also leaves Now Playing, the remote commands and automatic PiP
+    // to the real videos.
+    var mixWithOthers: Bool = false
+
     // Separate player view controller for fullscreen (prevents removing embedded view)
     var fullscreenPlayerViewController: AVPlayerViewController?
 
@@ -423,6 +429,13 @@ import QuartzCore
 
             // Looping configuration from args
             enableLooping = args["enableLooping"] as? Bool ?? false
+
+            // Audio mixing with other apps from args. Recorded right away, not
+            // only on play: automatic PiP is set up before the first play.
+            mixWithOthers = args["mixWithOthers"] as? Bool ?? false
+            if let controllerIdValue = controllerId {
+                SharedPlayerManager.shared.setMixesWithOthers(mixWithOthers, for: controllerIdValue)
+            }
 
             // Fullscreen swipe-to-dismiss configuration from args
             preventFullscreenSwipeDismiss = args["preventFullscreenSwipeDismiss"] as? Bool ?? true
@@ -809,14 +822,37 @@ import QuartzCore
 
     /// Prepares and activates the audio session for video playback
     /// This MUST be called before starting playback to ensure audio continues when screen locks
+    ///
+    /// A `mixWithOthers` view takes a mixable session, so other apps' audio
+    /// keeps playing. While a video that doesn't mix plays, it leaves the
+    /// session to that video.
     func prepareAudioSession() {
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setMixesWithOthers(mixWithOthers, for: controllerIdValue)
+        }
+        if mixWithOthers && SharedPlayerManager.shared.isNonMixingPlaybackActive() {
+            npLog("🔊 Mixing view \(viewId) leaves the audio session to a video that doesn't mix")
+            return
+        }
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: options)
             try AVAudioSession.sharedInstance().setActive(true, options: [])
-            npLog("✅ AVAudioSession configured for movie playback and activated")
+            npLog("✅ AVAudioSession configured for movie playback and activated (mixWithOthers: \(mixWithOthers))")
         } catch {
             npLog("❌ Audio session error: \(error.localizedDescription)")
         }
+    }
+
+    /// Re-activates the audio session for a view that holds it. A video that
+    /// doesn't mix may have left the category non-mixable, and activating that
+    /// interrupts other apps' audio, so a `mixWithOthers` view first puts the
+    /// mixable category back (unless such a video is playing).
+    func reactivateAudioSession() throws {
+        if mixWithOthers && !SharedPlayerManager.shared.isNonMixingPlaybackActive() {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+        }
+        try AVAudioSession.sharedInstance().setActive(true)
     }
 
     /// Whether this view may (re)activate the non-mixable playback session.
@@ -1380,7 +1416,7 @@ import QuartzCore
         // This prevents iOS from pausing the video
         if shouldHoldAudioSession {
             do {
-                try AVAudioSession.sharedInstance().setActive(true)
+                try reactivateAudioSession()
                 npLog("   → Audio session kept active during background/lock")
             } catch {
                 npLog("   ⚠️ Failed to keep audio session active: \(error.localizedDescription)")
@@ -1414,7 +1450,7 @@ import QuartzCore
         // the user started in another app meanwhile.
         if shouldHoldAudioSession {
             do {
-                try AVAudioSession.sharedInstance().setActive(true)
+                try reactivateAudioSession()
                 npLog("   → Audio session reactivated")
             } catch {
                 npLog("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")
@@ -1501,7 +1537,7 @@ import QuartzCore
 
             if shouldResume || shouldHoldAudioSession {
                 do {
-                    try AVAudioSession.sharedInstance().setActive(true)
+                    try reactivateAudioSession()
                     npLog("   → Audio session reactivated")
                 } catch {
                     npLog("   ⚠️ Failed to reactivate audio session: \(error.localizedDescription)")

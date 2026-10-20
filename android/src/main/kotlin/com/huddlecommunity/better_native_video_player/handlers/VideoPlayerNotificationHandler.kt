@@ -89,6 +89,12 @@ class VideoPlayerNotificationHandler(
     private var currentTitle: String = "Video"
     private var currentSubtitle: String = ""
 
+    // A mixing player (creation param `mixWithOthers`: muted feed tile,
+    // background loop) shows no media notification and starts no media
+    // session or foreground service: that would put it on the lock screen and
+    // take the media controls from a real video. Play/pause events still go out.
+    var mixWithOthers: Boolean = false
+
     init {
         createNotificationChannel()
     }
@@ -182,6 +188,8 @@ class VideoPlayerNotificationHandler(
      * MediaSession automatically provides lock screen controls and system media notification
      */
     fun setupMediaSession(mediaInfo: Map<String, Any>?) {
+        if (mixWithOthers) return
+
         // Extract metadata from the provided info
         val newTitle = (mediaInfo?.get("title") as? String) ?: "Video"
         val newSubtitle = (mediaInfo?.get("subtitle") as? String) ?: ""
@@ -266,6 +274,7 @@ class VideoPlayerNotificationHandler(
      * Shows or updates the media notification
      */
     private fun showNotification() {
+        if (mixWithOthers) return
         try {
             val notification = buildNotification()
             if (player.playWhenReady) {
@@ -369,6 +378,8 @@ class VideoPlayerNotificationHandler(
      * The base metadata was already set when creating the MediaItem
      */
     fun updateMediaMetadata(mediaInfo: Map<String, Any>) {
+        if (mixWithOthers) return
+
         // Load artwork asynchronously if present and update the notification
         val artworkUrl = mediaInfo["artworkUrl"] as? String
         if (artworkUrl != null) {

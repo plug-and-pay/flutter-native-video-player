@@ -78,6 +78,15 @@ extension VideoPlayerView {
         npLog("🎵 setupNowPlayingInfo called for view \(viewId)")
         npLog("   → Media title: \(mediaInfo["title"] ?? "Unknown")")
 
+        // A mixing player (muted tile, background loop) doesn't take the lock
+        // screen: iOS doesn't show a mixable session there anyway, and taking
+        // the remote commands and Now Playing info would take them from a
+        // real video playing next to it.
+        if mixWithOthers {
+            npLog("   → Mixing view: leaves Now Playing and the remote commands alone")
+            return
+        }
+
         // Short-circuit: this fires on every transition to .playing (including
         // after buffering stalls). If this view already owns the remote
         // commands and the metadata is unchanged, a position/rate refresh is
@@ -98,7 +107,7 @@ extension VideoPlayerView {
         // that would interrupt other apps' audio.
         if shouldHoldAudioSession {
             do {
-                try AVAudioSession.sharedInstance().setActive(true)
+                try reactivateAudioSession()
                 npLog("   → Audio session activated successfully")
             } catch {
                 npLog("   ⚠️ Failed to activate audio session: \(error.localizedDescription)")

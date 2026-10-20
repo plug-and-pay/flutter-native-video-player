@@ -67,6 +67,7 @@ class NativeVideoPlayerController {
     this.lockToLandscape = true,
     this.enableHDR = true,
     this.enableLooping = false,
+    this.mixWithOthers = false,
     this.showNativeControls = true,
     this.preventFullscreenSwipeDismiss = true,
     this.fullscreenFlightBorderRadius = BorderRadius.zero,
@@ -158,6 +159,18 @@ class NativeVideoPlayerController {
   /// Whether to enable video looping (default: false)
   /// When set to true, the video will automatically restart from the beginning when it reaches the end
   final bool enableLooping;
+
+  /// Whether this player's audio mixes with other apps' audio (default: false)
+  ///
+  /// By default playing a video interrupts music or a podcast from another
+  /// app, even a muted one: iOS takes a non-mixable audio session and Android
+  /// requests audio focus. Set to true for muted feed tiles and decorative
+  /// background loops: on iOS the session gets `mixWithOthers`, on Android
+  /// the player never requests audio focus. A mixing player stays off the
+  /// lock screen, Control Center and the media notification, and doesn't
+  /// take automatic Picture-in-Picture. While a player that doesn't mix
+  /// plays, a mixing one leaves the session to it.
+  final bool mixWithOthers;
 
   /// Whether to show native player controls (default: true)
   /// When set to false, native controls are hidden. Custom overlays automatically hide native controls regardless of this setting.
@@ -1381,6 +1394,7 @@ class NativeVideoPlayerController {
     'isFullScreen': _state.isFullScreen,
     'enableHDR': enableHDR,
     'enableLooping': enableLooping,
+    'mixWithOthers': mixWithOthers,
     'preventFullscreenSwipeDismiss': preventFullscreenSwipeDismiss,
     'timeUpdateIntervalMs':
         NativeVideoPlayerConfig.global.timeUpdateInterval.inMilliseconds,

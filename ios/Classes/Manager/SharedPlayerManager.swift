@@ -118,6 +118,11 @@ class SharedPlayerManager: NSObject {
     /// tell "was playing" from "the user had paused" when it ends.
     private var playbackRequestedControllers: Set<Int> = []
 
+    /// Controllers created with `mixWithOthers`: their audio session mixes
+    /// with other apps' audio. Recorded on each play, next to
+    /// playbackRequestedControllers.
+    private var mixingControllers: Set<Int> = []
+
     struct PipSettings {
         let allowsPictureInPicture: Bool
         let canStartPictureInPictureAutomatically: Bool
@@ -550,6 +555,7 @@ class SharedPlayerManager: NSObject {
 
         legibleSelectionByController.removeValue(forKey: controllerId)
         playbackRequestedControllers.remove(controllerId)
+        mixingControllers.remove(controllerId)
 
         // If this was the controller with automatic PiP, clear it
         if controllerWithAutomaticPiP == controllerId {
@@ -571,6 +577,7 @@ class SharedPlayerManager: NSObject {
         }
         playerViewControllers.removeAll()
         playbackRequestedControllers.removeAll()
+        mixingControllers.removeAll()
 
         players.removeAll()
         lruControllerOrder.removeAll()
@@ -800,6 +807,33 @@ class SharedPlayerManager: NSObject {
         playbackRequestedControllers.contains(controllerId)
     }
 
+    func setMixesWithOthers(_ mixes: Bool, for controllerId: Int) {
+        if mixes {
+            mixingControllers.insert(controllerId)
+        } else {
+            mixingControllers.remove(controllerId)
+        }
+    }
+
+    /// Whether a video that doesn't mix with other apps' audio holds the
+    /// session: asked to play and still playing (or waiting to), or kept alive
+    /// by AirPlay or PiP. A mixing video must not switch the session to
+    /// mixable under it.
+    ///
+    /// The play request alone doesn't count: it outlives a video that played
+    /// to its end and one that an interruption paused (Spotify, a call), so
+    /// the interruption can resume it. Such a video no longer holds the
+    /// session, and a mixing video that re-activated the non-mixable session
+    /// would stop Spotify again.
+    func isNonMixingPlaybackActive() -> Bool {
+        playbackRequestedControllers.subtracting(mixingControllers).contains { controllerId in
+            guard let player = players[controllerId] else { return false }
+            return player.timeControlStatus != .paused || player.rate > 0
+                || player.isExternalPlaybackActive
+                || isPipActiveForController(controllerId)
+        }
+    }
+
     /// Check if ANY view for this controller currently has PiP active
     /// This checks the isPipCurrentlyActive flag on all views for the controller
     func isPipActiveForController(_ controllerId: Int) -> Bool {
@@ -845,6 +879,13 @@ class SharedPlayerManager: NSObject {
         }
         
         if enabled {
+            // A mixing player is a muted tile or a background loop: it doesn't
+            // take automatic PiP from a real video.
+            if mixingControllers.contains(controllerId) {
+                npLog("🎬 Not enabling automatic PiP for mixing controller \(controllerId)")
+                return
+            }
+
             // Check if manual PiP is active for this controller
             if isManualPiPActive(controllerId) {
                 npLog("⚠️ Cannot enable automatic PiP for controller \(controllerId) - manual PiP is active")

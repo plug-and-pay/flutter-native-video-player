@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`mixWithOthers` on `NativeVideoPlayerController`**, for muted feed tiles
+  and decorative background loops: playing them no longer stops Spotify or a
+  podcast. Even a muted video took a non-mixable audio session on iOS and
+  audio focus on Android. With `mixWithOthers: true` the iOS session gets
+  `.mixWithOthers` (also when it is re-activated on background, foreground,
+  interruptions and Now Playing updates) and Android never requests audio
+  focus. While a player that doesn't mix plays, a mixing one leaves the
+  session to it; one that ended or that an interruption paused no longer
+  counts. A mixing player stays off the lock screen and out of the media
+  notification, and doesn't take automatic Picture-in-Picture, so a real
+  video next to it keeps them. Defaults to `false`, so existing players are
+  unchanged.
+
 ## [1.7.3] - 2026-10-20
 
 ### Fixed
