@@ -520,6 +520,37 @@ img.jpg#xywh=oops,0,160
       expect(controller.activityState, PlayerActivityState.paused);
     });
 
+    testWidgets('the hold counts from the native seek, not the call', (
+      tester,
+    ) async {
+      await loadPaused(tester);
+      // A busy platform thread runs the seek 500 ms after the call (seen
+      // on a Gigaset right after Huddle's load).
+      final Completer<void> nativeSeek = Completer<void>();
+      messenger.setMockMethodCallHandler(methodChannel, (call) async {
+        calls.add(call);
+        if (call.method == 'seekTo') await nativeSeek.future;
+        return null;
+      });
+      final states = <PlayerActivityState>[];
+      final sub = controller.playerStateStream.listen(states.add);
+
+      unawaited(controller.seekTo(const Duration(seconds: 60)));
+      await tester.pump(const Duration(milliseconds: 500));
+      nativeSeek.complete();
+      await tester.pump();
+      // ExoPlayer's blip, then READY 500 ms after the seek ran (1 s after
+      // the call): still inside the window.
+      await tester.pump(const Duration(milliseconds: 250));
+      await sendEvent(tester, {'event': 'buffering'});
+      await tester.pump(const Duration(milliseconds: 250));
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+      expect(states, isNot(contains(PlayerActivityState.buffering)));
+      await tester.pump(const Duration(seconds: 1));
+      unawaited(sub.cancel());
+    });
+
     testWidgets('a slow seek on a paused video still shows buffering', (
       tester,
     ) async {

@@ -2039,7 +2039,17 @@ class NativeVideoPlayerController {
     }
     // Show the target right away; the native side confirms it shortly.
     _updateState(_state.copyWith(currentPosition: target));
-    await _methodChannel?.seekTo(position);
+    _lastSeekCall = DateTime.now();
+    _seeksInFlight++;
+    try {
+      await _methodChannel?.seekTo(position);
+    } finally {
+      _seeksInFlight--;
+    }
+    // The hold window counts from the native seek, not from this call: a
+    // busy platform thread can run it hundreds of ms later (seen on an
+    // Android phone right after a load), and the blips come after that.
+    if (_seekHoldTimer != null && !_isDisposed) _startSeekHold();
   }
 
   /// Where the last [seekTo] is heading while position updates sent before
@@ -2079,9 +2089,22 @@ class NativeVideoPlayerController {
   bool _seekHoldsPause = false;
   static const Duration _seekHoldWindow = Duration(milliseconds: 600);
 
+  /// Native seekTo calls not answered yet: the hold waits for them (up to
+  /// [_seekHoldLimit]) before its window starts (see [seekTo]).
+  int _seeksInFlight = 0;
+  DateTime? _lastSeekCall;
+  static const Duration _seekHoldLimit = Duration(seconds: 3);
+
   void _startSeekHold() {
     _seekHoldTimer?.cancel();
     _seekHoldTimer = Timer(_seekHoldWindow, () {
+      final DateTime? since = _lastSeekCall;
+      if (_seeksInFlight > 0 &&
+          since != null &&
+          DateTime.now().difference(since) < _seekHoldLimit) {
+        _startSeekHold();
+        return;
+      }
       final Map<Object?, Object?>? held = _heldSeekEvent;
       _endSeekHold();
       if (held != null && !_isDisposed) _handlePlatformViewEvent(held);

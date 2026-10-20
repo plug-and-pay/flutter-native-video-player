@@ -46,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or loaded video, for buffering and loading only: the pause that ends the
   seek still applies right away, and a wait longer than the hold still shows
   as buffering.
+- **The seek hold could run out before the seek started.** Its 600 ms
+  counted from the `seekTo` call, but a busy platform thread can run the
+  native seek hundreds of ms later (seen in Huddle on an Android phone right
+  after a load), so a seek right after loading still flashed buffering. The
+  window now counts from when the native seek has run.
 - **`completed` was replaced right after the end of a video.** Both native
   players rewind to the start and pause at the end, and reported that rewind
   (a pause, a buffering blip; Android: READY again) right after `completed`,
