@@ -15,10 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Hover previews now only follow a real mouse, and a touch clears any hover.
   The bar also drops its scrub and preview when it leaves the tree mid-drag.
 - **The thumb jumped back after a seek on a video that wasn't loaded yet.**
-  The bar keeps the thumb on the seek target until the player gets there;
-  it gave up after 1.5 s, before such a video had loaded. It now waits while
-  the player is loading, initializing or buffering (up to 10 s), and 2 s
-  otherwise.
+  The bar keeps the thumb on the seek target until the player gets there,
+  but it gave up after 1.5 s, and an unplayed video at 0:00 counted as
+  already there; the thumb then showed the old or resume position until the
+  seek landed. It now waits until the seek returned and the player reports a
+  new position near the target while not loading or buffering (up to 10 s
+  while it loads, 2 s after).
+- **Android: a paused player could show buffering forever after a seek.**
+  The time update sent with the seek says buffering, which arms a 400 ms
+  delay; the `loaded` that followed didn't cancel it, and a paused player
+  sends no further time updates, so the state flipped to buffering for good
+  (a spinner that never stopped, e.g. when a shared player was handed to a
+  detail page). Any non-buffering state now clears it.
 - **A drag couldn't start on the thumb at the very start or end.** Half of
   that thumb lay outside the bar's touch area. The track is now inset by the
   thumb's radius (`NativeVideoPlayerProgressBarStyle.trackInset`), so the

@@ -754,6 +754,44 @@ Outro
         await tester.pump(const Duration(seconds: 1));
         expect(shownTime(tester), '0:00');
       });
+
+      testWidgets('an unplayed video showing its resume position first '
+          'does not move the thumb off the target', (tester) async {
+        final position = ValueNotifier(Duration.zero);
+        addTearDown(position.dispose);
+        await tester.pumpWidget(
+          host(
+            ValueListenableBuilder<Duration>(
+              valueListenable: position,
+              builder: (context, p, _) => NativeVideoPlayerProgressBar(
+                position: p,
+                duration: const Duration(seconds: 163),
+                onSeek: _ignoreSeek,
+              ),
+            ),
+          ),
+        );
+        // Release at the very start of a video that never played.
+        final drag = await tester.startGesture(at(tester, 100));
+        await drag.moveTo(at(tester, 60));
+        await drag.moveTo(at(tester, 0));
+        await drag.up();
+        await tester.pump();
+        expect(shownTime(tester), '0:00');
+        // It loads at its resume position (0:57) before the seek lands...
+        await tester.pump(const Duration(milliseconds: 600));
+        position.value = const Duration(seconds: 57);
+        await tester.pump();
+        expect(shownTime(tester), '0:00', reason: 'not the resume position');
+        await tester.pump(const Duration(milliseconds: 800));
+        expect(shownTime(tester), '0:00');
+        // ...then lands at the target, and the thumb follows the player.
+        position.value = const Duration(milliseconds: 200);
+        await tester.pump();
+        position.value = const Duration(seconds: 1);
+        await tester.pump();
+        expect(shownTime(tester), '0:01');
+      });
     });
 
     group('the preview never sticks out', () {
@@ -1431,6 +1469,8 @@ Outro
         await tester.pump(const Duration(seconds: 4));
         expect(shown(), '0:33', reason: 'no jump back while loading');
         // Loaded, at the target: the thumb follows the player again.
+        viewSink!.success({'event': 'loaded', 'duration': 60000});
+        await tester.pump();
         await sendPosition(tester, 33500);
         await sendPosition(tester, 34000);
         expect(shown(), '0:34');

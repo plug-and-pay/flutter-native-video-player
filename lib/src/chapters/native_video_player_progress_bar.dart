@@ -623,27 +623,63 @@ class _NativeVideoPlayerProgressBarState
     _collapse();
     widget.onScrubEnd?.call(target);
     final seek = widget.onSeek ?? _c?.seekTo;
-    // Keep the thumb at the target until the player reports a position near
-    // it (see build), so it doesn't jump back while the seek (or the load
-    // of a video that wasn't loaded yet) is still under way.
-    _settleWaited = Duration.zero;
+    // Keep the thumb at the target until the seek has landed (see
+    // [_seekLanded]), so it doesn't jump back, or to a resume position,
+    // while the seek (or the load of a video that wasn't loaded yet) is
+    // still under way.
+    _seekReturned = false;
+    _positionAtRelease = _position;
+    _positionMoved = false;
+    _settleBusy = Duration.zero;
+    _settleIdle = Duration.zero;
     _armSettleTimer();
     try {
       await seek?.call(target);
     } finally {
-      // Count from when the seek (or load) returned.
-      _settleWaited = Duration.zero;
+      _seekReturned = true;
+      if (mounted) setState(() {});
     }
   }
 
-  /// How long the thumb has waited at the seek target, counted in timer
-  /// ticks (so it also runs on a test's fake clock).
-  Duration _settleWaited = Duration.zero;
+  /// Whether the last seek call returned, the position the player reported
+  /// at the release, and whether it reported another one since.
+  bool _seekReturned = true;
+  Duration? _positionAtRelease;
+  bool _positionMoved = false;
+
+  /// Whether the player is still getting the video ready (with a
+  /// controller; the values passed in say nothing about it).
+  bool get _playerBusy {
+    final activity = _c?.activityState;
+    return activity != null &&
+        (activity.isLoading ||
+            activity.isInitializing ||
+            activity.isBuffering ||
+            activity.isIdle);
+  }
+
+  /// The player got to the seek target: the seek returned, the position
+  /// changed since the release (an unplayed video already "is" at 0:00, and
+  /// can first report a resume position) and lies near the target, and the
+  /// player isn't loading or buffering any more.
+  bool get _seekLanded {
+    final target = _scrub;
+    if (target == null || !_seekReturned || !_positionMoved || _playerBusy) {
+      return false;
+    }
+    return (_position - target).abs() < const Duration(milliseconds: 1200);
+  }
+
+  /// How long the thumb has waited at the seek target while the player was
+  /// busy, and while it wasn't (after the seek returned); counted in timer
+  /// ticks, so it also runs on a test's fake clock.
+  Duration _settleBusy = Duration.zero;
+  Duration _settleIdle = Duration.zero;
   static const _settleTick = Duration(milliseconds: 250);
 
   /// How long the thumb waits at a seek target for the player to get
-  /// there: a moment once the player plays on, longer while it is still
-  /// loading, initializing or buffering.
+  /// there, before it follows the player anyway: a moment once the player
+  /// is ready, longer while it is still loading or buffering.
   static const _settleAfterSeek = Duration(seconds: 2);
   static const _settleWhileLoading = Duration(seconds: 10);
 
@@ -654,16 +690,13 @@ class _NativeVideoPlayerProgressBarState
         timer.cancel();
         return;
       }
-      _settleWaited += _settleTick;
-      final waited = _settleWaited;
-      final activity = _c?.activityState;
-      final busy =
-          activity != null &&
-          (activity.isLoading ||
-              activity.isInitializing ||
-              activity.isBuffering ||
-              activity.isIdle);
-      if (waited >= (busy ? _settleWhileLoading : _settleAfterSeek)) {
+      if (_playerBusy) {
+        _settleBusy += _settleTick;
+      } else if (_seekReturned) {
+        _settleIdle += _settleTick;
+      }
+      if (_settleBusy >= _settleWhileLoading ||
+          _settleIdle >= _settleAfterSeek) {
         timer.cancel();
         setState(() => _scrub = null);
       }
@@ -804,11 +837,12 @@ class _NativeVideoPlayerProgressBarState
     final thumb = style.thumbColor ?? sliderTheme.thumbColor ?? played;
 
     // The seek landed: follow the player again.
-    if (!_dragging &&
-        _scrub != null &&
-        (_position - _scrub!).abs() < const Duration(milliseconds: 1200)) {
-      _scrub = null;
-      _settleTimer?.cancel();
+    if (!_dragging && _scrub != null) {
+      if (_position != _positionAtRelease) _positionMoved = true;
+      if (_seekLanded) {
+        _scrub = null;
+        _settleTimer?.cancel();
+      }
     }
 
     return LayoutBuilder(
