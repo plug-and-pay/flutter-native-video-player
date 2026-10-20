@@ -195,6 +195,16 @@ class VideoPlayerView(
                     NpLog.d(TAG, "🎨 HDR enabled for PlayerView")
                 }
 
+                // A new PlayerView draws its controller until its first
+                // hide animation ends (~300 ms), useController = false or
+                // not: a Flutter-controls view (Dart fullscreen, overlays)
+                // showed ExoPlayer's controls for a moment. Gone from the
+                // start; showController() makes it visible again when native
+                // controls are switched on later.
+                if (!showNativeControls) {
+                    findViewById<View>(androidx.media3.ui.R.id.exo_controller)?.visibility = View.GONE
+                }
+
                 NpLog.d(TAG, "PlayerView configured")
             }
             videoContentView = playerView

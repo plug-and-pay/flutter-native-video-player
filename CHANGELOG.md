@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   native seek hundreds of ms later (seen in Huddle on an Android phone right
   after a load), so a seek right after loading still flashed buffering. The
   window now counts from when the native seek has run.
+- **Android: ExoPlayer's own controls flashed when going fullscreen with
+  custom controls.** A new `PlayerView` draws its controller until its first
+  hide animation ends (~300 ms), even with native controls off, so the Dart
+  fullscreen view showed them over black before the video appeared. Views
+  without native controls now start with the controller hidden.
 - **Going fullscreen flipped a paused video to `loaded` for a moment.** A
   new view on the shared player re-sends `loaded` and then its play state;
   on a playing or paused video that `loaded` now only updates the duration.
