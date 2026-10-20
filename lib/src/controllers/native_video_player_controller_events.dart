@@ -364,6 +364,21 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
         return;
       }
 
+      // Handle loaded events to get initial duration (also from a loaded
+      // that leaves the state as it is, see _keepsCurrentState)
+      if (activityEvent.state == PlayerActivityState.loaded) {
+        if (activityEvent.data != null) {
+          final int duration =
+              (activityEvent.data!['duration'] as num?)?.toInt() ?? 0;
+          // A loaded without a duration keeps the one known so far.
+          if (duration > 0) {
+            _updateState(
+              _state.copyWith(duration: Duration(milliseconds: duration)),
+            );
+          }
+        }
+      }
+
       if (_keepsCurrentState(activityEvent.state)) {
         return;
       }
@@ -391,17 +406,6 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
 
       // Update activity state
       _updateState(_state.copyWith(activityState: activityEvent.state));
-
-      // Handle loaded events to get initial duration
-      if (activityEvent.state == PlayerActivityState.loaded) {
-        if (activityEvent.data != null) {
-          final int duration =
-              (activityEvent.data!['duration'] as num?)?.toInt() ?? 0;
-          _updateState(
-            _state.copyWith(duration: Duration(milliseconds: duration)),
-          );
-        }
-      }
 
       // Notify activity listeners
       for (final handler in _activityEventHandlers) {

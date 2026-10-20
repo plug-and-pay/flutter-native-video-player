@@ -2150,6 +2150,9 @@ class NativeVideoPlayerController {
   ///
   /// Kept through: paused, buffering, loading and loaded. Any other state
   /// (playing, completed, error, stopped, idle) applies and ends the hold.
+  ///
+  /// Outside a load, a `loaded` on a playing or paused video only updates
+  /// the duration: a new view on the shared player re-sends it.
   bool _completedUntilAction = false;
   bool _loadedUntilAction = false;
 
@@ -2162,6 +2165,14 @@ class NativeVideoPlayerController {
       return false;
     }
     final PlayerActivityState current = _state.activityState;
+    // A view attaching to a shared player (fullscreen, list -> detail)
+    // re-sends `loaded`, then its play state, for a video that is already
+    // playing or paused: not a new load, so the state stays.
+    if (state.isLoaded &&
+        !_loadedUntilAction &&
+        (current.isPlaying || current.isPaused)) {
+      return true;
+    }
     final bool holding =
         (_completedUntilAction && current.isCompleted) ||
         (_loadedUntilAction && current.isLoaded);

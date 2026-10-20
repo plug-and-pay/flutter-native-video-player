@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   native seek hundreds of ms later (seen in Huddle on an Android phone right
   after a load), so a seek right after loading still flashed buffering. The
   window now counts from when the native seek has run.
+- **Going fullscreen flipped a paused video to `loaded` for a moment.** A
+  new view on the shared player re-sends `loaded` and then its play state;
+  on a playing or paused video that `loaded` now only updates the duration.
 - **`completed` was replaced right after the end of a video.** Both native
   players rewind to the start and pause at the end, and reported that rewind
   (a pause, a buffering blip; Android: READY again) right after `completed`,

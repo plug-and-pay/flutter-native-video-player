@@ -667,11 +667,29 @@ img.jpg#xywh=oops,0,160
       await loadVideo(tester);
       await sendEvent(tester, {'event': 'play'});
       await sendEvent(tester, {'event': 'pause'});
-      // A new view on the shared player sends its current state: loaded,
-      // then pause. The video was played, so it is paused.
-      await sendEvent(tester, {'event': 'loaded', 'duration': 60000});
+      final states = <PlayerActivityState>[];
+      final sub = controller.playerStateStream.listen(states.add);
+      // A new view on the shared player (Huddle's fullscreen) sends its
+      // current state: loaded, then pause. The video was played, so it
+      // stays paused, without a loaded in between.
+      await sendEvent(tester, {'event': 'loaded', 'duration': 61000});
+      expect(controller.activityState, PlayerActivityState.paused);
+      expect(controller.duration, const Duration(seconds: 61));
       await sendEvent(tester, {'event': 'pause'});
       expect(controller.activityState, PlayerActivityState.paused);
+      expect(states, isNot(contains(PlayerActivityState.loaded)));
+      unawaited(sub.cancel());
+    });
+
+    testWidgets('a second view on a playing controller keeps playing', (
+      tester,
+    ) async {
+      await loadVideo(tester);
+      await sendEvent(tester, {'event': 'play'});
+      await sendEvent(tester, {'event': 'loaded', 'duration': 60000});
+      expect(controller.activityState, PlayerActivityState.playing);
+      await sendEvent(tester, {'event': 'play'});
+      expect(controller.activityState, PlayerActivityState.playing);
     });
   });
 
