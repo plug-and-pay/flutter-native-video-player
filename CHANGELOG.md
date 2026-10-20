@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **A scrub preview stayed on screen after the drag.** Some Android touch
+  screens report a hover (of an unknown pointer kind) at every touch-down and
+  never an exit, so `NativeVideoPlayerProgressBar` kept a mouse-hover preview
+  pinned where the drag began, shown again whenever the controls appeared.
+  Hover previews now only follow a real mouse, and a touch clears any hover.
+  The bar also drops its scrub and preview when it leaves the tree mid-drag.
+- **The thumb jumped back after a seek on a video that wasn't loaded yet.**
+  The bar keeps the thumb on the seek target until the player gets there;
+  it gave up after 1.5 s, before such a video had loaded. It now waits while
+  the player is loading, initializing or buffering (up to 10 s), and 2 s
+  otherwise.
+- **A drag couldn't start on the thumb at the very start or end.** Half of
+  that thumb lay outside the bar's touch area. The track is now inset by the
+  thumb's radius (`NativeVideoPlayerProgressBarStyle.trackInset`), so the
+  whole thumb is touchable and a drag runs from 0:00 to the end and back.
+
 ## [1.7.2] - 2026-10-20
 
 ### Added
