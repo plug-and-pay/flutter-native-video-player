@@ -98,7 +98,7 @@ extension VideoPlayerView {
         // that would interrupt other apps' audio.
         if shouldHoldAudioSession {
             do {
-                try AVAudioSession.sharedInstance().setActive(true)
+                try reactivateAudioSession()
                 npLog("   → Audio session activated successfully")
             } catch {
                 npLog("   ⚠️ Failed to activate audio session: \(error.localizedDescription)")

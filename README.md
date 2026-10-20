@@ -644,6 +644,19 @@ PiP and AirPlay sessions keep playing, and a video the viewer paused stays pause
 
 **Other apps' audio is respected.** Music or a podcast is only interrupted while a video actually plays. If the viewer pauses the video and goes back to Spotify, Spotify keeps playing when they return to your app.
 
+**Muted tiles and background loops** shouldn't interrupt it at all. Even a muted video takes a non-mixable audio session on iOS and audio focus on Android, which stops Spotify. Opt out per player:
+
+```dart
+NativeVideoPlayerController(
+  id: 1,
+  autoPlay: true,
+  enableLooping: true,
+  mixWithOthers: true, // other apps' audio keeps playing
+);
+```
+
+iOS doesn't show a mixing player on the lock screen. While a player that doesn't mix plays, mixing ones leave the audio session to it.
+
 ## Live streams
 
 <img src="https://raw.githubusercontent.com/plug-and-pay/flutter-native-video-player/master/doc/media/live.webp" width="420" alt="Live stream with DVR">
@@ -982,6 +995,7 @@ Remove listeners with `removeActivityListener` / `removeControlListener` before 
 | `id` | required | names the native player; same id = same player |
 | `autoPlay` | `false` | play as soon as it's loaded |
 | `enableLooping` | `false` | seamless loop |
+| `mixWithOthers` | `false` | don't interrupt other apps' audio (muted tiles, background loops) |
 | `mediaInfo` | — | title / artwork for the lock screen |
 | `showNativeControls` | `true` | platform controls when there's no overlay (`setShowNativeControls` changes it) |
 | `allowsPictureInPicture` | `true` | |

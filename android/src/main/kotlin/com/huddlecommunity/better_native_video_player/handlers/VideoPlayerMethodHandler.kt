@@ -50,7 +50,10 @@ class VideoPlayerMethodHandler(
     private val controllerId: Int? = null,
     private val enableHDR: Boolean = false,
     private val enableDiskCache: Boolean = false,
-    private val diskCacheMaxBytes: Long = VideoCacheManager.DEFAULT_MAX_BYTES
+    private val diskCacheMaxBytes: Long = VideoCacheManager.DEFAULT_MAX_BYTES,
+    // Mix with other apps' audio: never take audio focus, so music or a
+    // podcast keeps playing (muted feed tiles, ambient background loops).
+    private val mixWithOthers: Boolean = false
 ) {
     companion object {
         private const val TAG = "VideoPlayerMethod"
@@ -172,6 +175,7 @@ class VideoPlayerMethodHandler(
 
     private fun requestAudioFocusForPlayback() {
         cancelPendingAudioFocusAbandon()
+        if (mixWithOthers) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (audioFocusRequest == null) {
                 val attrs = AudioAttributes.Builder()

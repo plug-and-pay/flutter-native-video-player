@@ -118,6 +118,11 @@ class SharedPlayerManager: NSObject {
     /// tell "was playing" from "the user had paused" when it ends.
     private var playbackRequestedControllers: Set<Int> = []
 
+    /// Controllers created with `mixWithOthers`: their audio session mixes
+    /// with other apps' audio. Recorded on each play, next to
+    /// playbackRequestedControllers.
+    private var mixingControllers: Set<Int> = []
+
     struct PipSettings {
         let allowsPictureInPicture: Bool
         let canStartPictureInPictureAutomatically: Bool
@@ -550,6 +555,7 @@ class SharedPlayerManager: NSObject {
 
         legibleSelectionByController.removeValue(forKey: controllerId)
         playbackRequestedControllers.remove(controllerId)
+        mixingControllers.remove(controllerId)
 
         // If this was the controller with automatic PiP, clear it
         if controllerWithAutomaticPiP == controllerId {
@@ -571,6 +577,7 @@ class SharedPlayerManager: NSObject {
         }
         playerViewControllers.removeAll()
         playbackRequestedControllers.removeAll()
+        mixingControllers.removeAll()
 
         players.removeAll()
         lruControllerOrder.removeAll()
@@ -798,6 +805,21 @@ class SharedPlayerManager: NSObject {
 
     func isPlaybackRequested(for controllerId: Int) -> Bool {
         playbackRequestedControllers.contains(controllerId)
+    }
+
+    func setMixesWithOthers(_ mixes: Bool, for controllerId: Int) {
+        if mixes {
+            mixingControllers.insert(controllerId)
+        } else {
+            mixingControllers.remove(controllerId)
+        }
+    }
+
+    /// Whether a video that doesn't mix with other apps' audio was asked to
+    /// play: it holds the non-mixable session, and a mixing video must not
+    /// switch it to mixable under it.
+    func isNonMixingPlaybackRequested() -> Bool {
+        !playbackRequestedControllers.subtracting(mixingControllers).isEmpty
     }
 
     /// Check if ANY view for this controller currently has PiP active
