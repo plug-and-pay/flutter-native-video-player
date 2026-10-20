@@ -452,6 +452,106 @@ img.jpg#xywh=oops,0,160
     });
   });
 
+  group('seek while paused', () {
+    // A loaded video the viewer never played, then seeked: both platforms
+    // must end paused. Apps map loaded to "not started yet" (Huddle shows
+    // the saved resume position then), so a seeked video can't stay loaded.
+    Future<void> loadPaused(WidgetTester tester) async {
+      await attachView(tester);
+      await sendEvent(tester, {'event': 'loaded', 'duration': 163600});
+      expect(controller.activityState, PlayerActivityState.loaded);
+    }
+
+    testWidgets('Android: READY after the seek reports paused', (tester) async {
+      await loadPaused(tester);
+      final states = <PlayerActivityState>[];
+      final sub = controller.playerStateStream.listen(states.add);
+
+      // ExoPlayer: BUFFERING (the time update says so too), the seek, then
+      // READY with playWhenReady false. Only the first READY of a source
+      // is "loaded"; this one is "pause".
+      await controller.seekTo(const Duration(seconds: 60));
+      await sendEvent(tester, {
+        'event': 'timeUpdate',
+        'position': 60000,
+        'duration': 163600,
+        'bufferedPosition': 60000,
+        'isBuffering': true,
+      });
+      await sendEvent(tester, {'event': 'buffering'});
+      await sendEvent(tester, {'event': 'seek', 'position': 60000});
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+
+      // The buffering debounce doesn't flip it back afterwards.
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.activityState, PlayerActivityState.paused);
+      expect(states, isNot(contains(PlayerActivityState.playing)));
+      expect(states, isNot(contains(PlayerActivityState.buffering)));
+      unawaited(sub.cancel());
+    });
+
+    testWidgets('iOS: playbackLikelyToKeepUp after the seek reports paused', (
+      tester,
+    ) async {
+      await loadPaused(tester);
+
+      // AVPlayer: the seek completes, the buffer is likely to keep up again
+      // and the paused player reports "pause".
+      await controller.seekTo(const Duration(seconds: 60));
+      await sendEvent(tester, {'event': 'seek', 'position': 60000});
+      await sendEvent(tester, {
+        'event': 'timeUpdate',
+        'position': 60000,
+        'duration': 163600,
+        'bufferedPosition': 70000,
+        'isBuffering': false,
+      });
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.activityState, PlayerActivityState.paused);
+    });
+
+    testWidgets('a slow seek on a paused video still shows buffering', (
+      tester,
+    ) async {
+      await loadPaused(tester);
+      await controller.seekTo(const Duration(seconds: 60));
+      await sendEvent(tester, {'event': 'buffering'});
+      // A blip is held back...
+      expect(controller.activityState, PlayerActivityState.loaded);
+      // ...a real wait is not.
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(controller.activityState, PlayerActivityState.buffering);
+
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+    });
+
+    testWidgets('Android: a playing seek goes straight back to playing', (
+      tester,
+    ) async {
+      await loadPaused(tester);
+      await sendEvent(tester, {'event': 'play'});
+      final states = <PlayerActivityState>[];
+      final sub = controller.playerStateStream.listen(states.add);
+
+      // ExoPlayer: BUFFERING (isPlaying false, no pause sent), then READY
+      // with playWhenReady true: no event for READY, onIsPlayingChanged
+      // sends "play". The button never shows paused or loaded.
+      await controller.seekTo(const Duration(seconds: 60));
+      await sendEvent(tester, {'event': 'buffering'});
+      await sendEvent(tester, {'event': 'seek', 'position': 60000});
+      await sendEvent(tester, {'event': 'play'});
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(controller.activityState, PlayerActivityState.playing);
+      expect(states.where((s) => s != PlayerActivityState.playing), isEmpty);
+      unawaited(sub.cancel());
+    });
+  });
+
   group('live streams', () {
     Future<void> sendLive(WidgetTester tester, {required int positionMs}) =>
         sendEvent(tester, {

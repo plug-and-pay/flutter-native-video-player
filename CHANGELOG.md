@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   video next to it keeps them. Defaults to `false`, so existing players are
   unchanged.
 
+### Fixed
+- **Android: a seek on a paused video left the state at `loaded`.** ExoPlayer
+  reports READY again when the seek lands, and that was sent as `loaded`, so
+  `activityState` read as "not started yet" (iOS reports `paused`). Only the
+  first READY of a source is `loaded` now; later ones (seek, rebuffer, track
+  switch) report `paused` while not playing, like iOS.
+- **Android: a paused seek flashed the buffering state.** ExoPlayer buffers
+  for a moment before READY. The seek hold now also covers seeks on a paused
+  or loaded video, for buffering and loading only: the pause that ends the
+  seek still applies right away, and a wait longer than the hold still shows
+  as buffering.
+
 ## [1.7.3] - 2026-10-20
 
 ### Fixed

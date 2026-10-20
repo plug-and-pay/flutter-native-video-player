@@ -32,6 +32,13 @@ class VideoPlayerObserver(
     // Track if we've already sent a buffering event to avoid duplicates
     private var hasReportedBuffering = false
 
+    // Whether the current source has been READY before. Only its first READY
+    // is the load finishing ("loaded"); later ones end a seek, a rebuffer or
+    // a track switch, and report the play state the way iOS does. Reset when
+    // a new source is set (onTimelineChanged, PLAYLIST_CHANGED). A shared
+    // player that is already READY when this view attaches has loaded.
+    private var hasBeenReady = player.playbackState == Player.STATE_READY
+
     // Track Cast/external playback connection state
     private var wasExternalPlaybackActive = false
 
@@ -136,11 +143,21 @@ class VideoPlayerObserver(
                 // Reset buffering flag when we're ready
                 hasReportedBuffering = false
 
-                // Ready state is handled by onIsLoadingChanged when loading finishes
-                // But send loaded event with duration here as it's state-specific
-                val duration = player.duration.toInt()
-                if (duration > 0 && !player.isLoading) {
-                    eventHandler.sendEvent("loaded", mapOf("duration" to duration))
+                if (!hasBeenReady) {
+                    hasBeenReady = true
+                    // Ready state is handled by onIsLoadingChanged when loading finishes
+                    // But send loaded event with duration here as it's state-specific
+                    val duration = player.duration.toInt()
+                    if (duration > 0 && !player.isLoading) {
+                        eventHandler.sendEvent("loaded", mapOf("duration" to duration))
+                    }
+                } else if (!player.isPlaying) {
+                    // READY again after a seek or rebuffer while paused: the
+                    // video is paused, not freshly loaded (iOS sends "pause"
+                    // here too). "loaded" left the state at loaded, so apps
+                    // treated a seeked video as not started. Playing on:
+                    // onIsPlayingChanged sends "play".
+                    eventHandler.sendEvent("pause")
                 }
             }
             Player.STATE_ENDED -> {
@@ -239,6 +256,13 @@ class VideoPlayerObserver(
                     eventHandler.sendEvent("pause")
                 }
             }
+        }
+    }
+
+    override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+        // A new source (load): its first READY is "loaded" again
+        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+            hasBeenReady = false
         }
     }
 

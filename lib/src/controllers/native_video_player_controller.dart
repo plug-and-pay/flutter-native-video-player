@@ -2020,7 +2020,12 @@ class NativeVideoPlayerController {
     final Duration target = position.isNegative ? Duration.zero : position;
     _pendingSeekTarget = target;
     _pendingSeekSince = DateTime.now();
-    if (_state.activityState.isPlaying || _seekHoldTimer != null) {
+    final PlayerActivityState state = _state.activityState;
+    if (_seekHoldTimer == null) _seekHoldsPause = state.isPlaying;
+    if (state.isPlaying ||
+        state.isPaused ||
+        state.isLoaded ||
+        _seekHoldTimer != null) {
       _startSeekHold();
     }
     // Show the target right away; the native side confirms it shortly.
@@ -2056,8 +2061,13 @@ class NativeVideoPlayerController {
   /// for up to [_seekHoldWindow], so a play/pause button doesn't flash; the
   /// last one held still applies when the video doesn't play on in time
   /// (a real stall). Scrubbing (seek after seek) keeps the hold going.
+  ///
+  /// A seek on a paused (or loaded) video holds only loading and buffering
+  /// (Android reports BUFFERING for a moment before READY, iOS doesn't):
+  /// the pause that ends the seek applies right away.
   Timer? _seekHoldTimer;
   Map<Object?, Object?>? _heldSeekEvent;
+  bool _seekHoldsPause = false;
   static const Duration _seekHoldWindow = Duration(milliseconds: 600);
 
   void _startSeekHold() {
@@ -2081,7 +2091,9 @@ class NativeVideoPlayerController {
     PlayerActivityState state,
   ) {
     if (_seekHoldTimer == null) return false;
-    if (state.isPaused || state.isLoading || state.isBuffering) {
+    if ((state.isPaused && _seekHoldsPause) ||
+        state.isLoading ||
+        state.isBuffering) {
       _heldSeekEvent = event;
       return true;
     }

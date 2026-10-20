@@ -130,6 +130,8 @@ void main() {
       await controller.seekTo(const Duration(seconds: 30));
       await controller.setVolume(0.5);
       await controller.setSpeed(1.5);
+      // Let the seek hold run out (no native events arrive here).
+      await tester.pump(const Duration(seconds: 1));
     });
   });
 
