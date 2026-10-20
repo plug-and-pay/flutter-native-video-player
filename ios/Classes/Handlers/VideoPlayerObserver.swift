@@ -399,10 +399,13 @@ extension VideoPlayerView {
             // Don't send completed event when looping to match Android behavior
             // (Android with REPEAT_MODE_ONE doesn't reach STATE_ENDED)
         } else {
+            // Completed first: pause() reports "pause" right away (KVO), and
+            // that rewind isn't news after the end. Android sends completed
+            // before its rewind too.
+            sendEvent("completed")
             // Reset video to the beginning and pause
             player?.seek(to: .zero)
             player?.pause()
-            sendEvent("completed")
         }
     }
 

@@ -698,9 +698,10 @@ img.jpg#xywh=oops,0,160
       await attachView(tester);
       await sendEvent(tester, {'event': 'loaded', 'duration': 60000});
       await sendEvent(tester, {'event': 'play'});
-      // Both platforms: playback stops at the end, then completed.
-      await sendEvent(tester, {'event': 'pause'});
+      // Both platforms send completed, then their rewind's pause (iOS used
+      // to send that pause first).
       await sendEvent(tester, {'event': 'completed'});
+      await sendEvent(tester, {'event': 'pause'});
       expect(controller.activityState, PlayerActivityState.completed);
     }
 
