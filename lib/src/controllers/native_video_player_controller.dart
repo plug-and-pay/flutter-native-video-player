@@ -745,7 +745,7 @@ class NativeVideoPlayerController {
         // Check if we're still buffering after 400ms
         if (_isCurrentlyBuffering &&
             _state.activityState != PlayerActivityState.buffering &&
-            !_keepsCompleted(PlayerActivityState.buffering)) {
+            !_keepsCurrentState(PlayerActivityState.buffering)) {
           // Update to buffering state
           _updateState(
             _state.copyWith(activityState: PlayerActivityState.buffering),
@@ -1775,9 +1775,9 @@ class NativeVideoPlayerController {
   /// chapters set earlier are kept for the same URL and cleared for a
   /// different one.
   ///
-  /// [force] loads even when the current state is `loaded` (the guard that
-  /// prevents accidental double-loads). Use it to replace the current video
-  /// with a different one, e.g. for playlist advancement.
+  /// Loading the same [url] again while the state is `loaded` does nothing
+  /// (the guard that prevents accidental double-loads); [force] loads it
+  /// anyway. A different URL always loads.
   Future<void> load({
     required String url,
     Map<String, String>? headers,
@@ -1787,7 +1787,7 @@ class NativeVideoPlayerController {
     List<NativeVideoPlayerChapter>? chapters,
     bool force = false,
   }) async {
-    if (!force && _state.activityState.isLoaded) {
+    if (!force && _state.activityState.isLoaded && url == _url) {
       if (chapters != null) setChapters(chapters);
       return;
     }
@@ -1827,7 +1827,9 @@ class NativeVideoPlayerController {
     _playbackRange = null;
     _pendingSeekTarget = null;
     _endSeekHold();
+    // Until the viewer plays or seeks, the new video stays loaded.
     _completedUntilAction = false;
+    _loadedUntilAction = true;
 
     // The new source reports whether it is live with its first time update.
     if (_state.isLive) _updateState(_state.copyWith(isLive: false));
@@ -1999,8 +2001,8 @@ class NativeVideoPlayerController {
       await _reloadEvictedSource();
     }
 
-    // Replaying a finished video: its buffering shows again.
-    _completedUntilAction = false;
+    // Starting (or replaying) a video: its buffering shows again.
+    _endStateHolds();
     await _methodChannel?.play();
   }
 
@@ -2024,8 +2026,8 @@ class NativeVideoPlayerController {
     final Duration target = position.isNegative ? Duration.zero : position;
     _pendingSeekTarget = target;
     _pendingSeekSince = DateTime.now();
-    // Seeking a finished video leaves completed: it ends paused.
-    _completedUntilAction = false;
+    // A seek leaves loaded and completed: the video ends paused.
+    _endStateHolds();
     final PlayerActivityState state = _state.activityState;
     if (_seekHoldTimer == null) _seekHoldsPause = state.isPlaying;
     if (state.isPlaying ||
@@ -2109,29 +2111,55 @@ class NativeVideoPlayerController {
     return false;
   }
 
-  /// At the end of a video both native players rewind to the start and
-  /// pause, and report that rewind right after `completed` (a pause, a
-  /// buffering blip; Android: READY again). Those would replace `completed`
-  /// at once, so the state stays `completed` until playback starts, the
-  /// viewer seeks, or another video loads.
+  /// Native players report a few states nobody asked for, right after two
+  /// moments the app cares about. The controller keeps its state through
+  /// them until the viewer acts:
+  ///
+  /// - **After `completed`**: both players rewind to the start and pause,
+  ///   and report that rewind (a pause, a buffering blip; Android: READY
+  ///   again). `completed` stays until playback starts, the viewer seeks or
+  ///   another video loads.
+  /// - **After a load**: once the first buffer fills, a never-played video
+  ///   reports a pause (Android: loading finished in READY, iOS:
+  ///   playbackLikelyToKeepUp). `loaded` stays until playback starts, the
+  ///   viewer seeks or another video loads, so it means "not started yet"
+  ///   on both platforms.
+  ///
+  /// Kept through: paused, buffering, loading and loaded. Any other state
+  /// (playing, completed, error, stopped, idle) applies and ends the hold.
   bool _completedUntilAction = false;
+  bool _loadedUntilAction = false;
 
-  /// Whether [state] is part of the rewind after `completed` (see
-  /// [_completedUntilAction]) and keeps the state at `completed`.
-  bool _keepsCompleted(PlayerActivityState state) {
+  /// Whether [state] arrives during a hold (see [_completedUntilAction])
+  /// and keeps the current state.
+  bool _keepsCurrentState(PlayerActivityState state) {
     if (state.isCompleted) {
       _completedUntilAction = true;
+      _loadedUntilAction = false;
       return false;
     }
-    if (!_completedUntilAction) return false;
-    if (state.isPaused ||
+    final PlayerActivityState current = _state.activityState;
+    final bool holding =
+        (_completedUntilAction && current.isCompleted) ||
+        (_loadedUntilAction && current.isLoaded);
+    final bool quiet =
+        state.isPaused ||
         state.isBuffering ||
         state.isLoading ||
-        state.isLoaded) {
-      return true;
+        state.isLoaded ||
+        state == PlayerActivityState.initialized;
+    if (holding && quiet) return true;
+    if (!quiet) {
+      _completedUntilAction = false;
+      _loadedUntilAction = false;
     }
-    _completedUntilAction = false;
     return false;
+  }
+
+  /// Ends both holds: the viewer played or seeked.
+  void _endStateHolds() {
+    _completedUntilAction = false;
+    _loadedUntilAction = false;
   }
 
   /// Jumps a live stream back to its live edge, for a "Live" button after

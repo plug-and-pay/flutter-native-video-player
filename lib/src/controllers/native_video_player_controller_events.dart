@@ -364,7 +364,7 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
         return;
       }
 
-      if (_keepsCompleted(activityEvent.state)) {
+      if (_keepsCurrentState(activityEvent.state)) {
         return;
       }
 

@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   video next to it keeps them. Defaults to `false`, so existing players are
   unchanged.
 
+### Changed
+- **`loaded` now means "not started yet" on both platforms.** Once the first
+  buffer filled, a never-played video reported a pause by itself (Android:
+  loading finished in READY, iOS: playbackLikelyToKeepUp), so
+  `activityState` went from `loaded` to `paused` without the viewer doing
+  anything, at a moment that depended on the network. It now stays `loaded`
+  until the first play or seek, or the next load. Apps that treated that
+  early `paused` as "ready to play" should check `loaded` too.
+- **`load()` with a different URL loads it, without `force`.** The guard
+  against double loads skipped any `load()` while the state was `loaded`,
+  whatever the URL, which now that `loaded` lasts until the first play
+  would silently drop a new video. It only skips the same URL now; `force`
+  still reloads that.
+
 ### Fixed
 - **Android: a seek on a paused video left the state at `loaded`.** ExoPlayer
   reports READY again when the seek lands, and that was sent as `loaded`, so

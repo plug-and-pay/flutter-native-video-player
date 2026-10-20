@@ -123,15 +123,22 @@ void main() {
     testWidgets('force loads over an already-loaded video', (tester) async {
       await attachView(tester);
       await controller.load(url: 'https://example.com/a.mp4');
-      // State 'loaded' blocks a plain load...
-      await controller.load(url: 'https://example.com/b.mp4');
+      // State 'loaded' blocks a plain load of the same video...
+      await controller.load(url: 'https://example.com/a.mp4');
       expect(
         calls.where((c) => c.method == 'load').length,
         1,
         reason: 'guard must keep swallowing duplicate loads by default',
       );
-      // ...but force replaces the video.
-      await controller.load(url: 'https://example.com/b.mp4', force: true);
+      // ...but force loads it again.
+      await controller.load(url: 'https://example.com/a.mp4', force: true);
+      expect(calls.where((c) => c.method == 'load').length, 2);
+    });
+
+    testWidgets('a different video loads without force', (tester) async {
+      await attachView(tester);
+      await controller.load(url: 'https://example.com/a.mp4');
+      await controller.load(url: 'https://example.com/b.mp4');
       final urls = calls
           .where((c) => c.method == 'load')
           .map((c) => (c.arguments as Map)['url'])
@@ -549,6 +556,91 @@ img.jpg#xywh=oops,0,160
       expect(controller.activityState, PlayerActivityState.playing);
       expect(states.where((s) => s != PlayerActivityState.playing), isEmpty);
       unawaited(sub.cancel());
+    });
+  });
+
+  group('loaded until the viewer acts', () {
+    Future<void> loadVideo(WidgetTester tester) async {
+      await attachView(tester);
+      await controller.load(url: 'https://example.com/a.m3u8');
+      expect(controller.activityState, PlayerActivityState.loaded);
+    }
+
+    testWidgets('Android: the first buffer filling keeps loaded', (
+      tester,
+    ) async {
+      await loadVideo(tester);
+      // ExoPlayer: READY while still loading (no "loaded" from the
+      // observer), the load handler's "loaded", then loading finishes in
+      // READY and onIsLoadingChanged sends "pause".
+      await sendEvent(tester, {'event': 'buffering'});
+      await sendEvent(tester, {'event': 'loaded'});
+      await sendEvent(tester, {'event': 'pause'});
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.activityState, PlayerActivityState.loaded);
+    });
+
+    testWidgets('iOS: playbackLikelyToKeepUp keeps loaded', (tester) async {
+      await loadVideo(tester);
+      await sendEvent(tester, {
+        'event': 'timeUpdate',
+        'position': 0,
+        'duration': 60000,
+        'bufferedPosition': 0,
+        'isBuffering': true,
+      });
+      await sendEvent(tester, {'event': 'pause'});
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.activityState, PlayerActivityState.loaded);
+    });
+
+    testWidgets('a seek leaves loaded (Huddle: load, resume seek)', (
+      tester,
+    ) async {
+      await loadVideo(tester);
+      await controller.seekTo(const Duration(seconds: 20));
+      await sendEvent(tester, {'event': 'buffering'});
+      await sendEvent(tester, {'event': 'seek', 'position': 20000});
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+    });
+
+    testWidgets('play leaves loaded, and pauses apply after it', (
+      tester,
+    ) async {
+      await loadVideo(tester);
+      await controller.play();
+      await sendEvent(tester, {'event': 'play'});
+      expect(controller.activityState, PlayerActivityState.playing);
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+    });
+
+    testWidgets('a native play (autoplay, remote) leaves loaded', (
+      tester,
+    ) async {
+      await loadVideo(tester);
+      await sendEvent(tester, {'event': 'play'});
+      expect(controller.activityState, PlayerActivityState.playing);
+    });
+
+    testWidgets('an error still applies', (tester) async {
+      await loadVideo(tester);
+      await sendEvent(tester, {'event': 'error', 'message': 'boom'});
+      expect(controller.activityState, PlayerActivityState.error);
+    });
+
+    testWidgets('a second view on a played controller reports paused', (
+      tester,
+    ) async {
+      await loadVideo(tester);
+      await sendEvent(tester, {'event': 'play'});
+      await sendEvent(tester, {'event': 'pause'});
+      // A new view on the shared player sends its current state: loaded,
+      // then pause. The video was played, so it is paused.
+      await sendEvent(tester, {'event': 'loaded', 'duration': 60000});
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
     });
   });
 

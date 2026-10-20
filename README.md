@@ -180,8 +180,10 @@ await controller.load(url: 'https://example.com/video.mp4');
 await controller.loadFile(path: '${dir.path}/video.mp4');
 await controller.load(url: 'file:///path/to/video.mp4'); // same thing
 
-// Replace a video that is already loaded
-await controller.load(url: nextUrl, force: true);
+// Another URL replaces the video; the same URL again is skipped while
+// the video is still `loaded`, unless you force it
+await controller.load(url: nextUrl);
+await controller.load(url: sameUrl, force: true);
 ```
 
 `loadUrl(...)` is an alias of `load(...)` for remote URLs. Formats are whatever the platform player supports: HLS, MP4, MOV, M4V on iOS; HLS, MP4, WebM, MKV on Android.
@@ -983,6 +985,8 @@ controller.addControlListener((event) {
   // subtitleTrackChanged, audioTrackChanged, …
 });
 ```
+
+The activity state means the same on iOS and Android. `loaded` is a video that hasn't started: it stays until the first play or seek, or the next load. `completed` stays until it plays again, is seeked (it then ends `paused`) or another video loads. The pauses and buffering blips the native players report on their own in between (the first buffer filling, the rewind after the end) don't reach the state or activity listeners.
 
 Remove listeners with `removeActivityListener` / `removeControlListener` before you dispose.
 
