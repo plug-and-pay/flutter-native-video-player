@@ -423,6 +423,35 @@ img.jpg#xywh=oops,0,160
     });
   });
 
+  group('buffering around a seek', () {
+    testWidgets('a paused player that reports loaded after a seek is not '
+        'left buffering', (tester) async {
+      await attachView(tester);
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+
+      // Android after seekTo on a paused player (from a Gigaset log): the
+      // time update already says buffering, then buffering, the seek, and
+      // READY ("loaded") 30 ms later. Then nothing: a paused player sends
+      // no time updates.
+      await sendEvent(tester, {
+        'event': 'timeUpdate',
+        'position': 0,
+        'duration': 163600,
+        'bufferedPosition': 0,
+        'isBuffering': true,
+      });
+      await sendEvent(tester, {'event': 'buffering'});
+      await sendEvent(tester, {'event': 'seek', 'position': 0});
+      await sendEvent(tester, {'event': 'loaded', 'duration': 163600});
+      expect(controller.activityState, PlayerActivityState.loaded);
+
+      // The buffering debounce must not flip it back after the fact.
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.activityState, PlayerActivityState.loaded);
+    });
+  });
+
   group('live streams', () {
     Future<void> sendLive(WidgetTester tester, {required int positionMs}) =>
         sendEvent(tester, {

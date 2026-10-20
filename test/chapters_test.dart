@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:better_native_video_player/better_native_video_player.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -551,6 +552,246 @@ Outro
       await gesture.up();
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+    });
+
+    group('no stale preview', () {
+      Finder previewTime(String text) => find.descendant(
+        of: find.byType(NativeVideoPlayerScrubPreview),
+        matching: find.text(text),
+      );
+
+      testWidgets('a hover that is not a mouse never pins a preview', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          host(
+            const NativeVideoPlayerProgressBar(
+              duration: Duration(seconds: 60),
+              onSeek: _ignoreSeek,
+            ),
+          ),
+        );
+        // Some Android touch screens report a hover at each touch-down and
+        // never an exit.
+        final hover = await tester.createGesture(
+          kind: PointerDeviceKind.stylus,
+        );
+        await hover.addPointer(location: at(tester, 100));
+        await hover.moveTo(at(tester, 100));
+        await tester.pump();
+        final drag = await tester.startGesture(at(tester, 100));
+        await drag.moveTo(at(tester, 200));
+        await drag.moveTo(at(tester, 300));
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(find.byType(NativeVideoPlayerScrubPreview), findsNothing);
+        await hover.removePointer();
+      });
+
+      testWidgets('a mouse hover shows a preview until it leaves', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          host(
+            const NativeVideoPlayerProgressBar(
+              duration: Duration(seconds: 60),
+              onSeek: _ignoreSeek,
+            ),
+          ),
+        );
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: Offset.zero);
+        await mouse.moveTo(at(tester, 200));
+        await tester.pumpAndSettle();
+        expect(previewTime('0:30'), findsOneWidget);
+        await mouse.moveTo(Offset.zero);
+        await tester.pumpAndSettle();
+        expect(find.byType(NativeVideoPlayerScrubPreview), findsNothing);
+        await mouse.removePointer();
+      });
+
+      testWidgets('a cancelled pointer leaves no preview', (tester) async {
+        final seeks = <Duration>[];
+        await tester.pumpWidget(
+          host(
+            NativeVideoPlayerProgressBar(
+              duration: const Duration(seconds: 60),
+              onSeek: seeks.add,
+            ),
+          ),
+        );
+        final drag = await tester.startGesture(at(tester, 100));
+        await drag.moveTo(at(tester, 200));
+        await drag.moveTo(at(tester, 300));
+        await tester.pump();
+        expect(previewTime('0:45'), findsOneWidget);
+        await drag.cancel();
+        await tester.pumpAndSettle();
+        expect(find.byType(NativeVideoPlayerScrubPreview), findsNothing);
+      });
+
+      testWidgets('a long-press that wins the gesture leaves no preview', (
+        tester,
+      ) async {
+        var longPressed = false;
+        await tester.pumpWidget(
+          host(
+            GestureDetector(
+              onLongPress: () => longPressed = true,
+              child: const NativeVideoPlayerProgressBar(
+                duration: Duration(seconds: 60),
+                onSeek: _ignoreSeek,
+              ),
+            ),
+          ),
+        );
+        final press = await tester.startGesture(at(tester, 100));
+        await tester.pump(const Duration(seconds: 1));
+        expect(longPressed, isTrue);
+        await press.up();
+        await tester.pumpAndSettle();
+        expect(find.byType(NativeVideoPlayerScrubPreview), findsNothing);
+      });
+
+      testWidgets('moved to another parent mid-drag: no preview after', (
+        tester,
+      ) async {
+        final key = GlobalKey();
+        final inCard = ValueNotifier(true);
+        addTearDown(inCard.dispose);
+        final bar = NativeVideoPlayerProgressBar(
+          key: key,
+          duration: const Duration(seconds: 60),
+          onSeek: _ignoreSeek,
+        );
+        await tester.pumpWidget(
+          host(
+            ValueListenableBuilder<bool>(
+              valueListenable: inCard,
+              builder: (context, card, _) => card
+                  ? Padding(padding: EdgeInsets.zero, child: bar)
+                  : Center(child: SizedBox(width: 400, child: bar)),
+            ),
+          ),
+        );
+        final drag = await tester.startGesture(at(tester, 100));
+        await drag.moveTo(at(tester, 200));
+        await drag.moveTo(at(tester, 300));
+        await tester.pump();
+        expect(find.byType(NativeVideoPlayerScrubPreview), findsOneWidget);
+        // The overlay rebuilds the controls under another parent.
+        inCard.value = false;
+        await tester.pump();
+        expect(find.byType(NativeVideoPlayerScrubPreview), findsNothing);
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(find.byType(NativeVideoPlayerScrubPreview), findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('a full drag shows the preview from start to end and back', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          host(
+            const NativeVideoPlayerProgressBar(
+              duration: Duration(seconds: 60),
+              onSeek: _ignoreSeek,
+            ),
+          ),
+        );
+        final bar = tester.getRect(find.byType(NativeVideoPlayerProgressBar));
+        final drag = await tester.startGesture(
+          Offset(bar.left + 1, bar.center.dy),
+        );
+        await drag.moveTo(Offset(bar.left + 60, bar.center.dy));
+        await drag.moveTo(Offset(bar.right + 30, bar.center.dy));
+        await tester.pump();
+        expect(previewTime('1:00'), findsOneWidget, reason: 'the very end');
+        await drag.moveTo(Offset(bar.left - 30, bar.center.dy));
+        await tester.pump();
+        expect(previewTime('0:00'), findsOneWidget, reason: 'the very start');
+        await drag.up();
+        await tester.pumpAndSettle();
+      });
+    });
+
+    group('after the release', () {
+      // The slider's value: the time where the thumb is.
+      String? shownTime(WidgetTester tester) => tester
+          .widget<Semantics>(
+            find.descendant(
+              of: find.byType(NativeVideoPlayerProgressBar),
+              matching: find.byWidgetPredicate(
+                (w) => w is Semantics && (w.properties.slider ?? false),
+              ),
+            ),
+          )
+          .properties
+          .value;
+
+      testWidgets('the thumb waits at the target, then follows the player', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          host(
+            const NativeVideoPlayerProgressBar(
+              position: Duration.zero,
+              duration: Duration(seconds: 60),
+              onSeek: _ignoreSeek,
+            ),
+          ),
+        );
+        final drag = await tester.startGesture(at(tester, 100));
+        await drag.moveTo(at(tester, 150));
+        await drag.moveTo(at(tester, 200));
+        await drag.up();
+        await tester.pump();
+        expect(shownTime(tester), '0:30');
+        await tester.pump(const Duration(milliseconds: 1500));
+        expect(shownTime(tester), '0:30', reason: 'no jump back yet');
+        // The player never got there: back to where it plays after 2 s.
+        await tester.pump(const Duration(seconds: 1));
+        expect(shownTime(tester), '0:00');
+      });
+
+      testWidgets('an unplayed video showing its resume position first '
+          'does not move the thumb off the target', (tester) async {
+        final position = ValueNotifier(Duration.zero);
+        addTearDown(position.dispose);
+        await tester.pumpWidget(
+          host(
+            ValueListenableBuilder<Duration>(
+              valueListenable: position,
+              builder: (context, p, _) => NativeVideoPlayerProgressBar(
+                position: p,
+                duration: const Duration(seconds: 163),
+                onSeek: _ignoreSeek,
+              ),
+            ),
+          ),
+        );
+        // Release at the very start of a video that never played.
+        final drag = await tester.startGesture(at(tester, 100));
+        await drag.moveTo(at(tester, 60));
+        await drag.moveTo(at(tester, 0));
+        await drag.up();
+        await tester.pump();
+        expect(shownTime(tester), '0:00');
+        // It loads at its resume position (0:57) before the seek lands...
+        await tester.pump(const Duration(milliseconds: 600));
+        position.value = const Duration(seconds: 57);
+        await tester.pump();
+        expect(shownTime(tester), '0:00', reason: 'not the resume position');
+        await tester.pump(const Duration(milliseconds: 800));
+        expect(shownTime(tester), '0:00');
+        // ...then lands at the target, and the thumb follows the player.
+        position.value = const Duration(milliseconds: 200);
+        await tester.pump();
+        position.value = const Duration(seconds: 1);
+        await tester.pump();
+        expect(shownTime(tester), '0:01');
+      });
     });
 
     group('the preview never sticks out', () {
@@ -1167,7 +1408,9 @@ Outro
         await tester.pump();
         await gesture.up();
         await tester.pump();
-        expect(seeks(), [33000]);
+        // The track is inset 8 px at both ends: 400 px box, 384 px track,
+        // so x = 220 is (220 - 8) / 384 of 60 s.
+        expect(seeks(), [33125]);
         expect(haptics, isEmpty);
       });
 
@@ -1199,11 +1442,63 @@ Outro
         await tester.pump(const Duration(seconds: 2));
       });
 
+      testWidgets('while the player loads the thumb keeps the target', (
+        tester,
+      ) async {
+        await pumpBar(tester);
+        // A video that wasn't loaded: the release makes it load.
+        viewSink!.success({'event': 'loading'});
+        await tester.pump();
+        expect(controller.activityState, PlayerActivityState.loading);
+        String? shown() => tester
+            .widget<Semantics>(
+              find.descendant(
+                of: find.byType(NativeVideoPlayerProgressBar),
+                matching: find.byWidgetPredicate(
+                  (w) => w is Semantics && (w.properties.slider ?? false),
+                ),
+              ),
+            )
+            .properties
+            .value;
+        final gesture = await tester.startGesture(at(tester, 100));
+        await gesture.moveTo(at(tester, 150));
+        await gesture.moveTo(at(tester, 220)); // 33 s
+        await gesture.up();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 4));
+        expect(shown(), '0:33', reason: 'no jump back while loading');
+        // Loaded, at the target: the thumb follows the player again.
+        viewSink!.success({'event': 'loaded', 'duration': 60000});
+        await tester.pump();
+        await sendPosition(tester, 33500);
+        await sendPosition(tester, 34000);
+        expect(shown(), '0:34');
+        // Playing: disarms the controller's load watchdog.
+        viewSink!.success({'event': 'play'});
+        await tester.pump();
+      });
+
+      testWidgets('the thumb at either end is whole inside the touch area', (
+        tester,
+      ) async {
+        await pumpBar(tester);
+        final box = tester.getRect(find.byType(NativeVideoPlayerProgressBar));
+        // A finger on the left half of the thumb at 0:00 (inside the box's
+        // inset, left of the track) starts a drag at the very start...
+        await tester.tapAt(Offset(box.left + 2, box.center.dy));
+        await tester.pump();
+        // ...and on the right half of the thumb at the end, at the end.
+        await tester.tapAt(Offset(box.right - 2, box.center.dy));
+        await tester.pump();
+        expect(seeks(), [0, 60000]);
+      });
+
       testWidgets('tap seeks', (tester) async {
         await pumpBar(tester);
         await tester.tapAt(at(tester, 100));
         await tester.pump();
-        expect(seeks(), [15000]);
+        expect(seeks(), [14375]); // (100 - 8) / 384 of 60 s
       });
 
       testWidgets('no snapping for live', (tester) async {
@@ -1214,7 +1509,7 @@ Outro
         await tester.pump();
         await gesture.up();
         await tester.pump();
-        expect(seeks(), [30750]);
+        expect(seeks(), [30781]); // (205 - 8) / 384 of 60 s
         expect(haptics, isEmpty);
       });
     });

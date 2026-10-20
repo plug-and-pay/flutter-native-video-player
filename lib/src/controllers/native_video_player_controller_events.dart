@@ -364,6 +364,16 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
         return;
       }
 
+      // Any state but buffering proves the player isn't buffering (any
+      // more). Only time updates cleared this flag, and a paused player
+      // sends none: a buffering blip at a seek (whose time update says
+      // isBuffering) then still flipped the state to buffering after the
+      // player had reported loaded, a spinner that never went away.
+      if (activityEvent.state != PlayerActivityState.buffering) {
+        _isCurrentlyBuffering = false;
+        _bufferingDebounceTimer?.cancel();
+      }
+
       // Update the last non-buffering state when we receive play/pause events
       // This ensures we can restore to the correct state after buffering
       if (activityEvent.state == PlayerActivityState.playing ||

@@ -3,10 +3,12 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controllers/native_video_player_controller.dart';
+import '../enums/native_video_player_event.dart';
 import '../models/native_video_player_chapter.dart';
 import '../native_video_player_widget.dart';
 import '../subtitles/storyboard_thumbnails.dart';
@@ -27,6 +29,7 @@ class NativeVideoPlayerProgressBarStyle {
     this.expandedBarHeight,
     this.activeSegmentHeight = 6,
     this.chapterGap = 2,
+    this.trackInset,
     this.roundedCaps = true,
     this.thumbRadius = 6,
     this.expandedThumbRadius = 8,
@@ -69,6 +72,16 @@ class NativeVideoPlayerProgressBarStyle {
   /// Gap between chapter segments, in logical pixels.
   final double chapterGap;
 
+  /// Room at both ends between the box and the track, so the thumb at the
+  /// very start or end sits whole inside the touch area (a finger on it
+  /// always starts a drag). A touch in that room counts as the start or
+  /// end. Null is the grown thumb's radius.
+  final double? trackInset;
+
+  /// [trackInset], or the grown thumb's radius when it is null.
+  double get effectiveTrackInset =>
+      trackInset ?? math.max(thumbRadius, expandedThumbRadius);
+
   /// Whether segment ends are rounded.
   final bool roundedCaps;
 
@@ -98,6 +111,7 @@ class NativeVideoPlayerProgressBarStyle {
     double? expandedBarHeight,
     double? activeSegmentHeight,
     double? chapterGap,
+    double? trackInset,
     bool? roundedCaps,
     double? thumbRadius,
     double? expandedThumbRadius,
@@ -114,6 +128,7 @@ class NativeVideoPlayerProgressBarStyle {
     expandedBarHeight: expandedBarHeight ?? this.expandedBarHeight,
     activeSegmentHeight: activeSegmentHeight ?? this.activeSegmentHeight,
     chapterGap: chapterGap ?? this.chapterGap,
+    trackInset: trackInset ?? this.trackInset,
     roundedCaps: roundedCaps ?? this.roundedCaps,
     thumbRadius: thumbRadius ?? this.thumbRadius,
     expandedThumbRadius: expandedThumbRadius ?? this.expandedThumbRadius,
@@ -417,7 +432,9 @@ class _NativeVideoPlayerProgressBarState
     _listen();
     // Drop the bubble once it has faded out.
     _preview.addStatusListener((status) {
-      if (status == AnimationStatus.dismissed && mounted) {
+      if (status == AnimationStatus.dismissed &&
+          mounted &&
+          _lastPreview != null) {
         setState(() => _lastPreview = null);
       }
     });
@@ -448,6 +465,31 @@ class _NativeVideoPlayerProgressBarState
       _precacheFailedAt.clear();
       _precacheCenter = null;
     }
+  }
+
+  /// Leaving the tree (removed, or moved under another parent) mid-drag:
+  /// the gesture will never finish here, so drop the scrub and the preview
+  /// without seeking, rather than bringing a stale bubble back.
+  @override
+  void deactivate() {
+    _resetScrub();
+    super.deactivate();
+  }
+
+  void _resetScrub() {
+    _dragging = false;
+    _scrub = null;
+    _snappedTo = null;
+    _hoverX = null;
+    _settleTimer?.cancel();
+    _releaseOverlayHold();
+    // No bubble from here on; its animation is reset after this frame
+    // (resetting it now would notify transitions mid-build).
+    _lastPreview = null;
+    _preview.stop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _lastPreview == null) _preview.value = 0;
+    });
   }
 
   @override
@@ -492,17 +534,30 @@ class _NativeVideoPlayerProgressBarState
 
   // ─── Gestures ───────────────────────────────────────────────────────
 
+  /// The track's inset from the box's ends, bounded so a narrow bar keeps
+  /// a track.
+  double _insetFor(double width) =>
+      math.min(widget.style.effectiveTrackInset, math.max(0, width / 4));
+
+  /// Where [fraction] of the video lies on a box [width] wide.
+  double _xOf(double fraction, double width) {
+    final inset = _insetFor(width);
+    return inset + fraction * (width - 2 * inset);
+  }
+
   /// Converts a local x to a position, snapped to a nearby chapter start.
   (Duration, Duration?) _positionAt(double x, double width) {
     final duration = _duration;
-    if (width <= 0 || duration <= Duration.zero) return (Duration.zero, null);
-    final fraction = (x / width).clamp(0.0, 1.0);
+    final inset = _insetFor(width);
+    final track = width - 2 * inset;
+    if (track <= 0 || duration <= Duration.zero) return (Duration.zero, null);
+    final fraction = ((x - inset) / track).clamp(0.0, 1.0);
     final raw = duration * fraction;
     if (!widget.snapToChapters) return (raw, null);
     final target = NativeVideoPlayerChapters.snapTarget(
       _chapters,
       raw,
-      threshold: duration * (widget.snapDistance / width),
+      threshold: duration * (widget.snapDistance / track),
     );
     return (target ?? raw, target);
   }
@@ -536,6 +591,8 @@ class _NativeVideoPlayerProgressBarState
     setState(() {
       _dragging = true;
       _scrub = position;
+      // A finger is down: whatever hover was reported is over.
+      _hoverX = null;
     });
     _holdOverlay();
     _expand();
@@ -566,18 +623,84 @@ class _NativeVideoPlayerProgressBarState
     _collapse();
     widget.onScrubEnd?.call(target);
     final seek = widget.onSeek ?? _c?.seekTo;
+    // Keep the thumb at the target until the seek has landed (see
+    // [_seekLanded]), so it doesn't jump back, or to a resume position,
+    // while the seek (or the load of a video that wasn't loaded yet) is
+    // still under way.
+    _seekReturned = false;
+    _positionAtRelease = _position;
+    _positionMoved = false;
+    _settleBusy = Duration.zero;
+    _settleIdle = Duration.zero;
+    _armSettleTimer();
     try {
       await seek?.call(target);
     } finally {
-      // Keep the thumb at the target until the player reports a position
-      // near it (see build), or for a moment at most.
-      if (mounted && !_dragging) {
-        _settleTimer?.cancel();
-        _settleTimer = Timer(const Duration(milliseconds: 1500), () {
-          if (mounted && !_dragging) setState(() => _scrub = null);
-        });
-      }
+      _seekReturned = true;
+      if (mounted) setState(() {});
     }
+  }
+
+  /// Whether the last seek call returned, the position the player reported
+  /// at the release, and whether it reported another one since.
+  bool _seekReturned = true;
+  Duration? _positionAtRelease;
+  bool _positionMoved = false;
+
+  /// Whether the player is still getting the video ready (with a
+  /// controller; the values passed in say nothing about it).
+  bool get _playerBusy {
+    final activity = _c?.activityState;
+    return activity != null &&
+        (activity.isLoading ||
+            activity.isInitializing ||
+            activity.isBuffering ||
+            activity.isIdle);
+  }
+
+  /// The player got to the seek target: the seek returned, the position
+  /// changed since the release (an unplayed video already "is" at 0:00, and
+  /// can first report a resume position) and lies near the target, and the
+  /// player isn't loading or buffering any more.
+  bool get _seekLanded {
+    final target = _scrub;
+    if (target == null || !_seekReturned || !_positionMoved || _playerBusy) {
+      return false;
+    }
+    return (_position - target).abs() < const Duration(milliseconds: 1200);
+  }
+
+  /// How long the thumb has waited at the seek target while the player was
+  /// busy, and while it wasn't (after the seek returned); counted in timer
+  /// ticks, so it also runs on a test's fake clock.
+  Duration _settleBusy = Duration.zero;
+  Duration _settleIdle = Duration.zero;
+  static const _settleTick = Duration(milliseconds: 250);
+
+  /// How long the thumb waits at a seek target for the player to get
+  /// there, before it follows the player anyway: a moment once the player
+  /// is ready, longer while it is still loading or buffering.
+  static const _settleAfterSeek = Duration(seconds: 2);
+  static const _settleWhileLoading = Duration(seconds: 10);
+
+  void _armSettleTimer() {
+    _settleTimer?.cancel();
+    _settleTimer = Timer.periodic(_settleTick, (timer) {
+      if (!mounted || _dragging || _scrub == null) {
+        timer.cancel();
+        return;
+      }
+      if (_playerBusy) {
+        _settleBusy += _settleTick;
+      } else if (_seekReturned) {
+        _settleIdle += _settleTick;
+      }
+      if (_settleBusy >= _settleWhileLoading ||
+          _settleIdle >= _settleAfterSeek) {
+        timer.cancel();
+        setState(() => _scrub = null);
+      }
+    });
   }
 
   void _cancel() {
@@ -714,11 +837,12 @@ class _NativeVideoPlayerProgressBarState
     final thumb = style.thumbColor ?? sliderTheme.thumbColor ?? played;
 
     // The seek landed: follow the player again.
-    if (!_dragging &&
-        _scrub != null &&
-        (_position - _scrub!).abs() < const Duration(milliseconds: 1200)) {
-      _scrub = null;
-      _settleTimer?.cancel();
+    if (!_dragging && _scrub != null) {
+      if (_position != _positionAtRelease) _positionMoved = true;
+      if (_seekLanded) {
+        _scrub = null;
+        _settleTimer?.cancel();
+      }
     }
 
     return LayoutBuilder(
@@ -774,6 +898,7 @@ class _NativeVideoPlayerProgressBarState
                     )))) {
           details = null;
         }
+
         if (details != null) {
           _lastPreview = details;
           if (!_preview.isForwardOrCompleted) unawaited(_preview.forward());
@@ -806,6 +931,7 @@ class _NativeVideoPlayerProgressBarState
                 expandedBarHeight: style.expandedBarHeight ?? style.barHeight,
                 activeSegmentHeight: style.activeSegmentHeight,
                 gap: style.chapterGap,
+                inset: _insetFor(width),
                 roundedCaps: style.roundedCaps,
                 thumbRadius:
                     lerpDouble(
@@ -846,7 +972,14 @@ class _NativeVideoPlayerProgressBarState
           onIncrease: () => unawaited(seekBy(step)),
           onDecrease: () => unawaited(seekBy(-step)),
           child: MouseRegion(
-            onHover: (e) => _hover(e.localPosition.dx),
+            // Only a real mouse hovers: some Android touch screens also
+            // send a hover (kind unknown) at each touch-down and never
+            // an exit, which left a preview pinned where a drag began.
+            onHover: (e) {
+              if (e.kind == PointerDeviceKind.mouse) {
+                _hover(e.localPosition.dx);
+              }
+            },
             onExit: (_) => _hover(null),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -884,7 +1017,7 @@ class _NativeVideoPlayerProgressBarState
     if (details == null) return const [];
     final style = widget.style;
     final previewStyle = widget.previewStyle;
-    final x = fractionOf(details.position) * width;
+    final x = _xOf(fractionOf(details.position), width);
     final animation = CurvedAnimation(
       parent: _preview,
       curve: previewStyle.animationCurve,
@@ -1029,6 +1162,7 @@ class _ChapterBarPainter extends CustomPainter {
     required this.expandedBarHeight,
     required this.activeSegmentHeight,
     required this.gap,
+    required this.inset,
     required this.roundedCaps,
     required this.thumbRadius,
     required this.playedColor,
@@ -1048,6 +1182,7 @@ class _ChapterBarPainter extends CustomPainter {
   final double expandedBarHeight;
   final double activeSegmentHeight;
   final double gap;
+  final double inset;
   final bool roundedCaps;
   final double thumbRadius;
   final Color playedColor;
@@ -1069,9 +1204,11 @@ class _ChapterBarPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
-    final width = size.width;
-    final playedX = playedFraction * width;
-    final bufferedX = bufferedFraction * width;
+    // The track runs between the insets; x = inset + fraction * track.
+    final track = size.width - 2 * inset;
+    double xOf(double fraction) => inset + fraction * track;
+    final playedX = xOf(playedFraction);
+    final bufferedX = xOf(bufferedFraction);
     // An unknown duration still draws an empty track.
     final drawn = segments.isEmpty
         ? const [
@@ -1088,9 +1225,9 @@ class _ChapterBarPainter extends CustomPainter {
 
     for (var i = 0; i < drawn.length; i++) {
       final segment = drawn[i];
-      final left = segment.startFraction * width + (i > 0 ? gap / 2 : 0);
+      final left = xOf(segment.startFraction) + (i > 0 ? gap / 2 : 0);
       final right =
-          segment.endFraction * width - (i < drawn.length - 1 ? gap / 2 : 0);
+          xOf(segment.endFraction) - (i < drawn.length - 1 ? gap / 2 : 0);
       if (right <= left) continue;
       final height = _heightOf(i);
       final rect = RRect.fromLTRBR(
@@ -1121,7 +1258,7 @@ class _ChapterBarPainter extends CustomPainter {
 
     if (thumbRadius > 0) {
       canvas.drawCircle(
-        Offset(playedX.clamp(0.0, width), centerY),
+        Offset(playedX, centerY),
         thumbRadius,
         Paint()..color = thumbColor,
       );
@@ -1141,6 +1278,7 @@ class _ChapterBarPainter extends CustomPainter {
       old.expandedBarHeight != expandedBarHeight ||
       old.activeSegmentHeight != activeSegmentHeight ||
       old.gap != gap ||
+      old.inset != inset ||
       old.roundedCaps != roundedCaps ||
       old.thumbRadius != thumbRadius ||
       old.playedColor != playedColor ||
