@@ -744,7 +744,8 @@ class NativeVideoPlayerController {
         }
         // Check if we're still buffering after 400ms
         if (_isCurrentlyBuffering &&
-            _state.activityState != PlayerActivityState.buffering) {
+            _state.activityState != PlayerActivityState.buffering &&
+            !_keepsCompleted(PlayerActivityState.buffering)) {
           // Update to buffering state
           _updateState(
             _state.copyWith(activityState: PlayerActivityState.buffering),
@@ -1826,6 +1827,7 @@ class NativeVideoPlayerController {
     _playbackRange = null;
     _pendingSeekTarget = null;
     _endSeekHold();
+    _completedUntilAction = false;
 
     // The new source reports whether it is live with its first time update.
     if (_state.isLive) _updateState(_state.copyWith(isLive: false));
@@ -1997,6 +1999,8 @@ class NativeVideoPlayerController {
       await _reloadEvictedSource();
     }
 
+    // Replaying a finished video: its buffering shows again.
+    _completedUntilAction = false;
     await _methodChannel?.play();
   }
 
@@ -2020,11 +2024,14 @@ class NativeVideoPlayerController {
     final Duration target = position.isNegative ? Duration.zero : position;
     _pendingSeekTarget = target;
     _pendingSeekSince = DateTime.now();
+    // Seeking a finished video leaves completed: it ends paused.
+    _completedUntilAction = false;
     final PlayerActivityState state = _state.activityState;
     if (_seekHoldTimer == null) _seekHoldsPause = state.isPlaying;
     if (state.isPlaying ||
         state.isPaused ||
         state.isLoaded ||
+        state.isCompleted ||
         _seekHoldTimer != null) {
       _startSeekHold();
     }
@@ -2099,6 +2106,31 @@ class NativeVideoPlayerController {
     }
     // Playing on (or anything final): the hold is over.
     _endSeekHold();
+    return false;
+  }
+
+  /// At the end of a video both native players rewind to the start and
+  /// pause, and report that rewind right after `completed` (a pause, a
+  /// buffering blip; Android: READY again). Those would replace `completed`
+  /// at once, so the state stays `completed` until playback starts, the
+  /// viewer seeks, or another video loads.
+  bool _completedUntilAction = false;
+
+  /// Whether [state] is part of the rewind after `completed` (see
+  /// [_completedUntilAction]) and keeps the state at `completed`.
+  bool _keepsCompleted(PlayerActivityState state) {
+    if (state.isCompleted) {
+      _completedUntilAction = true;
+      return false;
+    }
+    if (!_completedUntilAction) return false;
+    if (state.isPaused ||
+        state.isBuffering ||
+        state.isLoading ||
+        state.isLoaded) {
+      return true;
+    }
+    _completedUntilAction = false;
     return false;
   }
 

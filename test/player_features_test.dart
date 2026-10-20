@@ -552,6 +552,91 @@ img.jpg#xywh=oops,0,160
     });
   });
 
+  group('completed', () {
+    Future<void> playToEnd(WidgetTester tester) async {
+      await attachView(tester);
+      await sendEvent(tester, {'event': 'loaded', 'duration': 60000});
+      await sendEvent(tester, {'event': 'play'});
+      // Both platforms: playback stops at the end, then completed.
+      await sendEvent(tester, {'event': 'pause'});
+      await sendEvent(tester, {'event': 'completed'});
+      expect(controller.activityState, PlayerActivityState.completed);
+    }
+
+    testWidgets('Android: the rewind after the end keeps completed', (
+      tester,
+    ) async {
+      await playToEnd(tester);
+      // ExoPlayer seekTo(0) + pause(): the time update at 0 says
+      // buffering, BUFFERING, then READY with playWhenReady false.
+      await sendEvent(tester, {
+        'event': 'timeUpdate',
+        'position': 0,
+        'duration': 60000,
+        'bufferedPosition': 0,
+        'isBuffering': true,
+      });
+      await sendEvent(tester, {'event': 'buffering'});
+      await sendEvent(tester, {'event': 'pause'});
+      await sendEvent(tester, {'event': 'pause'});
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.activityState, PlayerActivityState.completed);
+    });
+
+    testWidgets('iOS: the rewind after the end keeps completed', (
+      tester,
+    ) async {
+      await playToEnd(tester);
+      // AVPlayer seek(to: .zero) + pause(): playbackLikelyToKeepUp reports
+      // "pause" again once the start is buffered.
+      await sendEvent(tester, {
+        'event': 'timeUpdate',
+        'position': 0,
+        'duration': 60000,
+        'bufferedPosition': 10000,
+        'isBuffering': false,
+      });
+      await sendEvent(tester, {'event': 'pause'});
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.activityState, PlayerActivityState.completed);
+    });
+
+    testWidgets('a seek after the end ends paused', (tester) async {
+      await playToEnd(tester);
+      await controller.seekTo(const Duration(seconds: 20));
+      await sendEvent(tester, {'event': 'buffering'});
+      await sendEvent(tester, {'event': 'seek', 'position': 20000});
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+    });
+
+    testWidgets('replay leaves completed', (tester) async {
+      await playToEnd(tester);
+      await controller.play();
+      await sendEvent(tester, {'event': 'buffering'});
+      expect(controller.activityState, PlayerActivityState.buffering);
+      await sendEvent(tester, {'event': 'play'});
+      expect(controller.activityState, PlayerActivityState.playing);
+    });
+
+    testWidgets('a native play (remote control) leaves completed', (
+      tester,
+    ) async {
+      await playToEnd(tester);
+      await sendEvent(tester, {'event': 'play'});
+      expect(controller.activityState, PlayerActivityState.playing);
+      // And completed no longer sticks.
+      await sendEvent(tester, {'event': 'pause'});
+      expect(controller.activityState, PlayerActivityState.paused);
+    });
+
+    testWidgets('a new load leaves completed', (tester) async {
+      await playToEnd(tester);
+      await controller.load(url: 'https://example.com/next.mp4', force: true);
+      expect(controller.activityState, PlayerActivityState.loaded);
+    });
+  });
+
   group('live streams', () {
     Future<void> sendLive(WidgetTester tester, {required int positionMs}) =>
         sendEvent(tester, {

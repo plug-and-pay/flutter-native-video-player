@@ -364,6 +364,10 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
         return;
       }
 
+      if (_keepsCompleted(activityEvent.state)) {
+        return;
+      }
+
       // Any state but buffering proves the player isn't buffering (any
       // more). Only time updates cleared this flag, and a paused player
       // sends none: a buffering blip at a seek (whose time update says

@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or loaded video, for buffering and loading only: the pause that ends the
   seek still applies right away, and a wait longer than the hold still shows
   as buffering.
+- **`completed` was replaced right after the end of a video.** Both native
+  players rewind to the start and pause at the end, and reported that rewind
+  (a pause, a buffering blip; Android: READY again) right after `completed`,
+  so `activityState` ended `paused` (or `loaded` on Android). It now stays
+  `completed` until playback starts again, the viewer seeks (which ends
+  `paused`) or another video loads.
 
 ## [1.7.3] - 2026-10-20
 
