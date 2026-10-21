@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -43,10 +44,10 @@ class NativeVideoPlayerScrubDetails {
   final bool snapped;
 }
 
-/// How the scrub preview bubble looks. The defaults are YouTube's: a white
-/// bordered frame with the chapter title and time below it, straight on
-/// the video. Give it a [backgroundColor], [padding] and [arrowSize] for a
-/// tooltip-style bubble instead.
+/// How the scrub preview bubble looks. The defaults: a frame with rounded
+/// corners and the chapter title and time below it, straight on the video.
+/// Add a [thumbnailBorder] for YouTube's white frame, or give it a
+/// [backgroundColor], [padding] and [arrowSize] for a tooltip-style bubble.
 @immutable
 class NativeVideoPlayerScrubPreviewStyle {
   const NativeVideoPlayerScrubPreviewStyle({
@@ -56,9 +57,7 @@ class NativeVideoPlayerScrubPreviewStyle {
     this.thumbnailWidth = 160,
     this.thumbnailMaxHeight,
     this.thumbnailAspectRatio = 16 / 9,
-    this.thumbnailBorder = const Border.fromBorderSide(
-      BorderSide(color: Colors.white, width: 2),
-    ),
+    this.thumbnailBorder,
     this.thumbnailBorderRadius = const BorderRadius.all(Radius.circular(10)),
     this.titleStyle,
     this.timeStyle,
@@ -93,7 +92,12 @@ class NativeVideoPlayerScrubPreviewStyle {
   /// (only for sizing; nothing is drawn until the image is there).
   final double thumbnailAspectRatio;
 
+  /// Drawn over the edge of the frame, e.g. `Border.all(color: Colors.white,
+  /// width: 2)` for YouTube's white frame. None by default.
   final BoxBorder? thumbnailBorder;
+
+  /// Rounds the frame's corners, with or without a [thumbnailBorder];
+  /// [BorderRadius.zero] for square ones.
   final BorderRadius thumbnailBorderRadius;
 
   /// Text styles; null is white with a soft shadow (title semi-bold, time
@@ -456,39 +460,90 @@ class _PreviewFrameState extends State<_PreviewFrame> {
       width = height * aspect;
     }
 
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        border: style.thumbnailBorder,
+    return CustomPaint(
+      size: Size(width, height),
+      painter: _FramePainter(
+        image: info.image,
+        source: source,
         borderRadius: style.thumbnailBorderRadius,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: CustomPaint(
-        size: Size(width, height),
-        painter: _FramePainter(info.image, source),
+        border: style.thumbnailBorder,
+        textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
       ),
     );
   }
 }
 
+/// The frame clipped to [borderRadius], with [border] painted over its edge.
 class _FramePainter extends CustomPainter {
-  _FramePainter(this.image, this.source);
+  _FramePainter({
+    required this.image,
+    required this.source,
+    required this.borderRadius,
+    required this.border,
+    required this.textDirection,
+  });
 
   final ui.Image image;
   final Rect source;
+  final BorderRadius borderRadius;
+  final BoxBorder? border;
+  final TextDirection textDirection;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawImageRect(
-      image,
-      source,
-      Offset.zero & size,
-      Paint()..filterQuality = FilterQuality.medium,
+    final rect = Offset.zero & size;
+    final edges = border?.dimensions.resolve(textDirection);
+    // Under a border the image stops halfway beneath it, so none of it shows
+    // past the border's anti-aliased outer edge.
+    final underBorder = edges == null
+        ? 0.0
+        : math.min(
+                math.min(edges.left, edges.right),
+                math.min(edges.top, edges.bottom),
+              ) /
+              2;
+    canvas
+      ..save()
+      ..clipRRect(borderRadius.toRRect(rect).deflate(underBorder))
+      ..drawImageRect(
+        image,
+        _withinCell(source, size),
+        rect,
+        Paint()..filterQuality = FilterQuality.medium,
+      )
+      ..restore();
+    border?.paint(
+      canvas,
+      rect,
+      borderRadius: borderRadius,
+      textDirection: textDirection,
+    );
+  }
+
+  /// Scaling down samples a few pixels around each one, which for a sprite
+  /// cell reaches into the frames next to it and shows as a line along the
+  /// edge. Trims about one drawn pixel's worth of the sheet off the short
+  /// side, and the long side in proportion so the frame keeps its shape.
+  static Rect _withinCell(Rect source, Size size) {
+    if (size.isEmpty || source.isEmpty) return source;
+    final sheetPixelsPerPixel = source.width / size.width;
+    final trim = math.min(
+      math.max(0.5, sheetPixelsPerPixel),
+      source.shortestSide / 8,
+    );
+    final keep = 1 - 2 * trim / source.shortestSide;
+    return Rect.fromCenter(
+      center: source.center,
+      width: source.width * keep,
+      height: source.height * keep,
     );
   }
 
   @override
   bool shouldRepaint(_FramePainter old) =>
-      old.image != image || old.source != source;
+      old.image != image ||
+      old.source != source ||
+      old.borderRadius != borderRadius ||
+      old.border != border ||
+      old.textDirection != textDirection;
 }

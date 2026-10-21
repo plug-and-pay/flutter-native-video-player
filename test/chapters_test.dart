@@ -543,10 +543,7 @@ Outro
         of: find.byType(NativeVideoPlayerScrubPreview),
         matching: find.byType(CustomPaint),
       );
-      // The frame's box, border included.
-      final size = tester.getSize(
-        find.ancestor(of: frame.first, matching: find.byType(Container)).first,
-      );
+      final size = tester.getSize(frame.first);
       expect(size.height, 160, reason: 'long side = thumbnailWidth');
       expect(size.width, closeTo(160 * 300 / 533, 0.01));
       await gesture.up();

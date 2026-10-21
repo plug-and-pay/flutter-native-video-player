@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The scrub preview frame has no border by default.** `thumbnailBorder` was
+  a 2 px white border; it is now null. Pass
+  `thumbnailBorder: Border.all(color: Colors.white, width: 2)` for the old
+  YouTube look. `thumbnailBorderRadius` rounds the frame with or without a
+  border (`BorderRadius.zero` for square corners).
+
+### Fixed
+- **Scrub preview frame corners and edges.** With a border, the image had
+  square corners inside the round border, which left white wedges in each
+  corner, and the border took 2 px off each side, so the frame was slightly
+  squashed. The image is now clipped to the round corners at the frame's own
+  aspect ratio, with the border drawn over its edge. Scaled-down sprite cells
+  no longer show a thin line of the neighbouring frame along their edges.
+
 ## [1.7.4] - 2026-10-20
 
 ### Added
