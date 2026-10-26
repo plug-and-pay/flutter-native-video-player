@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.6] - 2026-10-26
+
+### Fixed
+- **Builds with Swift Package Manager.** The automatic Picture-in-Picture restore
+  called an iOS 14 method without an availability check. The package declares
+  iOS 12, so a Swift Package Manager build (which compiles each package for its
+  own minimum) failed with "'handlePipRestoreRequest' is only available in iOS
+  14.0 or newer". CocoaPods apps that raise every pod to iOS 14 or later never
+  saw it. On iOS 12 and 13 the restore now reports that it did not restore.
+
 ## [1.7.5] - 2026-10-21
 
 ### Changed
