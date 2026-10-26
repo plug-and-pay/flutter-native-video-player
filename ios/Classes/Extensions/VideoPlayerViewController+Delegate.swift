@@ -203,6 +203,10 @@ extension VideoPlayerView: AVPlayerViewControllerDelegate {
 
     // Automatic PiP: the same restore path as the manual one (handlePipRestoreRequest).
     public func playerViewController(_ playerViewController: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+        guard #available(iOS 14.0, *) else {
+            completionHandler(false)
+            return
+        }
         handlePipRestoreRequest(completionHandler)
     }
 
