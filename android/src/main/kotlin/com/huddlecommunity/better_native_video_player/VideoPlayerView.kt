@@ -644,8 +644,7 @@ class VideoPlayerView(
         }
     }
 
-    // PiP is now handled by the floating package on the Dart side
-    // All PiP-related methods have been removed
+    // Android PiP works on the whole activity, see PictureInPictureHandler
 
     /**
      * Reconnects the player's surface to this view's display surface

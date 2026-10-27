@@ -539,7 +539,7 @@ Keep that controller alive while the window is open (for example in your feed's 
 Platform notes:
 
 - **iOS** PiP works inline and in fullscreen, through `AVPictureInPictureController`. `enableAutomaticInlinePip()` / `disableAutomaticInlinePip()` switch automatic PiP at runtime.
-- **Android** PiP comes from the [floating](https://pub.dev/packages/floating) package and works from **Dart fullscreen** (custom overlay). The whole activity becomes the window, so your overlays are hidden first. No `MainActivity` changes are needed.
+- **Android** PiP is built into the plugin and works from **Dart fullscreen** (custom overlay). Automatic PiP on leaving the app needs Android 12 (API 31); `enterPictureInPicture()` works from Android 8. The whole activity becomes the window, so your overlays are hidden first. No `MainActivity` changes are needed.
 
 ## AirPlay (iOS)
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:floating/floating.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +23,7 @@ import '../models/native_video_player_subtitle_track.dart';
 import '../models/native_video_player_video_size.dart';
 import '../platform/native_event_subscription.dart';
 import '../platform/platform_utils.dart';
+import '../platform/android_picture_in_picture.dart';
 import '../platform/pip_restore.dart';
 import '../platform/video_player_method_channel.dart';
 import '../platform/view_visibility.dart';
@@ -352,8 +352,8 @@ class NativeVideoPlayerController {
   /// Method channel wrapper for platform communication
   VideoPlayerMethodChannel? _methodChannel;
 
-  /// Floating instance for Android PiP management
-  final Floating _floating = Floating();
+  /// Android picture-in-picture (app-wide: the activity is the window)
+  final AndroidPictureInPicture _androidPip = AndroidPictureInPicture.instance;
 
   /// Set of platform view IDs that are using this controller
   final Set<int> _platformViewIds = <int>{};
@@ -474,9 +474,8 @@ class NativeVideoPlayerController {
   Timer? _bufferingWatchdogTimer;
 
   /// Polls Android PiP state while fullscreen. Android has no native PiP
-  /// enter/exit callback (unlike iOS), and the floating package's status
-  /// stream leaks a 10ms timer it never cancels — so we poll the cheap
-  /// one-shot status ourselves to keep [isPipEnabled] accurate.
+  /// enter/exit callback to plugins (unlike iOS), so we poll the cheap
+  /// one-shot status to keep [isPipEnabled] accurate.
   Timer? _androidPipPollTimer;
 
   /// Track if we're currently in a buffering state (from native)
@@ -1019,7 +1018,7 @@ class NativeVideoPlayerController {
 
     try {
       // Re-fetch PiP availability
-      // Use isPictureInPictureAvailable() which handles both Android (floating) and iOS (method channel)
+      // isPictureInPictureAvailable() handles both Android and iOS
       final isPipAvailable = await isPictureInPictureAvailable();
       _state = _state.copyWith(isPipAvailable: isPipAvailable);
       if (!_isPipAvailableController.isClosed) {
@@ -2603,7 +2602,7 @@ class NativeVideoPlayerController {
     }
 
     try {
-      final bool inPip = (await _floating.pipStatus) == PiPStatus.enabled;
+      final bool inPip = await _androidPip.isInPictureInPicture;
       if (!_isDisposed && inPip != _state.isPipEnabled) {
         _updateState(_state.copyWith(isPipEnabled: inPip));
       }
@@ -2617,9 +2616,9 @@ class NativeVideoPlayerController {
   /// real PiP state.
   ///
   /// Unlike iOS (which emits `pipStart`/`pipStop` natively), Android surfaces
-  /// no PiP enter/exit callback to the plugin, and the floating package's
-  /// status stream starts a 10ms timer it never cancels. We instead poll the
-  /// cheap one-shot [Floating.pipStatus] only while fullscreen — the only
+  /// no PiP enter/exit callback to the plugin. We instead poll the cheap
+  /// one-shot [AndroidPictureInPicture.isInPictureInPicture] only while
+  /// fullscreen — the only
   /// state from which Android PiP can be entered — and tear it down otherwise.
   /// Updating the state here lets the existing `_updateState` cascade hide the
   /// Flutter subtitle overlay, suppress native captions, and emit the stream.
@@ -2632,7 +2631,7 @@ class NativeVideoPlayerController {
         if (_isDisposed) {
           return;
         }
-        final bool inPip = (await _floating.pipStatus) == PiPStatus.enabled;
+        final bool inPip = await _androidPip.isInPictureInPicture;
         if (!_isDisposed && inPip != _state.isPipEnabled) {
           _updateState(_state.copyWith(isPipEnabled: inPip));
 
@@ -2725,13 +2724,13 @@ class NativeVideoPlayerController {
       return false;
     }
 
-    // Use floating package for Android
+    // Android: the plugin's activity-level PiP
     if (!kIsWeb && Platform.isAndroid) {
       // Only available when in fullscreen on Android
       if (!_state.isFullScreen) {
         return false;
       }
-      return await _floating.isPipAvailable;
+      return await _androidPip.isAvailable;
     }
 
     // Use method channel for iOS
@@ -2742,8 +2741,8 @@ class NativeVideoPlayerController {
   }
 
   /// Calculates the aspect ratio for PiP based on video quality information
-  /// Returns a Rational representing the video aspect ratio, or 16:9 if unavailable
-  Rational _getPiPAspectRatio() {
+  /// Returns the video aspect ratio, or 16:9 if unavailable
+  PipAspectRatio _getPiPAspectRatio() {
     // Try to get dimensions from the current quality
     if (_state.qualities.isNotEmpty) {
       // Look for quality with dimensions
@@ -2754,14 +2753,14 @@ class NativeVideoPlayerController {
           debugPrint(
             'Using video aspect ratio for PiP: $width:$height (${width / height})',
           );
-          return Rational(width, height);
+          return PipAspectRatio(width, height);
         }
       }
     }
 
     // Default to 16:9 if we can't determine the aspect ratio
     debugPrint('Using default 16:9 aspect ratio for PiP');
-    return Rational(16, 9);
+    return const PipAspectRatio(16, 9);
   }
 
   /// Enables automatic PiP on Android when app goes to background
@@ -2772,7 +2771,7 @@ class NativeVideoPlayerController {
         canStartPictureInPictureAutomatically &&
         _state.isFullScreen) {
       try {
-        await _floating.enable(OnLeavePiP(aspectRatio: _getPiPAspectRatio()));
+        await _androidPip.enableOnLeave(_getPiPAspectRatio());
         debugPrint('Automatic PiP enabled (fullscreen mode)');
       } catch (e) {
         debugPrint('Error enabling automatic PiP: $e');
@@ -2784,7 +2783,7 @@ class NativeVideoPlayerController {
   /// Only works on iOS 14+ and Android 8+
   /// For Android, only works when video is in fullscreen
   Future<bool> enterPictureInPicture() async {
-    // Use floating package for Android
+    // Android: the plugin's activity-level PiP
     if (!kIsWeb && Platform.isAndroid) {
       // Only allow PiP when in fullscreen
       if (!_state.isFullScreen) {
@@ -2799,10 +2798,9 @@ class NativeVideoPlayerController {
         // Give overlay time to hide
         await Future.delayed(const Duration(milliseconds: 200));
 
-        final status = await _floating.enable(
-          ImmediatePiP(aspectRatio: _getPiPAspectRatio()),
+        final bool entered = await _androidPip.enterNow(
+          _getPiPAspectRatio(),
         );
-        final bool entered = status == PiPStatus.enabled;
         if (entered) {
           // Reflect PiP immediately so the subtitle overlay hides without
           // waiting for the next poll tick; the poll then tracks the exit.
@@ -2881,17 +2879,17 @@ class NativeVideoPlayerController {
   /// Exits Picture-in-Picture mode
   /// Only works on iOS 14+ and Android 8+
   Future<bool> exitPictureInPicture() async {
-    // Use floating package for Android
+    // Android: the plugin's activity-level PiP
     if (!kIsWeb && Platform.isAndroid) {
       try {
-        // Cancel any OnLeavePiP if it was enabled
-        _floating.cancelOnLeavePiP();
+        // Cancel automatic PiP if it was enabled
+        unawaited(_androidPip.cancelOnLeave());
         // Re-enable automatic PiP if it was originally configured and still in fullscreen
         if (canStartPictureInPictureAutomatically && _state.isFullScreen) {
           await _enableAutomaticPiP();
         }
-        // The floating package doesn't have an explicit disable method
-        // PiP will exit when the activity returns to foreground
+        // Android has no call to leave PiP; it ends when the activity
+        // returns to the foreground
         return true;
       } catch (e) {
         debugPrint('Error exiting PiP: $e');
@@ -2936,7 +2934,7 @@ class NativeVideoPlayerController {
     }
 
     try {
-      // Android: enable through floating package
+      // Android: arm the plugin's automatic PiP
       if (!kIsWeb && Platform.isAndroid) {
         // Only enable if in fullscreen
         if (!_state.isFullScreen) {
@@ -2983,9 +2981,9 @@ class NativeVideoPlayerController {
     }
 
     try {
-      // Android: disable through floating package
+      // Android: disarm the plugin's automatic PiP
       if (!kIsWeb && Platform.isAndroid) {
-        _floating.cancelOnLeavePiP();
+        unawaited(_androidPip.cancelOnLeave());
         debugPrint('Automatic PiP disabled (Android)');
         return true;
       }
@@ -3067,7 +3065,7 @@ class NativeVideoPlayerController {
     // Disable automatic PiP and refresh availability immediately after exiting fullscreen on Android
     // This ensures isPipAvailable is updated before the UI rebuilds
     if (!kIsWeb && Platform.isAndroid) {
-      _floating.cancelOnLeavePiP();
+      unawaited(_androidPip.cancelOnLeave());
       debugPrint('Automatic PiP disabled (exited fullscreen)');
       await _refreshAvailabilityFlags();
     }
@@ -3115,7 +3113,7 @@ class NativeVideoPlayerController {
       if (isFullscreen) {
         await _enableAutomaticPiP();
       } else {
-        _floating.cancelOnLeavePiP();
+        unawaited(_androidPip.cancelOnLeave());
         debugPrint('Automatic PiP disabled (native exited fullscreen)');
       }
       await _refreshAvailabilityFlags();
@@ -3180,11 +3178,11 @@ class NativeVideoPlayerController {
           _updateState(_state.copyWith(isFullScreen: false));
 
           // Mirror exitFullScreen(): leaving fullscreen must disarm the
-          // activity-global OnLeavePiP, otherwise auto-PiP stays armed for the
+          // activity-global automatic PiP, otherwise auto-PiP stays armed for the
           // rest of the session and any later app-leave enters PiP — even from
           // inline playback or with no video playing at all.
           if (!kIsWeb && Platform.isAndroid) {
-            _floating.cancelOnLeavePiP();
+            unawaited(_androidPip.cancelOnLeave());
             debugPrint('Automatic PiP disabled (fullscreen dialog dismissed)');
             unawaited(_refreshAvailabilityFlags());
           }

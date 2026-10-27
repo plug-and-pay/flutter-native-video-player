@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import androidx.media3.common.util.UnstableApi
 import com.huddlecommunity.better_native_video_player.handlers.ControllerEventChannelHandler
+import com.huddlecommunity.better_native_video_player.handlers.PictureInPictureHandler
 import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
 import com.huddlecommunity.better_native_video_player.manager.VideoCacheManager
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -60,6 +61,7 @@ class NativeVideoPlayerPlugin(
 
     private var methodChannel: MethodChannel? = null
     private var assetChannel: MethodChannel? = null
+    private var pipChannel: MethodChannel? = null
     private var messenger: BinaryMessenger? = null
     private var textureRegistry: io.flutter.view.TextureRegistry? = null
     private val textureBackends = mutableMapOf<Long, TextureVideoPlayer>()
@@ -291,6 +293,12 @@ class NativeVideoPlayerPlugin(
             }
         }
 
+        // Picture-in-picture works on this engine's activity (null for an
+        // engine without one, which then reports PiP as unavailable).
+        val pip = MethodChannel(binding.binaryMessenger, PictureInPictureHandler.CHANNEL_NAME)
+        pipChannel = pip
+        pip.setMethodCallHandler(PictureInPictureHandler { activity })
+
         NpLog.d(TAG, "NativeVideoPlayerPlugin registered with id: $VIEW_TYPE")
     }
 
@@ -315,6 +323,8 @@ class NativeVideoPlayerPlugin(
         methodChannel = null
         assetChannel?.setMethodCallHandler(null)
         assetChannel = null
+        pipChannel?.setMethodCallHandler(null)
+        pipChannel = null
         registeredViews.remove(binding.binaryMessenger)?.values?.toList()?.forEach { backend ->
             backend.dispose()
         }

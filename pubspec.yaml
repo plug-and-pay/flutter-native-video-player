@@ -34,7 +34,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  floating: ^6.0.0
   # Pure-Dart mDNS for Chromecast device discovery (io-only via the
   # conditional-import facade; web/WASM gets the stub).
   multicast_dns: ^0.3.2

@@ -26,7 +26,8 @@ import 'subtitles/subtitle_overlay.dart';
 /// iOS uses native AVPlayerViewController presentation for fullscreen.
 ///
 /// **Android PiP Support:**
-/// PiP works automatically on Android using the floating package.
+/// PiP works automatically on Android from Dart fullscreen; the plugin drives
+/// the activity's picture-in-picture itself.
 /// The video aspect ratio is automatically calculated from quality information.
 /// Custom overlays are automatically hidden when entering PiP mode.
 ///

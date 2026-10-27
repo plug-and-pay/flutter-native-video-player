@@ -63,6 +63,6 @@ Both platforms have a `SharedPlayerManager` (singleton) that keeps native player
 
 ### Platform-specific behavior to keep in mind
 
-- **Android PiP** is implemented via the `floating` package and only works in Dart fullscreen mode (custom overlay controls); iOS PiP works inline via `AVPictureInPictureController`. The controller registers an app lifecycle observer on Android to hide overlays before automatic PiP.
+- **Android PiP** is implemented by the plugin itself (`handlers/PictureInPictureHandler.kt` + `lib/src/platform/android_picture_in_picture.dart`) and only works in Dart fullscreen mode (custom overlay controls); iOS PiP works inline via `AVPictureInPictureController`. The controller registers an app lifecycle observer on Android to hide overlays before automatic PiP.
 - **Android background playback** uses `VideoPlayerMediaSessionService` (Media3 MediaSessionService); the plugin's own manifest declares the service and permissions.
 - Method channel wrappers swallow most platform errors with `debugPrint` and return defaults — failures are intentionally non-throwing for playback commands.
