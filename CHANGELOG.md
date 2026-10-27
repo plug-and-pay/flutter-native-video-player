@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.7] - 2026-10-27
+
+### Fixed
+- **Builds with Android Gradle Plugin 9's built-in Kotlin.** The plugin applied
+  the Kotlin Gradle Plugin unconditionally, so an app on AGP 9 had to keep
+  `android.builtInKotlin=false`. It now applies it only on AGP 8 or when the app
+  sets `android.builtInKotlin=false`, and sets the Kotlin JVM target through
+  `kotlin { compilerOptions { } }` instead of the deprecated `kotlinOptions`.
+
+### Changed
+- **No longer depends on the `floating` package.** Android picture-in-picture
+  is now part of the plugin's own Android code, with the same behaviour:
+  `enterPictureInPicture()` from Dart fullscreen on Android 8+, automatic PiP
+  on leaving the app on Android 12+, and the same PiP status polling while
+  fullscreen. The public API is unchanged and apps need no changes.
+
 ## [1.7.6] - 2026-10-26
 
 ### Fixed
