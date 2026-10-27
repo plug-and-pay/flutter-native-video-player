@@ -73,6 +73,9 @@ android {
         testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
         testImplementation("org.robolectric:robolectric:4.14.1")
         testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.10.3")
+        // Gradle 9 no longer puts the JUnit Platform launcher on the test
+        // runtime classpath itself.
+        testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
         // 5.0.0's Byte Buddy cannot instrument classes on JDK 21 (the JDK
         // current Android Studio and Flutter use), so every spy fails.
         testImplementation("org.mockito:mockito-core:5.14.2")
