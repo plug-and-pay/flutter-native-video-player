@@ -430,12 +430,9 @@ import QuartzCore
             // Looping configuration from args
             enableLooping = args["enableLooping"] as? Bool ?? false
 
-            // Rounded corners, cut here instead of by a Flutter clip (see
-            // NativeVideoPlayer.borderRadius). Always set, also to 0: a shared
-            // view controller's view may come from a rounded tile.
-            let cornerRadius = CGFloat(args["cornerRadius"] as? Double ?? 0)
-            inlineDisplayView.layer.cornerRadius = cornerRadius
-            inlineDisplayView.layer.masksToBounds = cornerRadius > 0
+            // Always set, also to 0: a shared view controller's view may come
+            // from a rounded tile.
+            applyCornerRadius(args["cornerRadius"] as? Double ?? 0)
 
             // Audio mixing with other apps from args. Recorded right away, not
             // only on play: automatic PiP is set up before the first play.
@@ -707,6 +704,13 @@ import QuartzCore
         }
     }
 
+    /// Rounds the inline surface's corners, cut here instead of by a Flutter
+    /// clip (see NativeVideoPlayer.borderRadius).
+    func applyCornerRadius(_ cornerRadius: Double) {
+        inlineDisplayView.layer.cornerRadius = CGFloat(cornerRadius)
+        inlineDisplayView.layer.masksToBounds = cornerRadius > 0
+    }
+
     /// Makes the inline surface visible (used around PiP transitions).
     func setInlineViewVisible() {
         inlineDisplayView.isHidden = false
@@ -943,6 +947,10 @@ import QuartzCore
             handleSetShowNativeControls(call: call, result: result)
         case "setViewportSize":
             handleSetViewportSize(call: call, result: result)
+        case "setCornerRadius":
+            let args = call.arguments as? [String: Any]
+            applyCornerRadius(args?["cornerRadius"] as? Double ?? 0)
+            result(nil)
         case "captureFrame":
             handleCaptureFrame(call: call, result: result)
         case "ensureSurfaceConnected":

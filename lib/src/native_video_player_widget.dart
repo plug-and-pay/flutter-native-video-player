@@ -54,8 +54,7 @@ class NativeVideoPlayer extends StatefulWidget {
   /// layers (poster, subtitles, overlay) are clipped. A rounded Flutter clip
   /// around an iOS platform view breaks compositing on Flutter 3.47: content
   /// drawn over an earlier platform view (a drawer, a dialog) can end up
-  /// behind it. Read when the native view is created. The fullscreen player
-  /// has square corners.
+  /// behind it. The fullscreen player has square corners.
   final double borderRadius;
 
   /// Style and position for sidecar (external VTT/SRT) subtitles rendered by
@@ -335,6 +334,25 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     // fullscreen host picks up the latest one.
     if (widget.subtitleStyle != oldWidget.subtitleStyle) {
       widget.controller.setSubtitleStyle(widget.subtitleStyle);
+    }
+    // The native view got its corners with the creation params; the Flutter
+    // layers follow on rebuild, the native view only when told.
+    final int? viewId = _platformViewId;
+    if (_roundsNatively &&
+        viewId != null &&
+        widget.borderRadius != oldWidget.borderRadius) {
+      unawaited(_sendCornerRadius(viewId));
+    }
+  }
+
+  Future<void> _sendCornerRadius(int viewId) async {
+    try {
+      await const MethodChannel('native_video_player').invokeMethod<void>(
+        'setCornerRadius',
+        <String, dynamic>{'viewId': viewId, 'cornerRadius': _cornerRadius},
+      );
+    } catch (e) {
+      debugPrint('Failed to set the corner radius: $e');
     }
   }
 
