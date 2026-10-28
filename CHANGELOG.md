@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.8] - 2026-10-29
+
+### Added
+- **`borderRadius` on `NativeVideoPlayer`** for rounded inline players. Use it
+  instead of wrapping the player in a `ClipRRect`. On iOS the native view rounds
+  its own corners and only the Flutter layers on top (poster, subtitles,
+  controls overlay) are clipped; Android and texture views are clipped in
+  Flutter as before.
+
+### Fixed
+- **A rounded iOS player could show on top of a drawer or dialog.** On Flutter
+  3.47, a rounded Flutter clip around an iOS platform view clips the overlay
+  that Flutter draws above it to that view's shape. With two rounded platform
+  views on screen (two videos in a feed), whatever covers the first one (a
+  drawer, a dialog, its scrim) was cut away, so the video and its controls
+  showed through, and the rounded edge of a covered player bled through as a
+  thin outline. Flutter reverted the change on master (3.48 and later); with
+  `borderRadius` instead of a `ClipRRect` the player never has a rounded
+  Flutter clip, on any Flutter version.
+
 ## [1.7.7] - 2026-10-27
 
 ### Fixed
