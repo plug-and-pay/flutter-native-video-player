@@ -430,6 +430,13 @@ import QuartzCore
             // Looping configuration from args
             enableLooping = args["enableLooping"] as? Bool ?? false
 
+            // Rounded corners, cut here instead of by a Flutter clip (see
+            // NativeVideoPlayer.borderRadius). Always set, also to 0: a shared
+            // view controller's view may come from a rounded tile.
+            let cornerRadius = CGFloat(args["cornerRadius"] as? Double ?? 0)
+            inlineDisplayView.layer.cornerRadius = cornerRadius
+            inlineDisplayView.layer.masksToBounds = cornerRadius > 0
+
             // Audio mixing with other apps from args. Recorded right away, not
             // only on play: automatic PiP is set up before the first play.
             mixWithOthers = args["mixWithOthers"] as? Bool ?? false

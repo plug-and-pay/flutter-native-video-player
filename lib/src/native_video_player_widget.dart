@@ -41,10 +41,22 @@ class NativeVideoPlayer extends StatefulWidget {
     this.isFullscreenContext = false,
     this.subtitleStyle = const NativeVideoPlayerSubtitleStyle(),
     this.poster,
+    this.borderRadius = 0,
     super.key,
   });
 
   final NativeVideoPlayerController controller;
+
+  /// Corner radius of the inline player, in logical pixels. Use this instead
+  /// of wrapping the player in a `ClipRRect`.
+  ///
+  /// On iOS the native view rounds its own corners and only the Flutter
+  /// layers (poster, subtitles, overlay) are clipped. A rounded Flutter clip
+  /// around an iOS platform view breaks compositing on Flutter 3.47: content
+  /// drawn over an earlier platform view (a drawer, a dialog) can end up
+  /// behind it. Read when the native view is created. The fullscreen player
+  /// has square corners.
+  final double borderRadius;
 
   /// Style and position for sidecar (external VTT/SRT) subtitles rendered by
   /// the plugin's Flutter subtitle layer. Rebuild with a new style to change
@@ -482,15 +494,17 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
         if (slotEmpty)
           const SizedBox.expand()
         else if (hidden)
-          ColoredBox(
-            color: const Color(0xFF000000),
-            child: poster == null
-                ? null
-                : Image.memory(
-                    poster,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                  ),
+          _roundedFlutterContent(
+            ColoredBox(
+              color: const Color(0xFF000000),
+              child: poster == null
+                  ? null
+                  : Image.memory(
+                      poster,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
+            ),
           ),
       ],
     );
@@ -650,7 +664,27 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
       // by AVPlayerViewController can silently fail to start).
       params['lightweightInlineViews'] = true;
     }
+    if (_roundsNatively) {
+      params['cornerRadius'] = _cornerRadius;
+    }
     return params;
+  }
+
+  /// The inline player's corner radius; the fullscreen player is square.
+  double get _cornerRadius =>
+      widget.isFullscreenContext ? 0 : widget.borderRadius;
+
+  /// Whether the native view rounds its own corners (see
+  /// [NativeVideoPlayer.borderRadius]).
+  bool get _roundsNatively => defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// Clips Flutter-drawn content to the player's corners.
+  Widget _roundedFlutterContent(Widget child) {
+    if (_cornerRadius <= 0) return child;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_cornerRadius),
+      child: child,
+    );
   }
 
   /// Forces the platform view built after a PiP surface swap onto the
@@ -922,7 +956,9 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
         _maybeReportViewportSize();
         // Texture backends render as plain Flutter content (rebuilding the
         // Texture widget is free, so no caching needed).
-        return _useTextureBackend ? _textureWidget() : _coverablePlatformView();
+        if (_useTextureBackend) return _roundedFlutterContent(_textureWidget());
+        if (_roundsNatively) return _coverablePlatformView();
+        return _roundedFlutterContent(_coverablePlatformView());
       },
     );
     final Widget platformView = widget.isFullscreenContext
@@ -1014,45 +1050,56 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
             ),
           );
 
+    final List<Widget> flutterLayers;
     if (widget.overlayBuilder == null) {
-      content = Stack(children: [platformView, ?posterLayer, subtitleLayer]);
+      flutterLayers = [?posterLayer, subtitleLayer];
     } else {
-      // Wrap platform view with animated overlay in a Stack
-      content = Stack(
-        children: [
-          // Platform view
-          platformView,
-          ?posterLayer,
-          // Subtitles render below the controls overlay
-          subtitleLayer,
-          // Transparent tap layer when overlay is hidden
-          if (!_overlayVisible && !videoOut)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _toggleOverlay,
-                behavior: HitTestBehavior.opaque,
-                child: Container(color: Colors.transparent),
-              ),
+      flutterLayers = [
+        ?posterLayer,
+        // Subtitles render below the controls overlay
+        subtitleLayer,
+        // Transparent tap layer when overlay is hidden
+        if (!_overlayVisible && !videoOut)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _toggleOverlay,
+              behavior: HitTestBehavior.opaque,
+              child: Container(color: Colors.transparent),
             ),
-          // Animated overlay with tap-to-hide, isolated in its own repaint
-          // boundary so fade animations only repaint the overlay layer (a
-          // boundary around the platform view itself would be useless — it
-          // composites outside Flutter's raster cache)
-          whileVideoIn(
-            RepaintBoundary(
-              key: _overlayBoundaryKey,
-              child: FadeTransition(
-                opacity: _overlayOpacity,
-                child: GestureDetector(
-                  onTap: _overlayVisible ? _toggleOverlay : null,
-                  behavior: HitTestBehavior.deferToChild,
-                  child: IgnorePointer(
-                    ignoring: !_overlayVisible,
-                    child: widget.overlayBuilder!(context, widget.controller),
-                  ),
+          ),
+        // Animated overlay with tap-to-hide, isolated in its own repaint
+        // boundary so fade animations only repaint the overlay layer (a
+        // boundary around the platform view itself would be useless — it
+        // composites outside Flutter's raster cache)
+        whileVideoIn(
+          RepaintBoundary(
+            key: _overlayBoundaryKey,
+            child: FadeTransition(
+              opacity: _overlayOpacity,
+              child: GestureDetector(
+                onTap: _overlayVisible ? _toggleOverlay : null,
+                behavior: HitTestBehavior.deferToChild,
+                child: IgnorePointer(
+                  ignoring: !_overlayVisible,
+                  child: widget.overlayBuilder!(context, widget.controller),
                 ),
               ),
             ),
+          ),
+        ),
+      ];
+    }
+
+    if (_cornerRadius <= 0) {
+      content = Stack(children: [platformView, ...flutterLayers]);
+    } else {
+      // The video surface rounds itself; the Flutter layers on top get their
+      // own clip, so no rounded clip wraps the platform view.
+      content = Stack(
+        children: [
+          platformView,
+          Positioned.fill(
+            child: _roundedFlutterContent(Stack(children: flutterLayers)),
           ),
         ],
       );
