@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:better_native_video_player/better_native_video_player.dart';
 
 /// A modal bottom sheet for selecting subtitle tracks and configuring subtitle settings

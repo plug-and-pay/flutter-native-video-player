@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:better_native_video_player/better_native_video_player.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'subtitle_picker_modal.dart';
 
 /// Custom video overlay with controls

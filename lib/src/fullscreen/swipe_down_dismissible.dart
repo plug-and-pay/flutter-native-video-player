@@ -2,7 +2,7 @@ import 'dart:math';
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Swipe-down-to-dismiss for fullscreen pages, Instagram style: once a
 /// downward drag starts, the content follows the finger (sideways too),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:marionette_flutter/marionette_flutter.dart';
 
 import 'screens/video_list_screen_with_players.dart';

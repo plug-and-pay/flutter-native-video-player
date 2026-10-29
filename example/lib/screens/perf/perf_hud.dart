@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../services/error_counter.dart';
 import '../../services/perf_metrics.dart';

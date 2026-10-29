@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-10-29
+
+### Changed
+- **Built on `material_ui`.** The player now imports Flutter's standalone
+  [`material_ui`](https://pub.dev/packages/material_ui) package instead of
+  `package:flutter/material.dart`, so it fits apps that moved with
+  `dart fix --apply --code=migrate_design_widgets`. Nothing in the public API
+  changes.
+- **Apps still on `package:flutter/material.dart` keep working.** The progress
+  bar takes its default colours from whichever Material theme the app has, and
+  the Dart fullscreen page gives the app's own `InkWell`s an SDK `Material` as
+  well, so overlay controls don't assert with "No Material widget found".
+- Requires Flutter 3.44 / Dart 3.12 or newer, the minimum of `material_ui`.
+  Older Flutter versions keep resolving to 1.7.x.
+
 ## [1.7.8] - 2026-10-29
 
 ### Added

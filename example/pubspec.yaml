@@ -38,6 +38,7 @@ dependencies:
   # Provides the writable directory for the download demo screen.
   path_provider: ^2.1.4
 
+  material_ui: any
 dev_dependencies:
   integration_test:
     sdk: flutter

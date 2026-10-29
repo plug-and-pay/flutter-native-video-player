@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../controllers/native_video_player_controller.dart';
+import '../legacy_material_support.dart';
 import '../models/native_video_player_subtitle_style.dart';
 import '../native_video_player_widget.dart';
 import 'fullscreen_hero_transition.dart';
@@ -124,31 +125,33 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
       // fades while dragging; only the video and its controls move.
       backgroundColor: swipeable ? Colors.transparent : widget.backgroundColor,
       body: Center(
-        child: NativeVideoPlayer(
-          controller: widget.controller,
-          overlayBuilder: swipeable
-              ? (
-                  BuildContext context,
-                  NativeVideoPlayerController controller,
-                ) => ValueListenableBuilder<double>(
-                  valueListenable: _dragProgress,
-                  // Controls get out of the way as soon as a drag starts.
-                  // Nothing loaded: the overlay is all there is to see (an
-                  // app's thumbnail often lives in it), so it moves along.
-                  builder: (context, progress, child) => IgnorePointer(
-                    ignoring: progress > 0,
-                    child: Opacity(
-                      opacity: controller.hasVideoFrame
-                          ? (1 - progress * 4).clamp(0.0, 1.0)
-                          : 1,
-                      child: child,
+        child: LegacyMaterialAncestor(
+          child: NativeVideoPlayer(
+            controller: widget.controller,
+            overlayBuilder: swipeable
+                ? (
+                    BuildContext context,
+                    NativeVideoPlayerController controller,
+                  ) => ValueListenableBuilder<double>(
+                    valueListenable: _dragProgress,
+                    // Controls get out of the way as soon as a drag starts.
+                    // Nothing loaded: the overlay is all there is to see (an
+                    // app's thumbnail often lives in it), so it moves along.
+                    builder: (context, progress, child) => IgnorePointer(
+                      ignoring: progress > 0,
+                      child: Opacity(
+                        opacity: controller.hasVideoFrame
+                            ? (1 - progress * 4).clamp(0.0, 1.0)
+                            : 1,
+                        child: child,
+                      ),
                     ),
-                  ),
-                  child: overlayBuilder(context, controller),
-                )
-              : null,
-          subtitleStyle: widget.subtitleStyle,
-          isFullscreenContext: true,
+                    child: overlayBuilder(context, controller),
+                  )
+                : null,
+            subtitleStyle: widget.subtitleStyle,
+            isFullscreenContext: true,
+          ),
         ),
       ),
     );

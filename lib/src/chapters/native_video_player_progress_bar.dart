@@ -4,11 +4,12 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../controllers/native_video_player_controller.dart';
 import '../enums/native_video_player_event.dart';
+import '../legacy_material_support.dart';
 import '../models/native_video_player_chapter.dart';
 import '../native_video_player_widget.dart';
 import '../subtitles/storyboard_thumbnails.dart';
@@ -822,19 +823,18 @@ class _NativeVideoPlayerProgressBarState
   @override
   Widget build(BuildContext context) {
     final style = widget.style;
-    final sliderTheme = SliderTheme.of(context);
-    final scheme = Theme.of(context).colorScheme;
+    final hostColors = HostSliderColors.of(context);
     final played =
-        style.playedColor ?? sliderTheme.activeTrackColor ?? scheme.primary;
+        style.playedColor ?? hostColors.activeTrack ?? hostColors.primary;
     final buffered =
         style.bufferedColor ??
-        sliderTheme.secondaryActiveTrackColor ??
+        hostColors.secondaryActiveTrack ??
         Colors.white.withValues(alpha: 0.5);
     final background =
         style.backgroundColor ??
-        sliderTheme.inactiveTrackColor ??
+        hostColors.inactiveTrack ??
         Colors.white.withValues(alpha: 0.24);
-    final thumb = style.thumbColor ?? sliderTheme.thumbColor ?? played;
+    final thumb = style.thumbColor ?? hostColors.thumb ?? played;
 
     // The seek landed: follow the player again.
     if (!_dragging && _scrub != null) {

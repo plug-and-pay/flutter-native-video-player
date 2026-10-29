@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:better_native_video_player/better_native_video_player.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Demo + Marionette harness for the player-feature wave: `load(startAt:)`,
 /// A-B playback range, position checkpoints, playback analytics and

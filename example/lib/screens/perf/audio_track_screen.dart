@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:better_native_video_player/better_native_video_player.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Demo + Marionette harness for alternate audio track selection (#23/#16)
 /// using Apple's bipbop-advanced HLS example stream (multiple audio
