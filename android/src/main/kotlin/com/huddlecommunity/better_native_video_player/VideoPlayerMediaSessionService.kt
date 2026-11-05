@@ -51,6 +51,17 @@ class VideoPlayerMediaSessionService : Service() {
         @Volatile
         private var isRunning: Boolean = false
 
+        // startForegroundService issued, onStartCommand not reached yet. Stopping
+        // the service in this window makes Android throw
+        // ForegroundServiceDidNotStartInTimeException (fast shorts scrolling:
+        // play on the new page, then pause/dispose before the service started).
+        @Volatile
+        private var isStarting: Boolean = false
+
+        // stop() requested while isStarting; honoured right after startForeground.
+        @Volatile
+        private var stopRequested: Boolean = false
+
         /**
          * Promotes playback to a foreground service showing [notification].
          * Safe to call repeatedly: while already running it just refreshes the
@@ -61,11 +72,20 @@ class VideoPlayerMediaSessionService : Service() {
             pendingNotification = notification
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (isRunning) {
+                stopRequested = false
                 nm.notify(NOTIFICATION_ID, notification)
+                return
+            }
+            if (isStarting) {
+                // Start already in flight; onStartCommand picks up the latest
+                // pendingNotification. A newer start cancels a pending stop.
+                stopRequested = false
                 return
             }
             val intent = Intent(context, VideoPlayerMediaSessionService::class.java)
             try {
+                isStarting = true
+                stopRequested = false
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
                 } else {
@@ -73,6 +93,7 @@ class VideoPlayerMediaSessionService : Service() {
                     context.startService(intent)
                 }
             } catch (e: Exception) {
+                isStarting = false
                 // Android 12+ throws ForegroundServiceStartNotAllowedException if
                 // play is triggered while the app is in the background (e.g. a
                 // programmatic resume or PiP transition). Fall back to a plain
@@ -90,6 +111,11 @@ class VideoPlayerMediaSessionService : Service() {
          */
         fun stop(context: Context, removeNotification: Boolean) {
             removeNotificationOnStop = removeNotification
+            if (isStarting) {
+                // Can't stop before startForeground ran — defer to onStartCommand.
+                stopRequested = true
+                return
+            }
             context.stopService(Intent(context, VideoPlayerMediaSessionService::class.java))
         }
     }
@@ -115,8 +141,14 @@ class VideoPlayerMediaSessionService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        isStarting = false
         isRunning = true
         NpLog.d(TAG, "Foreground service started (playback)")
+        if (stopRequested) {
+            stopRequested = false
+            NpLog.d(TAG, "Stop was requested during start; stopping now")
+            stopSelf()
+        }
         // Not sticky: a system-killed service should not auto-restart with a
         // stale notification; playback recreation is driven from Dart.
         return START_NOT_STICKY
@@ -130,6 +162,8 @@ class VideoPlayerMediaSessionService : Service() {
         }
         stopForeground(flags)
         isRunning = false
+        isStarting = false
+        stopRequested = false
         NpLog.d(TAG, "Foreground service stopped (removeNotification=$removeNotificationOnStop)")
         super.onDestroy()
     }
