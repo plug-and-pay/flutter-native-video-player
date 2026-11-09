@@ -191,13 +191,18 @@ class VideoPlayerMediaSessionService : Service() {
 
         /**
          * Drops [player]'s ownership when it is released, so the remaining
-         * players can stop the service and update the notification again. If
-         * [player] was the one playing, its service and notification go too.
+         * players can stop the service and update the notification again. The
+         * notification shown is [player]'s, so it goes too (with the service if
+         * [player] was playing).
          */
         fun releaseOwner(context: Context, player: Any) {
             if (owner?.get() !== player) return
-            owner = null
-            if (isForeground) stop(context, player = null, removeNotification = true)
+            if (isForeground) {
+                owner = null
+                stop(context, player = null, removeNotification = true)
+            } else {
+                cancelNotification(context, player)
+            }
         }
 
         /**
