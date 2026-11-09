@@ -52,8 +52,9 @@ class VideoPlayerMediaSessionService : Service() {
 
         const val NOTIFICATION_ID = 1001
 
-        // The notification to promote to foreground with. Set just before the
-        // service is started; same process, so a static handoff is safe.
+        // The notification to promote to foreground with. Set by start(), and
+        // by postNotification() while STARTING so onStartCommand promotes the
+        // latest one; same process, so a static handoff is safe.
         @Volatile
         private var pendingNotification: Notification? = null
 
