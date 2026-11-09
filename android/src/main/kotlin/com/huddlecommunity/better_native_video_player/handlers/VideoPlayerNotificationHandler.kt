@@ -466,12 +466,15 @@ class VideoPlayerNotificationHandler(
      */
     fun release(removeNotification: Boolean = true) {
         stopPositionUpdates()
+        // Queued notification refreshes would otherwise start the service again
+        // for this released player.
+        handler.removeCallbacksAndMessages(null)
         player.removeListener(playerListener)
         if (removeNotification) {
             VideoPlayerMediaSessionService.stop(context, this, removeNotification = true)
             hideNotification()
         }
-        VideoPlayerMediaSessionService.releaseOwner(this)
+        VideoPlayerMediaSessionService.releaseOwner(context, this)
 
         mediaSession?.release()
         mediaSession = null
