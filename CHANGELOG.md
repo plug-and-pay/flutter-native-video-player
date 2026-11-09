@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-11-09
+
+### Fixed
+- **Android: crash when scrolling quickly through a feed of players.** Starting
+  a video and pausing or disposing it before Android had started the playback
+  service crashed the app with `ForegroundServiceDidNotStartInTimeException`
+  (shorts/reels-style feeds, usually after 5–10 fast swipes). The stop now waits
+  until the service has started. Thanks to @dejancencelj (#81).
+- **Android: one player could stop another player's background playback.** All
+  players share one playback service and one media notification, so pausing,
+  ending or disposing any player stopped the service or replaced the
+  notification of the video that was still playing, which then lost its
+  background network access. The service now belongs to the player that
+  started it; other players can no longer stop it or change its notification.
+- **Android: stale notification after a quick pause.** Pausing right after
+  pressing play could leave a "playing" notification on screen for a paused
+  video.
+- **Android: playback resumed right after a pause could lose its foreground
+  service.** Playing again while the service was still shutting down only
+  refreshed the notification of a service that was going away; it now starts
+  the service again.
+- **Android: a disposed player could keep its notification.** Releasing the
+  player that owned the notification now removes it (and stops the service if
+  it was playing), and notification updates still queued for a disposed player
+  are dropped.
+
 ## [1.8.0] - 2026-10-29
 
 ### Changed
