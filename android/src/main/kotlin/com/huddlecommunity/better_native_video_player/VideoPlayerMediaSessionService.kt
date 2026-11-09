@@ -62,6 +62,20 @@ class VideoPlayerMediaSessionService : Service() {
         @Volatile
         private var stopRequested: Boolean = false
 
+        // stopService/stopSelf issued, onDestroy not reached yet. isRunning is
+        // still true in this window, but the service is going away: a start()
+        // here must start it again instead of only refreshing the notification.
+        @Volatile
+        private var isStopping: Boolean = false
+
+        // Id of the instance that ran onStartCommand last. A restart while
+        // stopping creates a new instance; the old one's onDestroy must not
+        // reset the new one's state.
+        @Volatile
+        private var activeInstanceId: Int = 0
+
+        private var lastInstanceId: Int = 0
+
         /**
          * Promotes playback to a foreground service showing [notification].
          * Safe to call repeatedly: while already running it just refreshes the
@@ -71,8 +85,7 @@ class VideoPlayerMediaSessionService : Service() {
         fun start(context: Context, notification: Notification) {
             pendingNotification = notification
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (isRunning) {
-                stopRequested = false
+            if (isRunning && !isStopping) {
                 nm.notify(NOTIFICATION_ID, notification)
                 return
             }
@@ -116,9 +129,23 @@ class VideoPlayerMediaSessionService : Service() {
                 stopRequested = true
                 return
             }
+            if (isRunning) isStopping = true
             context.stopService(Intent(context, VideoPlayerMediaSessionService::class.java))
         }
+
+        /**
+         * Posts [notification] without foreground status (e.g. the paused state).
+         * While a start is in flight, onStartCommand would otherwise promote the
+         * older (playing) notification over this one.
+         */
+        fun postNotification(context: Context, notification: Notification) {
+            if (isStarting) pendingNotification = notification
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, notification)
+        }
     }
+
+    private val instanceId: Int = ++lastInstanceId
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -128,6 +155,8 @@ class VideoPlayerMediaSessionService : Service() {
             // No notification to show — must not leave a started service that
             // never calls startForeground (crashes on O+). Bail cleanly.
             NpLog.w(TAG, "onStartCommand with no pending notification; stopping")
+            isStarting = false
+            stopRequested = false
             stopSelf()
             return START_NOT_STICKY
         }
@@ -141,11 +170,14 @@ class VideoPlayerMediaSessionService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        activeInstanceId = instanceId
         isStarting = false
+        isStopping = false
         isRunning = true
         NpLog.d(TAG, "Foreground service started (playback)")
         if (stopRequested) {
             stopRequested = false
+            isStopping = true
             NpLog.d(TAG, "Stop was requested during start; stopping now")
             stopSelf()
         }
@@ -161,9 +193,11 @@ class VideoPlayerMediaSessionService : Service() {
             Service.STOP_FOREGROUND_DETACH
         }
         stopForeground(flags)
-        isRunning = false
-        isStarting = false
-        stopRequested = false
+        if (activeInstanceId == instanceId) {
+            activeInstanceId = 0
+            isRunning = false
+            isStopping = false
+        }
         NpLog.d(TAG, "Foreground service stopped (removeNotification=$removeNotificationOnStop)")
         super.onDestroy()
     }

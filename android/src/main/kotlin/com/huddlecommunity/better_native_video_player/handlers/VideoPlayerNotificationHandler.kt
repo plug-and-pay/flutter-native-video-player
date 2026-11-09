@@ -284,7 +284,7 @@ class VideoPlayerNotificationHandler(
                 // later notify()-based updates (artwork) are unchanged.
                 VideoPlayerMediaSessionService.start(context, notification)
             } else {
-                notificationManager.notify(NOTIFICATION_ID, notification)
+                VideoPlayerMediaSessionService.postNotification(context, notification)
             }
             NpLog.d(TAG, "Notification shown/updated (playing=${player.playWhenReady})")
         } catch (e: Exception) {
