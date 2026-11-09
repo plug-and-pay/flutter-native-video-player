@@ -84,12 +84,16 @@ class VideoPlayerMediaSessionService : Service() {
 
         private var lastInstanceId: Int = 0
 
-        private val isPlaying: Boolean
+        private val isForeground: Boolean
             get() = state == State.STARTING || state == State.RUNNING
 
         private fun isOwnedByOther(player: Any): Boolean {
             val current = owner?.get() ?: return false
             return current !== player
+        }
+
+        private fun setOwner(player: Any) {
+            if (owner?.get() !== player) owner = WeakReference(player)
         }
 
         private fun notificationManager(context: Context): NotificationManager =
@@ -103,7 +107,7 @@ class VideoPlayerMediaSessionService : Service() {
          * the background.
          */
         fun start(context: Context, player: Any, notification: Notification) {
-            owner = WeakReference(player)
+            setOwner(player)
             pendingNotification = notification
             when (state) {
                 State.RUNNING -> {
@@ -178,11 +182,20 @@ class VideoPlayerMediaSessionService : Service() {
          * visible instead of removing it.
          */
         fun postNotification(context: Context, player: Any, notification: Notification) {
-            if (isPlaying && isOwnedByOther(player)) return
-            owner = WeakReference(player)
+            if (isForeground && isOwnedByOther(player)) return
+            setOwner(player)
             removeNotificationOnStop = false
             if (state == State.STARTING) pendingNotification = notification
             notificationManager(context).notify(NOTIFICATION_ID, notification)
+        }
+
+        /**
+         * Drops [player]'s ownership when it is released without stopping the
+         * service, so the remaining players can stop it and update the
+         * notification again.
+         */
+        fun releaseOwner(player: Any) {
+            if (owner?.get() === player) owner = null
         }
 
         /**

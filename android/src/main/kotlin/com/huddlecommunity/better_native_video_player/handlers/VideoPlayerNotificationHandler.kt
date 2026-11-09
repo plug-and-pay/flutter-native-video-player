@@ -471,6 +471,7 @@ class VideoPlayerNotificationHandler(
             VideoPlayerMediaSessionService.stop(context, this, removeNotification = true)
             hideNotification()
         }
+        VideoPlayerMediaSessionService.releaseOwner(this)
 
         mediaSession?.release()
         mediaSession = null
