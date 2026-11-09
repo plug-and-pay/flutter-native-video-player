@@ -351,7 +351,7 @@ class SharedPlayerManager {
      */
     private fun stopMediaSessionService(context: Context) {
         if (managersWithPlayers.isEmpty()) {
-            VideoPlayerMediaSessionService.stop(context, removeNotification = true)
+            VideoPlayerMediaSessionService.stop(context, player = null, removeNotification = true)
         }
     }
 }

@@ -40,7 +40,6 @@ class VideoPlayerNotificationHandler(
 ) {
     companion object {
         private const val TAG = "VideoPlayerNotification"
-        private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "video_player_channel"
         private var sessionCounter = 0
     }
@@ -109,7 +108,7 @@ class VideoPlayerNotificationHandler(
             } else {
                 // Pause: drop foreground status (we're no longer streaming) but
                 // keep the notification posted so the user can resume.
-                VideoPlayerMediaSessionService.stop(context, removeNotification = false)
+                VideoPlayerMediaSessionService.stop(context, this@VideoPlayerNotificationHandler, removeNotification = false)
                 updateNotification()
                 eventHandler.sendEvent("pause")
             }
@@ -118,7 +117,7 @@ class VideoPlayerNotificationHandler(
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_ENDED, Player.STATE_IDLE -> {
-                    VideoPlayerMediaSessionService.stop(context, removeNotification = true)
+                    VideoPlayerMediaSessionService.stop(context, this@VideoPlayerNotificationHandler, removeNotification = true)
                     hideNotification()
                 }
                 Player.STATE_READY -> if (player.playWhenReady) showNotification()
@@ -282,9 +281,9 @@ class VideoPlayerNotificationHandler(
                 // so the OS keeps network access for background streaming. The
                 // service refreshes the same NOTIFICATION_ID, so appearance and
                 // later notify()-based updates (artwork) are unchanged.
-                VideoPlayerMediaSessionService.start(context, notification)
+                VideoPlayerMediaSessionService.start(context, this, notification)
             } else {
-                notificationManager.notify(NOTIFICATION_ID, notification)
+                VideoPlayerMediaSessionService.postNotification(context, this, notification)
             }
             NpLog.d(TAG, "Notification shown/updated (playing=${player.playWhenReady})")
         } catch (e: Exception) {
@@ -303,7 +302,7 @@ class VideoPlayerNotificationHandler(
      * Hides the notification
      */
     private fun hideNotification() {
-        notificationManager.cancel(NOTIFICATION_ID)
+        VideoPlayerMediaSessionService.cancelNotification(context, this)
         NpLog.d(TAG, "Notification hidden")
     }
 
@@ -467,11 +466,15 @@ class VideoPlayerNotificationHandler(
      */
     fun release(removeNotification: Boolean = true) {
         stopPositionUpdates()
+        // Queued notification refreshes would otherwise start the service again
+        // for this released player.
+        handler.removeCallbacksAndMessages(null)
         player.removeListener(playerListener)
         if (removeNotification) {
-            VideoPlayerMediaSessionService.stop(context, removeNotification = true)
+            VideoPlayerMediaSessionService.stop(context, this, removeNotification = true)
             hideNotification()
         }
+        VideoPlayerMediaSessionService.releaseOwner(context, this)
 
         mediaSession?.release()
         mediaSession = null
