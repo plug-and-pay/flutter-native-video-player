@@ -7,7 +7,9 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -17,6 +19,7 @@ import android.os.Handler
 import android.os.Looper
 import android.support.v4.media.session.MediaSessionCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -42,6 +45,15 @@ class VideoPlayerNotificationHandler(
         private const val TAG = "VideoPlayerNotification"
         private const val CHANNEL_ID = "video_player_channel"
         private var sessionCounter = 0
+
+        // Notification button actions. Each handler registers its own receiver
+        // for actions suffixed with its session id, so a tap only ever reaches
+        // the player whose notification it is.
+        private const val ACTION_PREFIX = "com.huddlecommunity.better_native_video_player.NOTIFICATION_"
+        private const val ACTION_PLAY_PAUSE = "PLAY_PAUSE"
+        private const val ACTION_REWIND = "REWIND"
+        private const val ACTION_FORWARD = "FORWARD"
+        private const val SEEK_STEP_MS = 10_000L
     }
 
     /**
@@ -77,8 +89,9 @@ class VideoPlayerNotificationHandler(
     }
 
     private var mediaSession: MediaSession? = null
+    private var sessionId: String? = null
+    private var actionReceiver: BroadcastReceiver? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var positionUpdateRunnable: Runnable? = null
     private val notificationManager: NotificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private var currentArtwork: Bitmap? = null
@@ -244,6 +257,7 @@ class VideoPlayerNotificationHandler(
 
         // Create MediaSession with unique session ID and activity (opens app when notification is tapped)
         val sessionId = "huddle_video_player_${++sessionCounter}"
+        this.sessionId = sessionId
         mediaSession = MediaSession.Builder(context, player)
             .setId(sessionId)
             .setSessionActivity(pendingIntent)
@@ -265,8 +279,63 @@ class VideoPlayerNotificationHandler(
             updateMediaMetadata(info)
         }
 
-        // Start periodic position updates
-        startPositionUpdates()
+        registerActionReceiver(sessionId)
+    }
+
+    /**
+     * Receives the notification's buttons. Android 12 and lower build the
+     * media controls (notification, quick settings player) from these
+     * actions; Android 13+ builds them from the session itself.
+     */
+    private fun registerActionReceiver(sessionId: String) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                when (intent?.action?.removePrefix(ACTION_PREFIX)?.substringBefore('.')) {
+                    ACTION_PLAY_PAUSE -> if (player.playWhenReady) player.pause() else player.play()
+                    ACTION_REWIND -> player.seekTo((player.currentPosition - SEEK_STEP_MS).coerceAtLeast(0))
+                    ACTION_FORWARD -> {
+                        val duration = player.duration
+                        val target = player.currentPosition + SEEK_STEP_MS
+                        player.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            listOf(ACTION_PLAY_PAUSE, ACTION_REWIND, ACTION_FORWARD).forEach {
+                addAction(actionName(it, sessionId))
+            }
+        }
+        try {
+            ContextCompat.registerReceiver(context.applicationContext, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            actionReceiver = receiver
+        } catch (e: Exception) {
+            NpLog.w(TAG, "Could not register the notification action receiver: ${e.message}")
+        }
+    }
+
+    private fun unregisterActionReceiver() {
+        actionReceiver?.let {
+            try {
+                context.applicationContext.unregisterReceiver(it)
+            } catch (e: Exception) {
+                NpLog.w(TAG, "Could not unregister the notification action receiver: ${e.message}")
+            }
+        }
+        actionReceiver = null
+    }
+
+    private fun actionName(action: String, sessionId: String) = "$ACTION_PREFIX$action.$sessionId"
+
+    private fun actionIntent(action: String, requestCode: Int): PendingIntent? {
+        val id = sessionId ?: return null
+        val intent = Intent(actionName(action, id)).setPackage(context.packageName)
+        return PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
     }
 
     /**
@@ -334,15 +403,15 @@ class VideoPlayerNotificationHandler(
 
         val iconResId = resolveSmallIconRes()
 
-        // Convert Media3 SessionToken to MediaSessionCompat.Token for notification
-        // Media3 1.4.0+ requires us to extract the token differently
+        // The session's platform token, as the compat token MediaStyle takes.
+        // This is what makes it a media notification: the system media
+        // controls (quick settings, lock screen) are built from it. The
+        // reflective getSessionCompatToken lookup this replaces no longer
+        // exists on current Media3, so notifications went out without it.
         val token = try {
-            // Use reflection to access the session compat token
-            val method = session.javaClass.getMethod("getSessionCompatToken")
-            method.invoke(session) as? MediaSessionCompat.Token
+            MediaSessionCompat.Token.fromToken(session.platformToken)
         } catch (e: Exception) {
-            // If reflection fails (Media3 1.4.0+), create a token from the session's underlying binder
-            NpLog.w(TAG, "getSessionCompatToken not available, using alternative method")
+            NpLog.w(TAG, "Could not get the media session token: ${e.message}")
             null
         }
 
@@ -356,12 +425,27 @@ class VideoPlayerNotificationHandler(
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
 
+        // Rewind / play-pause / forward, the same controls as the inline player.
+        val rewind = actionIntent(ACTION_REWIND, 1)
+        val playPause = actionIntent(ACTION_PLAY_PAUSE, 2)
+        val forward = actionIntent(ACTION_FORWARD, 3)
+        val hasActions = rewind != null && playPause != null && forward != null
+        if (hasActions) {
+            val playing = player.playWhenReady
+            builder.addAction(android.R.drawable.ic_media_rew, "Rewind 10 seconds", rewind)
+            builder.addAction(
+                if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                if (playing) "Pause" else "Play",
+                playPause
+            )
+            builder.addAction(android.R.drawable.ic_media_ff, "Forward 10 seconds", forward)
+        }
+
         // Only set media session token if we successfully obtained it
         if (token != null) {
-            builder.setStyle(
-                MediaNotificationCompat.MediaStyle()
-                    .setMediaSession(token)
-            )
+            val style = MediaNotificationCompat.MediaStyle().setMediaSession(token)
+            if (hasActions) style.setShowActionsInCompactView(0, 1, 2)
+            builder.setStyle(style)
         } else {
             // Fallback: create notification without media session integration
             // Controls will still work through MediaSession, just not integrated in notification
@@ -432,40 +516,10 @@ class VideoPlayerNotificationHandler(
     }
 
     /**
-     * Converts Bitmap to ByteArray
-     */
-    private fun bitmapToByteArray(bitmap: Bitmap): ByteArray {
-        val stream = java.io.ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-        return stream.toByteArray()
-    }
-
-    /**
-     * Starts periodic position updates (every second)
-     */
-    private fun startPositionUpdates() {
-        positionUpdateRunnable = object : Runnable {
-            override fun run() {
-                // Position is automatically updated by ExoPlayer/MediaSession
-                handler.postDelayed(this, 1000)
-            }
-        }
-        handler.post(positionUpdateRunnable!!)
-    }
-
-    /**
-     * Stops periodic position updates
-     */
-    private fun stopPositionUpdates() {
-        positionUpdateRunnable?.let { handler.removeCallbacks(it) }
-        positionUpdateRunnable = null
-    }
-
-    /**
      * Releases MediaSession and hides notification
      */
     fun release(removeNotification: Boolean = true) {
-        stopPositionUpdates()
+        unregisterActionReceiver()
         // Queued notification refreshes would otherwise start the service again
         // for this released player.
         handler.removeCallbacksAndMessages(null)
@@ -478,6 +532,7 @@ class VideoPlayerNotificationHandler(
 
         mediaSession?.release()
         mediaSession = null
+        sessionId = null
         currentArtwork = null
         currentArtworkUrl = null
         currentTitle = "Video"
