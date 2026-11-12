@@ -78,9 +78,12 @@ class NativeVideoPlayerController {
       FullscreenManager.setPreferredOrientations(preferredOrientations);
     }
 
-    // Set up app lifecycle listener for Android to hide overlay before PiP
-    if (!kIsWeb && Platform.isAndroid) {
-      WidgetsBinding.instance.addObserver(_AppLifecycleObserver(this));
+    // Set up app lifecycle listener for Android to hide overlay before PiP.
+    // Kept in a field so dispose() can remove it: the binding would otherwise
+    // keep every controller ever created alive for the whole app session.
+    if (debugUseAndroidLifecycleObserver ?? (!kIsWeb && Platform.isAndroid)) {
+      _appLifecycleObserver = _AppLifecycleObserver(this);
+      WidgetsBinding.instance.addObserver(_appLifecycleObserver!);
     }
 
     // Set up controller-level event channel for persistent events (PiP, AirPlay)
@@ -133,6 +136,19 @@ class NativeVideoPlayerController {
       _state.copyWith(activityState: PlayerActivityState.initialized),
     );
   }
+
+  /// Android lifecycle observer registered in the constructor; removed in
+  /// [dispose].
+  _AppLifecycleObserver? _appLifecycleObserver;
+
+  /// Tests: forces the Android lifecycle observer on (or off) regardless of
+  /// the host platform.
+  @visibleForTesting
+  static bool? debugUseAndroidLifecycleObserver;
+
+  /// Tests: whether this controller still has its lifecycle observer.
+  @visibleForTesting
+  bool get debugHasLifecycleObserver => _appLifecycleObserver != null;
 
   /// Unique identifier for this video player instance
   final int id;
@@ -3597,6 +3613,11 @@ class NativeVideoPlayerController {
     // Mark as disposed immediately to prevent new events from being added
     _isDisposed = true;
 
+    if (_appLifecycleObserver case final _AppLifecycleObserver observer?) {
+      WidgetsBinding.instance.removeObserver(observer);
+      _appLifecycleObserver = null;
+    }
+
     PipRestore.clearHandler(id, _onPictureInPictureRestore);
     _onPictureInPictureRestore = null;
 
@@ -3786,6 +3807,8 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (controller._isDisposed) return;
+
     // When app goes to background and we're in fullscreen with automatic PiP enabled,
     // hide the overlay before Android captures the screen for PiP
     if (state == AppLifecycleState.inactive &&
