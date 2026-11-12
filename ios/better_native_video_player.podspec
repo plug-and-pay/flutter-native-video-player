@@ -11,7 +11,9 @@ and Now Playing integration.
   s.license          = { :type => 'MIT', :file => '../LICENSE' }
   s.author           = { 'Dani Kemper' => 'dani@plugandpay.com' }
   s.source           = { :path => '.' }
-  s.source_files     = 'Classes/**/*.swift'
+  # The Swift Package Manager target is the single source; CocoaPods compiles the same files.
+  s.source_files     = 'better_native_video_player/Sources/better_native_video_player/**/*.swift'
+  s.resource_bundles = { 'better_native_video_player_privacy' => ['better_native_video_player/Sources/better_native_video_player/Resources/PrivacyInfo.xcprivacy'] }
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
