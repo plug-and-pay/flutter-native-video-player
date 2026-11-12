@@ -87,9 +87,9 @@ extension VideoPlayerView {
         npLog("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
 
         // Fetch qualities (async) only for HLS streams. The fetch downloads the
-        // master playlist a second time, so it starts once the item is ready
-        // to play instead of competing with the player's own startup requests,
-        // and it sends the headers the video was loaded with.
+        // master playlist a second time, so it starts a second after the item
+        // is ready to play instead of competing with the player's own startup
+        // requests, and it sends the headers the video was loaded with.
         pendingQualityFetch = nil
         if isHls {
             pendingQualityFetch = { [weak self] in
@@ -330,7 +330,14 @@ extension VideoPlayerView {
 
                 if let fetchQualities = self.pendingQualityFetch {
                     self.pendingQualityFetch = nil
-                    fetchQualities()
+                    // A moment after ready: a play started now is still
+                    // fetching its first segments, which this playlist
+                    // request would compete with. Skipped if another
+                    // item was loaded in the meantime.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak item] in
+                        guard let self = self, let item = item, self.player?.currentItem === item else { return }
+                        fetchQualities()
+                    }
                 }
 
                 // Get duration
