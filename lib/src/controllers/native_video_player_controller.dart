@@ -244,6 +244,12 @@ class NativeVideoPlayerController {
   /// side and then runs. [initialize] completes right away. A controller that
   /// is never used costs no native player, and automatic Picture-in-Picture
   /// never starts for it.
+  ///
+  /// Mainly for Android, where every tile otherwise holds a texture or
+  /// surface. On iOS the inline views are cheap: in a feed test on an iPhone,
+  /// deferring made the frames that build a new tile slower and the first
+  /// play about 30 ms later, so creating the player up front is the better
+  /// default there.
   final bool deferNativePlayer;
 
   /// Whether the native view and player may exist: always true without
