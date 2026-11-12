@@ -150,9 +150,17 @@ extension VideoPlayerView {
         // --- Build player item ---
         let playerItem: AVPlayerItem
         let asset: AVURLAsset
-        
-        // Create asset with headers if provided
-        if let headers = headers {
+
+        // A NativeVideoPlayerPreloader asset for this URL (never for DRM,
+        // whose licence flow needs a fresh asset) has its playlists loaded.
+        let preloadedAsset = drmConfig == nil
+            ? VideoPreloadPool.shared.take(url: urlString, headers: headers)
+            : nil
+
+        if let preloadedAsset = preloadedAsset {
+            asset = preloadedAsset
+        } else if let headers = headers {
+            // Create asset with headers if provided
             asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         } else {
             asset = AVURLAsset(url: url)

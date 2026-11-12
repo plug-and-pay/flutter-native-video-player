@@ -79,6 +79,20 @@ import UIKit
                 return
             }
 
+            if call.method == "setPreloadWindow" {
+                // NativeVideoPlayerPreloader: buffer the start of the videos
+                // around the current reel (see VideoPreloadPool).
+                let args = call.arguments as? [String: Any]
+                let rawItems = args?["items"] as? [[String: Any]] ?? []
+                let items: [(url: String, headers: [String: String]?)] = rawItems.compactMap { raw in
+                    guard let url = raw["url"] as? String else { return nil }
+                    return (url: url, headers: raw["headers"] as? [String: String])
+                }
+                VideoPreloadPool.shared.setWindow(items)
+                result(true)
+                return
+            }
+
             if call.method == "setupControllerEventChannel" {
                 // Called from the Dart controller constructor BEFORE Dart listens
                 // on native_video_player_controller_<id>, so the listen call always

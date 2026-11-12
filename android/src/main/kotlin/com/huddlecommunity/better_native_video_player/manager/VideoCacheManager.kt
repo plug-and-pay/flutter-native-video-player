@@ -110,10 +110,17 @@ object VideoCacheManager {
         headers: Map<String, String>?,
         precacheBytes: Long,
         cacheMaxBytes: Long,
+        shouldRun: () -> Boolean = { true },
         callback: (Boolean, String?) -> Unit
     ) {
         val appContext = context.applicationContext
         precacheExecutor.execute {
+            // Queued work the caller no longer wants (e.g. a preload window
+            // that moved on) is skipped instead of downloaded.
+            if (!shouldRun()) {
+                mainHandler.post { callback(false, "skipped") }
+                return@execute
+            }
             val result = runCatching { doPrecache(appContext, url, headers, precacheBytes, cacheMaxBytes) }
             Thread.interrupted() // clear a cancel's interrupt flag; the thread is reused
             val ok = result.isSuccess || isBudgetCancellation(result.exceptionOrNull())
