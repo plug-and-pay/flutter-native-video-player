@@ -27,7 +27,8 @@ abstract class PlayableHandle {
 /// started natively (native controls, remote commands, autoplay) is counted
 /// too. When the cap is exceeded, the least-recently-played non-exempt
 /// player is paused — never disposed or released, so resuming it is
-/// instant. With the default config (no cap) this class does nothing.
+/// instant. Controllers that share an id (one native player) count once.
+/// With the default config (no cap) this class does nothing.
 class PlaybackCoordinator {
   PlaybackCoordinator._();
 
@@ -70,25 +71,37 @@ class PlaybackCoordinator {
       return;
     }
 
-    var overBy = _playing.length - cap;
+    // Controllers that share an id drive one native player (e.g. a feed tile
+    // and the detail page showing the same video): they count as one player
+    // and never pause each other. Distinct ids, least recently played first.
+    final ids = <int>[];
+    for (final handle in _playing) {
+      ids
+        ..remove(handle.id)
+        ..add(handle.id);
+    }
+
+    var overBy = ids.length - cap;
     if (overBy <= 0) {
       return;
     }
 
     // Pause least-recently-played first; PiP/AirPlay players are exempt.
     // If only exempt players remain over the cap, exceed it (soft cap).
-    final candidates = _playing
-        .where((h) => !h.isPipActive && !h.isAirPlayConnected)
-        .toList(growable: false);
-    for (final handle in candidates) {
+    for (final id in ids) {
       if (overBy <= 0) {
         break;
       }
-      // Remove BEFORE pausing: the resulting pause event triggers
-      // onStoppedPlaying, which must be a no-op for this handle.
-      _playing.remove(handle);
+      final group = _playing.where((h) => h.id == id).toList(growable: false);
+      if (group.any((h) => h.isPipActive || h.isAirPlayConnected)) {
+        continue;
+      }
+      // Remove BEFORE pausing: the resulting pause events trigger
+      // onStoppedPlaying, which must be a no-op for these handles. One pause
+      // stops the shared player for the whole group.
+      _playing.removeWhere((h) => h.id == id);
       overBy--;
-      unawaited(handle.pauseForCap());
+      unawaited(group.last.pauseForCap());
     }
   }
 }
