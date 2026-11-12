@@ -138,6 +138,9 @@ class SharedPlayerManager {
             // while actually playing and releases them on pause/stop, so there
             // is no battery cost when idle. Requires android.permission.WAKE_LOCK.
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            // Step of the media notification's rewind / forward buttons
+            .setSeekBackIncrementMs(VideoPlayerNotificationHandler.SEEK_STEP_MS)
+            .setSeekForwardIncrementMs(VideoPlayerNotificationHandler.SEEK_STEP_MS)
         if (prioritizeActivePlayback) {
             builder.setPriorityTaskManager(sharedPriorityTaskManager)
             // Start demoted: loading-while-paused yields to playing players.
@@ -351,7 +354,7 @@ class SharedPlayerManager {
      */
     private fun stopMediaSessionService(context: Context) {
         if (managersWithPlayers.isEmpty()) {
-            VideoPlayerMediaSessionService.stop(context, player = null, removeNotification = true)
+            VideoPlayerMediaSessionService.stopAll()
         }
     }
 }

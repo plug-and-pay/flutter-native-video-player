@@ -3,39 +3,30 @@ package com.huddlecommunity.better_native_video_player.handlers
 import com.huddlecommunity.better_native_video_player.NpLog
 import com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.support.v4.media.session.MediaSessionCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import androidx.media.app.NotificationCompat as MediaNotificationCompat
+import android.net.Uri
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
-import androidx.media3.session.SessionToken
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.URL
+import com.google.common.collect.ImmutableList
 
 /**
- * Handles MediaSession and notification controls for lock screen and notification area
- * Equivalent to iOS VideoPlayerNowPlayingHandler
+ * The player's Media3 MediaSession: lock screen, notification, quick settings
+ * media player, headset and Bluetooth buttons. Equivalent to iOS
+ * VideoPlayerNowPlayingHandler.
+ *
+ * The notification itself is Media3's, shown by [VideoPlayerMediaSessionService]
+ * while this player is the one that started playing last. It carries the
+ * title, subtitle and artwork from the media info, with rewind 10 s,
+ * play/pause and forward 10 s.
  */
+@UnstableApi
 class VideoPlayerNotificationHandler(
     private val context: Context,
     private val player: ExoPlayer,
@@ -43,18 +34,24 @@ class VideoPlayerNotificationHandler(
 ) {
     companion object {
         private const val TAG = "VideoPlayerNotification"
-        private const val CHANNEL_ID = "video_player_channel"
         private var sessionCounter = 0
 
-        // Notification button actions. Each handler registers its own receiver
-        // for actions suffixed with its session id, so a tap only ever reaches
-        // the player whose notification it is.
-        private const val ACTION_PREFIX = "com.huddlecommunity.better_native_video_player.NOTIFICATION_"
-        private const val ACTION_PLAY_PAUSE = "PLAY_PAUSE"
-        private const val ACTION_REWIND = "REWIND"
-        private const val ACTION_FORWARD = "FORWARD"
-        private const val SEEK_STEP_MS = 10_000L
+        /** Seek step of the notification's rewind and forward buttons. */
+        const val SEEK_STEP_MS = 10_000L
     }
+
+    private var mediaSession: MediaSession? = null
+
+    // Media info last applied, to skip replacing the media item when nothing changed.
+    private var currentTitle: String = "Video"
+    private var currentSubtitle: String = ""
+    private var currentArtworkUrl: String? = null
+
+    // A mixing player (creation param `mixWithOthers`: muted feed tile,
+    // background loop) shows no media notification and starts no media
+    // session or foreground service: that would put it on the lock screen and
+    // take the media controls from a real video. Play/pause events still go out.
+    var mixWithOthers: Boolean = false
 
     /**
      * The status-bar small icon must be a flat, alpha-only drawable — Android tints it, so a
@@ -88,71 +85,26 @@ class VideoPlayerNotificationHandler(
         return context.applicationInfo.icon
     }
 
-    private var mediaSession: MediaSession? = null
-    private var sessionId: String? = null
-    private var actionReceiver: BroadcastReceiver? = null
-    private val handler = Handler(Looper.getMainLooper())
-    private val notificationManager: NotificationManager =
-        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private var currentArtwork: Bitmap? = null
-    private var currentArtworkUrl: String? = null // Track which artwork we're currently loading
-
-    // Store current metadata separately to avoid reading stale data from player
-    private var currentTitle: String = "Video"
-    private var currentSubtitle: String = ""
-
-    // A mixing player (creation param `mixWithOthers`: muted feed tile,
-    // background loop) shows no media notification and starts no media
-    // session or foreground service: that would put it on the lock screen and
-    // take the media controls from a real video. Play/pause events still go out.
-    var mixWithOthers: Boolean = false
-
-    init {
-        createNotificationChannel()
-    }
-
     private val playerListener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (playWhenReady) {
-                // showNotification() promotes playback to a foreground service so
-                // the OS keeps the app's network alive for background streaming.
-                showNotification()
+                // The player that starts playing takes the notification; Media3
+                // runs the service in the foreground while it plays, which keeps
+                // the app's network alive for background streaming.
+                showInNotification()
                 eventHandler.sendEvent("play")
             } else {
-                // Pause: drop foreground status (we're no longer streaming) but
-                // keep the notification posted so the user can resume.
-                VideoPlayerMediaSessionService.stop(context, this@VideoPlayerNotificationHandler, removeNotification = false)
-                updateNotification()
+                // Pause: Media3 drops foreground status and keeps a dismissible
+                // notification so the user can resume.
                 eventHandler.sendEvent("pause")
             }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_ENDED, Player.STATE_IDLE -> {
-                    VideoPlayerMediaSessionService.stop(context, this@VideoPlayerNotificationHandler, removeNotification = true)
-                    hideNotification()
-                }
-                Player.STATE_READY -> if (player.playWhenReady) showNotification()
+                Player.STATE_ENDED, Player.STATE_IDLE -> hideFromNotification()
+                Player.STATE_READY -> if (player.playWhenReady) showInNotification()
             }
-        }
-    }
-
-    /**
-     * Creates notification channel for Android O+
-     */
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Video Player",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Media playback controls"
-                setShowBadge(false)
-            }
-            notificationManager.createNotificationChannel(channel)
-            NpLog.d(TAG, "Notification channel created")
         }
     }
 
@@ -165,21 +117,20 @@ class VideoPlayerNotificationHandler(
     }
 
     /**
-     * Updates the player's current MediaItem metadata (title, artist, album)
-     * This is essential for MediaSession to display correct info in notification
+     * Writes title, artist, album and artwork into the player's current
+     * MediaItem, which the session (and so the notification) reads.
      */
     private fun updatePlayerMediaItemMetadata(mediaInfo: Map<String, Any>?) {
         if (mediaInfo == null) return
 
         val currentItem = player.currentMediaItem ?: return
 
-        // Build new metadata from mediaInfo
         val metadataBuilder = MediaMetadata.Builder()
         (mediaInfo["title"] as? String)?.let { metadataBuilder.setTitle(it) }
         (mediaInfo["subtitle"] as? String)?.let { metadataBuilder.setArtist(it) }
         (mediaInfo["album"] as? String)?.let { metadataBuilder.setAlbumTitle(it) }
+        (mediaInfo["artworkUrl"] as? String)?.let { metadataBuilder.setArtworkUri(Uri.parse(it)) }
 
-        // Create updated MediaItem with new metadata
         val updatedItem = currentItem.buildUpon()
             .setMediaMetadata(metadataBuilder.build())
             .build()
@@ -195,57 +146,32 @@ class VideoPlayerNotificationHandler(
     }
 
     /**
-     * Sets up MediaSession with metadata (title, subtitle, artwork)
-     * Similar to iOS MPNowPlayingInfoCenter - shows on lock screen when playing
-     * MediaSession automatically provides lock screen controls and system media notification
+     * Sets up the MediaSession with metadata (title, subtitle, artwork).
+     * Similar to iOS MPNowPlayingInfoCenter - shows on the lock screen and in
+     * the media notification while playing.
      */
     fun setupMediaSession(mediaInfo: Map<String, Any>?) {
         if (mixWithOthers) return
 
-        // Extract metadata from the provided info
         val newTitle = (mediaInfo?.get("title") as? String) ?: "Video"
         val newSubtitle = (mediaInfo?.get("subtitle") as? String) ?: ""
-
-        // Check if media info has actually changed to avoid unnecessary updates
-        val mediaInfoChanged = (newTitle != currentTitle || newSubtitle != currentSubtitle)
-
-        // Store the new metadata
+        val newArtworkUrl = mediaInfo?.get("artworkUrl") as? String
+        val mediaInfoChanged = newTitle != currentTitle || newSubtitle != currentSubtitle ||
+            newArtworkUrl != currentArtworkUrl
         currentTitle = newTitle
         currentSubtitle = newSubtitle
+        currentArtworkUrl = newArtworkUrl
         NpLog.d(TAG, "📱 Media info - title: $currentTitle, subtitle: $currentSubtitle, changed: $mediaInfoChanged")
 
-        // If MediaSession already exists, only update if media info changed
         if (mediaSession != null) {
-            // Only update MediaItem if the info actually changed to avoid playback interruptions
-            if (mediaInfoChanged) {
-                NpLog.d(TAG, "📱 MediaSession exists - media info changed, updating metadata")
-                currentArtwork = null // Clear old artwork
-                currentArtworkUrl = null // Clear artwork URL to ignore pending loads
-
-                // Update the player's MediaItem with the new metadata
-                updatePlayerMediaItemMetadata(mediaInfo)
-
-                // Load new artwork asynchronously
-                mediaInfo?.let { info ->
-                    updateMediaMetadata(info)
-                }
-
-                // Update notification with new info
-                handler.post {
-                    if (player.playWhenReady) {
-                        updateNotification()
-                        NpLog.d(TAG, "✅ Notification updated with new media info")
-                    }
-                }
-            } else {
-                NpLog.d(TAG, "📱 MediaSession exists - media info unchanged, skipping update to avoid interruption")
-            }
+            // Only replace the MediaItem when the info changed, to avoid playback interruptions
+            if (mediaInfoChanged) updatePlayerMediaItemMetadata(mediaInfo)
+            if (player.playWhenReady) showInNotification()
             return
         }
 
-        // Create pending intent to launch app when notification is clicked
-        val packageManager = context.packageManager
-        val intent = packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+        // Tapping the notification opens the app
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         } ?: Intent()
         val pendingIntent = PendingIntent.getActivity(
@@ -255,288 +181,68 @@ class VideoPlayerNotificationHandler(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Create MediaSession with unique session ID and activity (opens app when notification is tapped)
         val sessionId = "huddle_video_player_${++sessionCounter}"
-        this.sessionId = sessionId
         mediaSession = MediaSession.Builder(context, player)
             .setId(sessionId)
             .setSessionActivity(pendingIntent)
+            // Rewind 10 s / play-pause / forward 10 s, like the inline controls
+            .setMediaButtonPreferences(
+                ImmutableList.of(
+                    CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
+                        .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                        .setDisplayName("Rewind 10 seconds")
+                        .setSlots(CommandButton.SLOT_BACK)
+                        .build(),
+                    CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_10)
+                        .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                        .setDisplayName("Forward 10 seconds")
+                        .setSlots(CommandButton.SLOT_FORWARD)
+                        .build()
+                )
+            )
             .build()
 
-        // Add listener to track play/pause events
         player.addListener(playerListener)
-
         NpLog.d(TAG, "MediaSession created - lock screen and notification controls active")
 
-        // Set metadata on the player's MediaItem first (for MediaSession to use)
-        mediaInfo?.let { info ->
-            updatePlayerMediaItemMetadata(info)
-            NpLog.d(TAG, "Initial MediaItem metadata set for new MediaSession")
-        }
+        mediaInfo?.let { updatePlayerMediaItemMetadata(it) }
 
-        // Load artwork asynchronously if provided
-        mediaInfo?.let { info ->
-            updateMediaMetadata(info)
-        }
-
-        registerActionReceiver(sessionId)
+        if (player.playWhenReady) showInNotification()
     }
 
     /**
-     * Receives the notification's buttons. Android 12 and lower build the
-     * media controls (notification, quick settings player) from these
-     * actions; Android 13+ builds them from the session itself.
-     */
-    private fun registerActionReceiver(sessionId: String) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context?, intent: Intent?) {
-                when (intent?.action?.removePrefix(ACTION_PREFIX)?.substringBefore('.')) {
-                    ACTION_PLAY_PAUSE -> if (player.playWhenReady) player.pause() else player.play()
-                    ACTION_REWIND -> player.seekTo((player.currentPosition - SEEK_STEP_MS).coerceAtLeast(0))
-                    ACTION_FORWARD -> {
-                        val duration = player.duration
-                        val target = player.currentPosition + SEEK_STEP_MS
-                        player.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
-                    }
-                }
-            }
-        }
-        val filter = IntentFilter().apply {
-            listOf(ACTION_PLAY_PAUSE, ACTION_REWIND, ACTION_FORWARD).forEach {
-                addAction(actionName(it, sessionId))
-            }
-        }
-        try {
-            ContextCompat.registerReceiver(context.applicationContext, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-            actionReceiver = receiver
-        } catch (e: Exception) {
-            NpLog.w(TAG, "Could not register the notification action receiver: ${e.message}")
-        }
-    }
-
-    private fun unregisterActionReceiver() {
-        actionReceiver?.let {
-            try {
-                context.applicationContext.unregisterReceiver(it)
-            } catch (e: Exception) {
-                NpLog.w(TAG, "Could not unregister the notification action receiver: ${e.message}")
-            }
-        }
-        actionReceiver = null
-    }
-
-    private fun actionName(action: String, sessionId: String) = "$ACTION_PREFIX$action.$sessionId"
-
-    private fun actionIntent(action: String, requestCode: Int): PendingIntent? {
-        val id = sessionId ?: return null
-        val intent = Intent(actionName(action, id)).setPackage(context.packageName)
-        return PendingIntent.getBroadcast(
-            context,
-            requestCode,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-    }
-
-    /**
-     * Shows or updates the media notification
-     */
-    private fun showNotification() {
-        if (mixWithOthers) return
-        try {
-            val notification = buildNotification()
-            if (player.playWhenReady) {
-                // While playing, the notification must back a foreground service
-                // so the OS keeps network access for background streaming. The
-                // service refreshes the same NOTIFICATION_ID, so appearance and
-                // later notify()-based updates (artwork) are unchanged.
-                VideoPlayerMediaSessionService.start(context, this, notification)
-            } else {
-                VideoPlayerMediaSessionService.postNotification(context, this, notification)
-            }
-            NpLog.d(TAG, "Notification shown/updated (playing=${player.playWhenReady})")
-        } catch (e: Exception) {
-            NpLog.e(TAG, "Error showing notification: ${e.message}", e)
-        }
-    }
-
-    /**
-     * Updates the existing notification
-     */
-    private fun updateNotification() {
-        showNotification()
-    }
-
-    /**
-     * Hides the notification
-     */
-    private fun hideNotification() {
-        VideoPlayerMediaSessionService.cancelNotification(context, this)
-        NpLog.d(TAG, "Notification hidden")
-    }
-
-    /**
-     * Builds the media notification
-     */
-    private fun buildNotification(): Notification {
-        val session = mediaSession ?: throw IllegalStateException("MediaSession not initialized")
-
-        // Read metadata from the player's current MediaItem (source of truth for MediaSession)
-        // This ensures the notification always shows what the MediaSession is actually playing
-        val mediaMetadata = player.currentMediaItem?.mediaMetadata
-        val title = mediaMetadata?.title?.toString() ?: currentTitle
-        val artist = mediaMetadata?.artist?.toString() ?: currentSubtitle
-
-        // Create pending intent for the notification
-        val packageManager = context.packageManager
-        val intent = packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        } ?: Intent()
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        NpLog.d(TAG, "Building notification - title: $title, subtitle: $artist (from player: ${mediaMetadata != null})")
-
-        val iconResId = resolveSmallIconRes()
-
-        // The session's platform token, as the compat token MediaStyle takes.
-        // This is what makes it a media notification: the system media
-        // controls (quick settings, lock screen) are built from it. The
-        // reflective getSessionCompatToken lookup this replaces no longer
-        // exists on current Media3, so notifications went out without it.
-        val token = try {
-            MediaSessionCompat.Token.fromToken(session.platformToken)
-        } catch (e: Exception) {
-            NpLog.w(TAG, "Could not get the media session token: ${e.message}")
-            null
-        }
-
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(artist)
-            .setSmallIcon(iconResId)
-            .setLargeIcon(currentArtwork)
-            .setContentIntent(contentIntent)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setOnlyAlertOnce(true)
-            .setShowWhen(false)
-
-        // Rewind / play-pause / forward, the same controls as the inline player.
-        val rewind = actionIntent(ACTION_REWIND, 1)
-        val playPause = actionIntent(ACTION_PLAY_PAUSE, 2)
-        val forward = actionIntent(ACTION_FORWARD, 3)
-        val hasActions = rewind != null && playPause != null && forward != null
-        if (hasActions) {
-            val playing = player.playWhenReady
-            builder.addAction(android.R.drawable.ic_media_rew, "Rewind 10 seconds", rewind)
-            builder.addAction(
-                if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
-                if (playing) "Pause" else "Play",
-                playPause
-            )
-            builder.addAction(android.R.drawable.ic_media_ff, "Forward 10 seconds", forward)
-        }
-
-        // Only set media session token if we successfully obtained it
-        if (token != null) {
-            val style = MediaNotificationCompat.MediaStyle().setMediaSession(token)
-            if (hasActions) style.setShowActionsInCompactView(0, 1, 2)
-            builder.setStyle(style)
-        } else {
-            // Fallback: create notification without media session integration
-            // Controls will still work through MediaSession, just not integrated in notification
-            NpLog.w(TAG, "Creating notification without MediaSession token integration")
-        }
-
-        return builder.build()
-    }
-
-    /**
-     * Updates media metadata (title, artist, artwork)
-     * This is called after the MediaItem is already set, so we just load artwork
-     * The base metadata was already set when creating the MediaItem
+     * Kept for callers that update media info separately; artwork is now
+     * loaded by Media3 from the MediaItem's artwork URI.
      */
     fun updateMediaMetadata(mediaInfo: Map<String, Any>) {
         if (mixWithOthers) return
+        setupMediaSession(mediaInfo)
+    }
 
-        // Load artwork asynchronously if present and update the notification
-        val artworkUrl = mediaInfo["artworkUrl"] as? String
-        if (artworkUrl != null) {
-            currentArtworkUrl = artworkUrl // Track the current artwork URL
-            loadArtwork(artworkUrl) { bitmap ->
-                // Only use this artwork if it's still the current one (prevent race conditions)
-                if (artworkUrl != currentArtworkUrl) {
-                    NpLog.d(TAG, "Ignoring outdated artwork for $artworkUrl")
-                    return@loadArtwork
-                }
+    private fun showInNotification() {
+        if (mixWithOthers) return
+        val session = mediaSession ?: return
+        VideoPlayerMediaSessionService.show(context, session, resolveSmallIconRes())
+    }
 
-                bitmap?.let {
-                    currentArtwork = it
-
-                    // Update notification directly with the new artwork
-                    // DO NOT call replaceMediaItem here as it can interrupt playback
-                    // The notification will use currentArtwork automatically
-                    if (player.playWhenReady) {
-                        handler.post {
-                            updateNotification()
-                            NpLog.d(TAG, "Artwork loaded and notification updated for $artworkUrl")
-                        }
-                    } else {
-                        NpLog.d(TAG, "Artwork loaded but player not ready, will show on next play")
-                    }
-                }
-            }
-        }
-
-        NpLog.d(TAG, "Media metadata setup complete")
+    private fun hideFromNotification() {
+        val session = mediaSession ?: return
+        VideoPlayerMediaSessionService.hide(session)
     }
 
     /**
-     * Loads artwork from URL
+     * Releases the MediaSession; its notification goes with it. [removeNotification]
+     * is kept for source compatibility: a released session can't stay in the
+     * notification, and another player's notification is never touched.
      */
-    private fun loadArtwork(url: String, callback: (Bitmap?) -> Unit) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val connection = URL(url).openConnection()
-                val bitmap = BitmapFactory.decodeStream(connection.getInputStream())
-                withContext(Dispatchers.Main) {
-                    callback(bitmap)
-                }
-            } catch (e: Exception) {
-                NpLog.e(TAG, "Error loading artwork: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    callback(null)
-                }
-            }
-        }
-    }
-
-    /**
-     * Releases MediaSession and hides notification
-     */
-    fun release(removeNotification: Boolean = true) {
-        unregisterActionReceiver()
-        // Queued notification refreshes would otherwise start the service again
-        // for this released player.
-        handler.removeCallbacksAndMessages(null)
+    fun release(@Suppress("UNUSED_PARAMETER") removeNotification: Boolean = true) {
         player.removeListener(playerListener)
-        if (removeNotification) {
-            VideoPlayerMediaSessionService.stop(context, this, removeNotification = true)
-            hideNotification()
-        }
-        VideoPlayerMediaSessionService.releaseOwner(context, this)
-
+        hideFromNotification()
         mediaSession?.release()
         mediaSession = null
-        sessionId = null
-        currentArtwork = null
-        currentArtworkUrl = null
         currentTitle = "Video"
         currentSubtitle = ""
+        currentArtworkUrl = null
         NpLog.d(TAG, "MediaSession released")
     }
 }

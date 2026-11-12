@@ -29,14 +29,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time-to-first-frame readout.
 
 ### Changed
-- **Android: the media notification is a real media notification again.**
-  The code that attached the media session to the notification used a Media3
-  method that no longer exists, so notifications went out without their
-  session: no media player in quick settings or on the lock screen on
-  Android 11–12. They now carry the session, and on Android 12 and lower they
-  have rewind, play/pause and forward buttons (Android 13+ builds the
-  controls from the session itself, as before). If you style or test the
-  notification, expect the media layout and buttons.
+- **Android: the media notification is now Media3's own.** The plugin's
+  foreground service is a Media3 `MediaSessionService`, and Media3 builds the
+  notification from the player's session: title, subtitle, artwork from
+  `artworkUrl`, and rewind 10 s, play/pause and forward 10 s. 1.8.1 built the
+  notification by hand and attached the session with a Media3 method that no
+  longer exists, so it had no media player in quick settings or on the lock
+  screen on Android 11–12. Media3 also handles the foreground-service rules
+  (foreground while playing, a dismissible notification after a pause, and
+  Android 12+ background-start limits), which the plugin did itself before.
+  What stays the same: one notification for all players, owned by the player
+  that started playing last; a mixing player never shows one; disposing the
+  player removes it; a drawable named `ic_notification` (or the FCM default
+  notification icon) is the small icon. If you style or test the
+  notification, expect the media layout. After a crash, the service no longer
+  restarts by itself with an empty notification.
 - **Android: Media3 1.11.1** (was 1.5.0).
 - **Android: built-in Kotlin.** The plugin no longer applies the Kotlin
   Gradle Plugin itself and relies on AGP's built-in Kotlin, following

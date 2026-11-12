@@ -634,6 +634,8 @@ NativeVideoPlayerController(
 );
 ```
 
+On Android the notification is Media3's media notification: the title, subtitle and artwork above, with rewind 10 s, play/pause and forward 10 s, and the same controls in quick settings, on the lock screen and on Bluetooth/headset buttons. All players share one notification, owned by the player that started playing last. For the status-bar icon, add a monochrome drawable named `ic_notification` to your app (the FCM `default_notification_icon` is used otherwise, then the launcher icon).
+
 Don't want background playback for a player? Use `BackgroundPlaybackGuard`:
 
 ```dart
