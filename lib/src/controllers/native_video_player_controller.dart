@@ -71,8 +71,9 @@ class NativeVideoPlayerController {
     this.showNativeControls = true,
     this.preventFullscreenSwipeDismiss = true,
     this.fullscreenFlightBorderRadius = BorderRadius.zero,
+    this.deferNativePlayer = false,
     List<DeviceOrientation>? preferredOrientations,
-  }) {
+  }) : _nativePlayerRequested = ValueNotifier<bool>(!deferNativePlayer) {
     // Set preferred orientations if provided
     if (preferredOrientations != null) {
       FullscreenManager.setPreferredOrientations(preferredOrientations);
@@ -86,7 +87,9 @@ class NativeVideoPlayerController {
       WidgetsBinding.instance.addObserver(_appLifecycleObserver!);
     }
 
-    // Set up controller-level event channel for persistent events (PiP, AirPlay)
+    // Set up controller-level event channel for persistent events (PiP, AirPlay).
+    // Also for a deferNativePlayer controller: it creates no player or view,
+    // and AirPlay availability reaches the controls through it.
     _controllerChannelSetupFuture = _setupControllerEventChannel();
 
     // iOS waits for an answer before the PiP window flies back.
@@ -94,7 +97,27 @@ class NativeVideoPlayerController {
   }
 
   /// Initialize the controller and wait for the platform view to be created
+  ///
+  /// With [deferNativePlayer] this completes right away without creating
+  /// anything native; the native player is created on first use.
   Future<void> initialize() async {
+    if (_isInitialized) {
+      return;
+    }
+
+    if (!_nativePlayerRequested.value) {
+      if (!_state.activityState.isInitialized) {
+        _updateState(
+          _state.copyWith(activityState: PlayerActivityState.initialized),
+        );
+      }
+      return;
+    }
+
+    await _initializeNative();
+  }
+
+  Future<void> _initializeNative() async {
     if (_isInitialized) {
       return;
     }
@@ -207,6 +230,77 @@ class NativeVideoPlayerController {
   /// screen. Match it to the clip around your inline player (e.g. a card
   /// with rounded corners). Defaults to square.
   final BorderRadius fullscreenFlightBorderRadius;
+
+  /// Create the native view and player on first use instead of when the
+  /// widget is built (default: false).
+  ///
+  /// For feeds where most videos are never played. Until the first [load],
+  /// [play], [seekTo], fullscreen, Picture-in-Picture, AirPlay picker, or
+  /// track/quality/speed call, [NativeVideoPlayer] shows its Flutter layers
+  /// (poster, subtitles, controls overlay) over black, exactly as an unloaded
+  /// player looks, but no platform view, texture or native player exists.
+  /// Only the lightweight controller-level event channel is set up (it
+  /// carries AirPlay availability). The first such call creates the native
+  /// side and then runs. [initialize] completes right away. A controller that
+  /// is never used costs no native player, and automatic Picture-in-Picture
+  /// never starts for it.
+  final bool deferNativePlayer;
+
+  /// Whether the native view and player may exist: always true without
+  /// [deferNativePlayer], otherwise from the first use on. Read by
+  /// [NativeVideoPlayer] to build the platform view or texture.
+  final ValueNotifier<bool> _nativePlayerRequested;
+
+  /// Internal: [NativeVideoPlayer] builds the native view once this is true.
+  @internal
+  ValueListenable<bool> get nativePlayerRequested => _nativePlayerRequested;
+
+  /// Whether the native player exists or is being created. False for a
+  /// [deferNativePlayer] controller that was never used.
+  bool get hasNativePlayer => _nativePlayerRequested.value;
+
+  /// Internal: a [NativeVideoPlayer] showing a [deferNativePlayer] controller
+  /// that has no native view yet. A created view sends the current state to
+  /// every listener when it attaches (duration, PiP availability, activity);
+  /// this does the same, so controls built on those streams show their
+  /// initial values exactly as with a native view.
+  @internal
+  void onDeferredViewAttached() {
+    if (_isDisposed || _nativePlayerRequested.value) return;
+    _emitCurrentState();
+    if (_activityEventHandlers.isNotEmpty) {
+      final PlayerActivityEvent currentActivityEvent = PlayerActivityEvent(
+        state: _state.activityState,
+        data: null,
+      );
+      for (final handler in _activityEventHandlers) {
+        handler(currentActivityEvent);
+      }
+    }
+  }
+
+  /// How long first use waits for a [NativeVideoPlayer] to create the view.
+  static const Duration _nativeCreationTimeout = Duration(seconds: 10);
+
+  /// Creates the native view and player of a [deferNativePlayer] controller
+  /// (no-op otherwise, or once created) and waits until they are ready.
+  Future<void> _ensureNativePlayer() async {
+    // Without deferNativePlayer every call behaves exactly as before 1.9.0.
+    if (!deferNativePlayer || _isDisposed) return;
+    if (!_nativePlayerRequested.value) {
+      _nativePlayerRequested.value = true;
+    }
+    if (_isInitialized && _methodChannel != null) return;
+    try {
+      await _initializeNative().timeout(_nativeCreationTimeout);
+    } on TimeoutException {
+      throw StateError(
+        'NativeVideoPlayerController($id) was used before a NativeVideoPlayer '
+        'widget created its native view. With deferNativePlayer, show the '
+        'controller in a NativeVideoPlayer before loading or playing.',
+      );
+    }
+  }
 
   /// The view Dart fullscreen opens from, flies out of and lands back in:
   /// the one the user is looking at. With one controller on two screens (a
@@ -1810,6 +1904,9 @@ class NativeVideoPlayerController {
     _posterGeneration++;
     _posterFrame = null;
 
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
+
     // Check if initialized - if method channel exists and platform view is created,
     // consider it initialized even if _isInitialized flag hasn't been set yet
     if (!_isInitialized &&
@@ -1858,63 +1955,59 @@ class NativeVideoPlayerController {
 
     _playReportedDuringLoad = false;
 
-    try {
-      await _methodChannel!.load(
-        url: url,
-        autoPlay: autoPlay,
-        headers: headers,
-        mediaInfo: mediaInfo?.toMap(),
-        drmConfig: drmConfig,
-        // Android attaches URL sources natively (MediaItem.SubtitleConfiguration)
-        // so captions can also render in PiP/native fullscreen; iOS and
-        // non-URL sources render through the Flutter overlay only.
-        sidecarSubtitles: _androidSidecarMaps(sidecarSubtitles),
-        startAtMs: startAt?.inMilliseconds,
+    await _methodChannel!.load(
+      url: url,
+      autoPlay: autoPlay,
+      headers: headers,
+      mediaInfo: mediaInfo?.toMap(),
+      drmConfig: drmConfig,
+      // Android attaches URL sources natively (MediaItem.SubtitleConfiguration)
+      // so captions can also render in PiP/native fullscreen; iOS and
+      // non-URL sources render through the Flutter overlay only.
+      sidecarSubtitles: _androidSidecarMaps(sidecarSubtitles),
+      startAtMs: startAt?.inMilliseconds,
+    );
+
+    // Re-apply the embedded caption text scale to the fresh player item.
+    if (_embeddedTextScale != 1.0) {
+      await _methodChannel!.setEmbeddedTextScale(_embeddedTextScale);
+    }
+
+    // The native load (re)created the player, so any pending eviction
+    // re-load is satisfied.
+    _needsReloadAfterEviction = false;
+
+    // Fetch available qualities after loading
+    final qualities = await _methodChannel!.getAvailableQualities();
+
+    // With autoplay (or a play() racing the load) native has already
+    // reported `play` by now. Android sends no further play event, so
+    // writing `loaded` here would leave the state stale while it plays.
+    final bool isAlreadyPlaying =
+        _playReportedDuringLoad &&
+        _state.activityState == PlayerActivityState.playing;
+    _updateState(
+      _state.copyWith(
+        qualities: qualities,
+        activityState: isAlreadyPlaying
+            ? PlayerActivityState.playing
+            : PlayerActivityState.loaded,
+      ),
+    );
+
+    // Notify control listeners about available qualities
+    if (qualities.isNotEmpty) {
+      final qualityEvent = PlayerControlEvent(
+        state: PlayerControlState.qualityChanged,
+        data: {
+          'qualities': qualities.map((q) => q.toMap()).toList(),
+          if (qualities.isNotEmpty) 'quality': qualities.first.toMap(),
+        },
       );
 
-      // Re-apply the embedded caption text scale to the fresh player item.
-      if (_embeddedTextScale != 1.0) {
-        await _methodChannel!.setEmbeddedTextScale(_embeddedTextScale);
+      for (final handler in _controlEventHandlers) {
+        handler(qualityEvent);
       }
-
-      // The native load (re)created the player, so any pending eviction
-      // re-load is satisfied.
-      _needsReloadAfterEviction = false;
-
-      // Fetch available qualities after loading
-      final qualities = await _methodChannel!.getAvailableQualities();
-
-      // With autoplay (or a play() racing the load) native has already
-      // reported `play` by now. Android sends no further play event, so
-      // writing `loaded` here would leave the state stale while it plays.
-      final bool isAlreadyPlaying =
-          _playReportedDuringLoad &&
-          _state.activityState == PlayerActivityState.playing;
-      _updateState(
-        _state.copyWith(
-          qualities: qualities,
-          activityState: isAlreadyPlaying
-              ? PlayerActivityState.playing
-              : PlayerActivityState.loaded,
-        ),
-      );
-
-      // Notify control listeners about available qualities
-      if (qualities.isNotEmpty) {
-        final qualityEvent = PlayerControlEvent(
-          state: PlayerControlState.qualityChanged,
-          data: {
-            'qualities': qualities.map((q) => q.toMap()).toList(),
-            if (qualities.isNotEmpty) 'quality': qualities.first.toMap(),
-          },
-        );
-
-        for (final handler in _controlEventHandlers) {
-          handler(qualityEvent);
-        }
-      }
-    } catch (e) {
-      rethrow;
     }
   }
 
@@ -2012,6 +2105,8 @@ class NativeVideoPlayerController {
   /// (see [NativeVideoPlayerConfig.iosMaxTotalPlayers]), the last source is
   /// transparently re-loaded at the pre-eviction position first.
   Future<void> play() async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     if (_needsReloadAfterEviction) {
       await _reloadEvictedSource();
     }
@@ -2038,6 +2133,8 @@ class NativeVideoPlayerController {
   /// For a live stream the position is within the seekable (DVR) window,
   /// the way [currentPosition] reports it.
   Future<void> seekTo(Duration position) async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     final Duration target = position.isNegative ? Duration.zero : position;
     _pendingSeekTarget = target;
     _pendingSeekSince = DateTime.now();
@@ -2219,6 +2316,8 @@ class NativeVideoPlayerController {
   /// Jumps a live stream back to its live edge, for a "Live" button after
   /// the viewer paused or scrubbed back. Does nothing for VOD.
   Future<void> seekToLiveEdge() async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     _pendingSeekTarget = null;
     await _methodChannel?.seekToLiveEdge();
   }
@@ -2402,12 +2501,16 @@ class NativeVideoPlayerController {
 
   /// Sets the volume
   Future<void> setVolume(double volume) async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     await _methodChannel?.setVolume(volume);
     _updateState(_state.copyWith(volume: volume));
   }
 
   /// Sets the playback speed
   Future<void> setSpeed(double speed) async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     await _methodChannel?.setSpeed(speed);
   }
 
@@ -2425,11 +2528,15 @@ class NativeVideoPlayerController {
 
   /// Sets whether the video should loop
   Future<void> setLooping(bool looping) async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     await _methodChannel?.setLooping(looping);
   }
 
   /// Sets the video quality
   Future<void> setQuality(NativeVideoPlayerQuality quality) async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     await _methodChannel?.setQuality(quality);
   }
 
@@ -2479,6 +2586,8 @@ class NativeVideoPlayerController {
   /// [NativeVideoPlayerSubtitleTrack.source]). Pass a track with index -1 or
   /// use NativeVideoPlayerSubtitleTrack.off() to disable subtitles.
   Future<void> setSubtitleTrack(NativeVideoPlayerSubtitleTrack track) async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     _lastSubtitleTrack = track;
 
     if (track.source == SubtitleTrackSource.sidecar) {
@@ -2516,6 +2625,8 @@ class NativeVideoPlayerController {
   /// Selects an alternate audio track from [getAvailableAudioTracks].
   /// Control listeners receive a [PlayerControlState.audioTrackChanged] event.
   Future<void> setAudioTrack(NativeVideoPlayerAudioTrack track) async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     await _methodChannel?.setAudioTrack(track);
   }
 
@@ -2799,6 +2910,8 @@ class NativeVideoPlayerController {
   /// Only works on iOS 14+ and Android 8+
   /// For Android, only works when video is in fullscreen
   Future<bool> enterPictureInPicture() async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     // Android: the plugin's activity-level PiP
     if (!kIsWeb && Platform.isAndroid) {
       // Only allow PiP when in fullscreen
@@ -2814,9 +2927,7 @@ class NativeVideoPlayerController {
         // Give overlay time to hide
         await Future.delayed(const Duration(milliseconds: 200));
 
-        final bool entered = await _androidPip.enterNow(
-          _getPiPAspectRatio(),
-        );
+        final bool entered = await _androidPip.enterNow(_getPiPAspectRatio());
         if (entered) {
           // Reflect PiP immediately so the subtitle overlay hides without
           // waiting for the next poll tick; the poll then tracks the exit.
@@ -3026,6 +3137,8 @@ class NativeVideoPlayerController {
   /// Enters fullscreen mode
   /// Uses Dart fullscreen if custom overlay is present, otherwise uses native fullscreen
   Future<void> enterFullScreen() async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     if (_state.isFullScreen) {
       return;
     }
@@ -3440,6 +3553,8 @@ class NativeVideoPlayerController {
   /// **Returns:**
   /// A Future that completes when the picker is shown (or immediately on Android)
   Future<void> showAirPlayPicker() async {
+    // A deferNativePlayer controller creates its native player now.
+    await _ensureNativePlayer();
     if (_methodChannel == null) {
       return;
     }

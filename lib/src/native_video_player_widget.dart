@@ -192,7 +192,25 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
       _swapRequestSubscription = widget.controller.surfaceSwapRequests.listen(
         _handleSurfaceSwapRequest,
       );
-      unawaited(_createTextureBackend());
+      if (widget.controller.nativePlayerRequested.value) {
+        _textureBackendStarted = true;
+        unawaited(_createTextureBackend());
+      }
+    }
+    // A deferNativePlayer controller asks for its native player on first
+    // use; until then this view builds no platform view or texture.
+    widget.controller.nativePlayerRequested.addListener(_handleNativeRequested);
+    if (!widget.controller.nativePlayerRequested.value) {
+      // Once listeners in the overlay are subscribed: after the first frame,
+      // and on the next event-loop turn, because async* stream wrappers
+      // (e.g. Riverpod stream providers) only subscribe in a microtask after
+      // the build. A native view's attach arrives that late as well.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _deferredAttachTimer = Timer(Duration.zero, () {
+          if (mounted) widget.controller.onDeferredViewAttached();
+        });
+      });
     }
 
     // Set up animation controller for overlay fade
@@ -327,9 +345,34 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     _reportedViewportSize = null;
   }
 
+  /// Whether this view started creating its texture backend.
+  bool _textureBackendStarted = false;
+
+  /// Sends a deferred controller's current state once the overlay listens.
+  Timer? _deferredAttachTimer;
+
+  /// The controller now wants its native player (first use of a
+  /// deferNativePlayer controller): create the texture or platform view.
+  void _handleNativeRequested() {
+    if (!mounted || !widget.controller.nativePlayerRequested.value) return;
+    if (_useTextureBackend && !_textureBackendStarted) {
+      _textureBackendStarted = true;
+      unawaited(_createTextureBackend());
+    }
+    setState(() {});
+  }
+
   @override
   void didUpdateWidget(NativeVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      oldWidget.controller.nativePlayerRequested.removeListener(
+        _handleNativeRequested,
+      );
+      widget.controller.nativePlayerRequested.addListener(
+        _handleNativeRequested,
+      );
+    }
     // Keep the controller's cached style in sync (e.g. theme change) so the
     // fullscreen host picks up the latest one.
     if (widget.subtitleStyle != oldWidget.subtitleStyle) {
@@ -577,6 +620,10 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
       _swapOldTextureViewId = null;
     }
 
+    _deferredAttachTimer?.cancel();
+    widget.controller.nativePlayerRequested.removeListener(
+      _handleNativeRequested,
+    );
     widget.controller.removeControlListener(_handleControlEvent);
     widget.controller.removeActivityListener(_handleActivityEvent);
     widget.controller.fullscreenFlightPhase.removeListener(_handleFlightPhase);
@@ -972,6 +1019,15 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
         _lastConstraints = constraints;
         _devicePixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
         _maybeReportViewportSize();
+        // A deferNativePlayer controller that wasn't used yet: black, as an
+        // unloaded player looks; the Flutter layers on top are unchanged.
+        // Expanded like a platform view: the Stack around it is loose, and
+        // the overlay is sized from this child.
+        if (!widget.controller.nativePlayerRequested.value) {
+          return _roundedFlutterContent(
+            const SizedBox.expand(child: ColoredBox(color: Colors.black)),
+          );
+        }
         // Texture backends render as plain Flutter content (rebuilding the
         // Texture widget is free, so no caching needed).
         if (_useTextureBackend) return _roundedFlutterContent(_textureWidget());
