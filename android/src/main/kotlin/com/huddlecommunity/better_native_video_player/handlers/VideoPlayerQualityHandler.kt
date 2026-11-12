@@ -1,5 +1,8 @@
 package com.huddlecommunity.better_native_video_player.handlers
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.hls.HlsManifest
 import com.huddlecommunity.better_native_video_player.NpLog
 
 import kotlinx.coroutines.Dispatchers
@@ -26,9 +29,47 @@ object VideoPlayerQualityHandler {
      * @param url The M3U8 playlist URL
      * @return List of quality maps with metadata
      */
-    suspend fun fetchHLSQualities(url: String): List<Map<String, Any>> = withContext(Dispatchers.IO) {
+    /**
+     * The quality list from the HLS manifest the player already downloaded:
+     * no extra request, and it works for streams that need headers. Same shape
+     * as [fetchHLSQualities] ("Auto" first, then variants by height). Returns
+     * null when [manifest] is not an HLS manifest yet.
+     */
+    @OptIn(UnstableApi::class)
+    fun qualitiesFromManifest(manifest: Any?): List<Map<String, Any>>? {
+        val hls = manifest as? HlsManifest ?: return null
+        val qualities = hls.multivariantPlaylist.variants.mapNotNull { variant ->
+            val format = variant.format
+            if (format.width <= 0 || format.height <= 0) return@mapNotNull null
+            val bitrate = if (format.bitrate > 0) format.bitrate else format.peakBitrate
+            QualityLevel(
+                url = variant.url.toString(),
+                label = "${format.width}x${format.height}",
+                bitrate = if (bitrate > 0) bitrate else 0,
+                width = format.width,
+                height = format.height
+            )
+        }.sortedBy { it.height }
+        val result = mutableListOf<Map<String, Any>>()
+        result.add(mapOf("label" to "Auto", "url" to (qualities.firstOrNull()?.url ?: ""), "isAuto" to true))
+        result.addAll(qualities.map { quality ->
+            mapOf(
+                "label" to quality.label,
+                "url" to quality.url,
+                "bitrate" to quality.bitrate,
+                "width" to quality.width,
+                "height" to quality.height,
+                "isAuto" to false
+            )
+        })
+        NpLog.d(TAG, "Read ${qualities.size} quality variants from the player's HLS manifest")
+        return result
+    }
+
+    suspend fun fetchHLSQualities(url: String, headers: Map<String, String>? = null): List<Map<String, Any>> = withContext(Dispatchers.IO) {
         try {
             val connection = URL(url).openConnection()
+            headers?.forEach { (key, value) -> connection.setRequestProperty(key, value) }
             val playlist = connection.getInputStream().bufferedReader().use { it.readText() }
 
             val qualities = mutableListOf<QualityLevel>()

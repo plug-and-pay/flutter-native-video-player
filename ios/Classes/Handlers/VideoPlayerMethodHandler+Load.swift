@@ -86,9 +86,14 @@ extension VideoPlayerView {
         let isHls = isHlsUrl(url)
         npLog("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
 
-        // Fetch qualities (async) only for HLS streams
+        // Fetch qualities (async) only for HLS streams. The fetch downloads the
+        // master playlist a second time, so it starts once the item is ready
+        // to play instead of competing with the player's own startup requests,
+        // and it sends the headers the video was loaded with.
+        pendingQualityFetch = nil
         if isHls {
-            VideoPlayerQualityHandler.fetchHLSQualities(from: url) { [weak self] qualities in
+            pendingQualityFetch = { [weak self] in
+            VideoPlayerQualityHandler.fetchHLSQualities(from: url, headers: headers) { [weak self] qualities in
             guard let self = self else { return }
 
             self.qualityLevels = qualities
@@ -135,6 +140,7 @@ extension VideoPlayerView {
                     "isAuto": defaultQuality["isAuto"] as? Bool ?? true
                 ])
                 npLog("🎬 Sent qualityChange event with \(result.count) available qualities")
+            }
             }
             }
         } else {
@@ -321,6 +327,11 @@ extension VideoPlayerView {
             switch item.status {
             case .readyToPlay:
                 npLog("🎬 Video ready to play")
+
+                if let fetchQualities = self.pendingQualityFetch {
+                    self.pendingQualityFetch = nil
+                    fetchQualities()
+                }
 
                 // Get duration
                 let duration = item.duration

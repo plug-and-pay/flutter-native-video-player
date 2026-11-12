@@ -89,6 +89,8 @@ import QuartzCore
     var hasPlayerStateObservers = false
     var availableQualities: [[String: Any]] = []
     var qualityLevels: [VideoPlayer.QualityLevel] = []
+    /// HLS quality-list fetch waiting for the item to become ready to play.
+    var pendingQualityFetch: (() -> Void)?
     var isAutoQuality = false
     /// True while the user has pinned a specific resolution via setQuality.
     /// Suppresses the automatic viewport cap (see applyViewportCapIfAppropriate)

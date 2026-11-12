@@ -404,10 +404,13 @@ class VideoPlayerMethodHandler(
             NpLog.d(TAG, "🎨 HDR enabled - allowing native HDR playback")
         }
 
-        // Fetch qualities asynchronously for HLS streams
+        // Qualities for HLS streams: read from the manifest the player loads
+        // anyway (no second download of the master playlist, headers and the
+        // disk cache apply). Falls back to fetching the playlist (with the
+        // load's headers) if the player is ready without an HLS manifest.
         if (url.contains(".m3u8")) {
-            CoroutineScope(Dispatchers.Main).launch {
-                availableQualities = VideoPlayerQualityHandler.fetchHLSQualities(url)
+            val publishQualities: (List<Map<String, Any>>) -> Unit = { qualities ->
+                availableQualities = qualities
                 NpLog.d(TAG, "Fetched ${availableQualities.size} qualities")
 
                 // Store in SharedPlayerManager if this is a shared player
@@ -426,6 +429,37 @@ class VideoPlayerMethodHandler(
                     NpLog.d(TAG, "Sent qualityChange event with ${availableQualities.size} available qualities")
                 }
             }
+            val qualityListener = object : androidx.media3.common.Player.Listener {
+                private var done = false
+                private fun finish(qualities: List<Map<String, Any>>) {
+                    if (done) return
+                    done = true
+                    player.removeListener(this)
+                    publishQualities(qualities)
+                }
+                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                    VideoPlayerQualityHandler.qualitiesFromManifest(player.currentManifest)?.let { finish(it) }
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    // A failed load never gets a manifest; don't stay attached.
+                    done = true
+                    player.removeListener(this)
+                }
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState != androidx.media3.common.Player.STATE_READY || done) return
+                    val fromManifest = VideoPlayerQualityHandler.qualitiesFromManifest(player.currentManifest)
+                    if (fromManifest != null) {
+                        finish(fromManifest)
+                    } else {
+                        done = true
+                        player.removeListener(this)
+                        CoroutineScope(Dispatchers.Main).launch {
+                            publishQualities(VideoPlayerQualityHandler.fetchHLSQualities(url, headers))
+                        }
+                    }
+                }
+            }
+            player.addListener(qualityListener)
         }
 
         // NOTE: Media session will be set up when playback starts (in VideoPlayerObserver)
