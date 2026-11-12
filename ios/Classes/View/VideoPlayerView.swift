@@ -847,9 +847,11 @@ import QuartzCore
         }
         do {
             let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: options)
-            try AVAudioSession.sharedInstance().setActive(true, options: [])
-            npLog("✅ AVAudioSession configured for movie playback and activated (mixWithOthers: \(mixWithOthers))")
+            // Skips the blocking media-server calls when nothing changed
+            // (this runs on every play).
+            let changed = try AudioSessionCoordinator.shared.ensurePlaybackCategory(options: options)
+            try AudioSessionCoordinator.shared.activate(force: changed)
+            npLog("✅ AVAudioSession configured for movie playback and activated (mixWithOthers: \(mixWithOthers), changed: \(changed))")
         } catch {
             npLog("❌ Audio session error: \(error.localizedDescription)")
         }
@@ -861,9 +863,11 @@ import QuartzCore
     /// mixable category back (unless such a video is playing).
     func reactivateAudioSession() throws {
         if mixWithOthers && !SharedPlayerManager.shared.isNonMixingPlaybackActive() {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+            try AudioSessionCoordinator.shared.ensurePlaybackCategory(options: [.mixWithOthers])
         }
-        try AVAudioSession.sharedInstance().setActive(true)
+        // Recovery paths (foreground, background, interruption end): always
+        // activate, as before.
+        try AudioSessionCoordinator.shared.activate(force: true)
     }
 
     /// Whether this view may (re)activate the non-mixable playback session.
