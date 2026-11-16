@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../platform/platform_utils.dart';
 import '../platform/video_player_method_channel.dart';
@@ -226,16 +227,16 @@ class AirPlayStateManager {
   /// ```
   Future<void> showAirPlayPicker() async {
     // AirPlay is only available on iOS
-    if (!PlatformUtils.isIOS) {
+    if (!_isIOS) {
       return;
     }
 
     final channel = _anyMethodChannel;
     if (channel == null) {
-      throw StateError(
-        'No video player controller available. '
-        'Create a NativeVideoPlayerController before showing the AirPlay picker.',
-      );
+      // The picker presents from the key window, so it needs no player view
+      // (e.g. an unplayed tile whose controller defers its native player).
+      await _pluginChannel.invokeMethod<void>('showAirPlayPicker');
+      return;
     }
     await channel.showAirPlayPicker();
   }
@@ -259,7 +260,7 @@ class AirPlayStateManager {
   /// ```
   Future<void> disconnectAirPlay() async {
     // AirPlay is only available on iOS
-    if (!PlatformUtils.isIOS) {
+    if (!_isIOS) {
       return;
     }
 
@@ -293,7 +294,7 @@ class AirPlayStateManager {
   /// ```
   Future<void> init() async {
     // AirPlay is only available on iOS
-    if (!PlatformUtils.isIOS) {
+    if (!_isIOS) {
       return;
     }
 
@@ -301,12 +302,25 @@ class AirPlayStateManager {
 
     final channel = _anyMethodChannel;
     if (channel == null) {
-      // No channel available yet - detection will start automatically
-      // when the first video player controller is created
+      // No player view yet (none created, or every controller defers its
+      // native player): route detection is global, so start it through the
+      // plugin channel instead of waiting for a view.
+      await _pluginChannel.invokeMethod<void>('startAirPlayDetection');
       return;
     }
     await channel.startAirPlayDetection();
   }
+
+  /// Tests: treat the host as iOS (or not) regardless of the real platform.
+  @visibleForTesting
+  static bool? debugIsIOSOverride;
+
+  static bool get _isIOS => debugIsIOSOverride ?? PlatformUtils.isIOS;
+
+  /// Plugin-level channel for AirPlay actions that need no player view.
+  static const MethodChannel _pluginChannel = MethodChannel(
+    'native_video_player',
+  );
 
   /// Disposes all stream controllers and stops AirPlay device detection
   ///
@@ -316,9 +330,15 @@ class AirPlayStateManager {
   /// as this is a singleton instance.
   Future<void> dispose() async {
     // Stop AirPlay detection if a channel is available (iOS only)
-    if (PlatformUtils.isIOS) {
+    if (_isIOS) {
       final channel = _anyMethodChannel;
-      if (channel != null) {
+      if (channel == null) {
+        try {
+          await _pluginChannel.invokeMethod<void>('stopAirPlayDetection');
+        } catch (e) {
+          debugPrint('Failed to stop AirPlay detection: $e');
+        }
+      } else {
         try {
           await channel.stopAirPlayDetection();
         } catch (e) {

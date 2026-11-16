@@ -130,7 +130,12 @@ extension VideoPlayerView {
         }
 
         // --- Playback duration & elapsed time ---
-        if let duration = player?.currentItem?.asset.duration {
+        // The item's duration, not `asset.duration`: reading an AVAsset
+        // property that hasn't loaded blocks the calling (main) thread, and
+        // this runs every time playback starts. The item reports `.indefinite`
+        // until it knows the duration (and for live), which the
+        // `isFinite` check below skips.
+        if let duration = player?.currentItem?.duration {
             let durationSeconds = CMTimeGetSeconds(duration)
             if durationSeconds.isFinite {
                 nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = durationSeconds
@@ -341,6 +346,17 @@ extension VideoPlayerView {
         }
 
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = player.rate
+
+        // Now Playing can be set up before the item knows its duration
+        // (setupNowPlayingInfo reads the item's duration, which is
+        // `.indefinite` until the item is ready); fill it in once known.
+        if nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] == nil,
+           let duration = player.currentItem?.duration {
+            let durationSeconds = CMTimeGetSeconds(duration)
+            if durationSeconds.isFinite {
+                nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = durationSeconds
+            }
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }
 }

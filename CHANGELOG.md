@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-11-12
+
+### Added
+- **`deferNativePlayer` on `NativeVideoPlayerController`.** With
+  `deferNativePlayer: true`, `NativeVideoPlayer` shows its Flutter layers
+  (poster, subtitles, your controls overlay) over black and creates no native
+  player, platform view or texture until the video is first used: `load`,
+  `play`, `seekTo`, fullscreen, PiP, the AirPlay picker, or a speed, volume,
+  quality or track change. `initialize()` completes right away. Meant for
+  Android feeds where most videos are never played; on iOS the inline views
+  are cheap enough that creating the player up front scrolled better in our
+  tests. Off by default.
+- **`NativeVideoPlayerPreloader` for reels-style feeds.** Call
+  `setWindow(items, currentIndex)` when the page changes and the next two
+  videos and the previous one are preloaded; a controller that later loads
+  one of those URLs starts from the preloaded data automatically. On iOS the
+  video's asset is loaded ahead (the HLS playlists, or a file's header) and
+  `load()` starts from it when the URL and headers match. On Android the
+  first segments go into the disk cache, so it needs `androidEnableDiskCache`. DRM sources
+  are never preloaded, at most three items are held, and anything that
+  leaves the window is released. The example app has a reels screen with a
+  time-to-first-frame readout.
+
+### Changed
+- **Android: the media notification is now Media3's own.** The plugin's
+  foreground service is a Media3 `MediaSessionService`, and Media3 builds the
+  notification from the player's session: title, subtitle, artwork from
+  `artworkUrl`, and rewind 10 s, play/pause and forward 10 s. 1.8.1 built the
+  notification by hand and attached the session with a Media3 method that no
+  longer exists, so it had no media player in quick settings or on the lock
+  screen on Android 11–12. Media3 also handles the foreground-service rules
+  (foreground while playing, a dismissible notification after a pause, and
+  Android 12+ background-start limits), which the plugin did itself before.
+  What stays the same: one notification for all players, owned by the player
+  that started playing last; a mixing player never shows one; disposing the
+  player removes it; a drawable named `ic_notification` (or the FCM default
+  notification icon) is the small icon. If you style or test the
+  notification, expect the media layout. After a crash, the service no longer
+  restarts by itself with an empty notification.
+- **Android: Media3 1.11.1** (was 1.5.0).
+- **Android: built-in Kotlin.** The plugin no longer applies the Kotlin
+  Gradle Plugin itself and relies on AGP's built-in Kotlin, following
+  Flutter's migration guide for plugins. Nothing changes for apps on
+  Flutter 3.44+. Upgrading from 1.8.x needs no `flutter clean`: the plugin
+  drops the Kotlin Gradle Plugin's leftover build state once, which otherwise
+  made the first build after the upgrade fail with unresolved references.
+- **iOS: Swift Package Manager is the single source.** CocoaPods now builds
+  the same files as the Swift package, and both ship the privacy manifest
+  (`PrivacyInfo.xcprivacy`), which neither build included before.
+- **The HLS quality list no longer downloads the playlist a second time.**
+  Android reads the qualities from the playlist the player already loaded.
+  iOS still has to fetch it, but now sends the headers the video was loaded
+  with (streams behind a token or Referer showed no qualities before) and
+  waits until the video is ready, so it no longer competes with startup.
+- **AirPlay route detection and the AirPlay picker work before any player
+  view exists** (for example with `deferNativePlayer`).
+
+### Fixed
+- **Opening a playing video's detail page paused it when
+  `maxConcurrentPlayingPlayers` was set.** The feed tile and the detail page
+  share one player through the same controller `id`, but the cap counted them
+  as two players and paused the older one, which stopped the shared video.
+  Controllers that share an `id` now count as one player.
+- **Android: every controller stayed in memory forever.** Each controller
+  registered an app-lifecycle observer that was never removed, so disposed
+  controllers (with their streams and state) were kept alive and still got
+  lifecycle calls.
+- **iOS: pressing play could block the main thread.** Now Playing read the
+  asset's duration synchronously on every play, and the audio session was
+  configured and activated again on every play. Both now happen only when
+  something changed.
+- **Android: a 1-second timer per player that did nothing** was removed.
+
 ## [1.8.1] - 2026-11-09
 
 ### Fixed

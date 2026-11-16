@@ -49,6 +49,13 @@ extension VideoPlayerView {
     }
 
     func handleShowAirPlayPicker(result: @escaping FlutterResult) {
+        VideoPlayerView.presentAirPlayPicker(result: result)
+    }
+
+    /// Shows the system AirPlay picker from the key window. Needs no player
+    /// view, so the plugin channel uses it too (an unplayed tile whose
+    /// controller defers its native player has none).
+    static func presentAirPlayPicker(result: @escaping FlutterResult) {
         // Check iOS version - AVRoutePickerView requires iOS 11.0+
         guard #available(iOS 11.0, *) else {
             result(FlutterError(code: "NOT_SUPPORTED", message: "AirPlay picker requires iOS 11.0+", details: nil))

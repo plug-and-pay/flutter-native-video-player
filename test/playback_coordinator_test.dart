@@ -217,4 +217,47 @@ void main() {
 
     expect(a.pauseForCapCalls, 1);
   });
+
+  test('controllers sharing an id count once and never pause each other', () {
+    setCap(1);
+    final tile = FakeHandle(7);
+    final detail = FakeHandle(7); // same video on the detail page
+    coordinator
+      ..onPlaying(tile)
+      ..onPlaying(detail);
+
+    expect(tile.pauseForCapCalls, 0);
+    expect(detail.pauseForCapCalls, 0);
+    expect(coordinator.playingCount, 2);
+  });
+
+  test('a shared-id group over the cap is paused once, as one player', () {
+    setCap(1);
+    final tile = FakeHandle(7);
+    final detail = FakeHandle(7);
+    final other = FakeHandle(8);
+    coordinator
+      ..onPlaying(tile)
+      ..onPlaying(detail)
+      ..onPlaying(other);
+
+    expect(tile.pauseForCapCalls + detail.pauseForCapCalls, 1);
+    expect(other.pauseForCapCalls, 0);
+    expect(coordinator.playingCount, 1);
+  });
+
+  test('a shared-id group with one member in PiP is exempt', () {
+    setCap(1);
+    final tile = FakeHandle(7);
+    final pip = FakeHandle(7, isPipActive: true);
+    final other = FakeHandle(8);
+    coordinator
+      ..onPlaying(tile)
+      ..onPlaying(pip)
+      ..onPlaying(other);
+
+    expect(tile.pauseForCapCalls + pip.pauseForCapCalls, 0);
+    // As for a single PiP player: the next non-exempt one is paused instead.
+    expect(other.pauseForCapCalls, 1);
+  });
 }

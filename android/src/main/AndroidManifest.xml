@@ -1,7 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <!-- Foreground service that keeps the app's network alive for background
-             video playback (live + VOD). Started only while playing. -->
+        <!-- Media3 MediaSessionService: shows the media notification and runs in
+             the foreground while a video plays, which keeps the app's network
+             alive for background playback (live + VOD). No MediaSessionService
+             intent-filter: Media3 would then route Bluetooth play keys to this
+             service after the app died, which has no player to resume. -->
         <service
             android:name="com.huddlecommunity.better_native_video_player.VideoPlayerMediaSessionService"
             android:exported="false"

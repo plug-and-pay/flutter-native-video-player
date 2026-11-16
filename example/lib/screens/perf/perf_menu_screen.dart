@@ -10,6 +10,7 @@ import 'nav_loop_screen.dart';
 import 'pip_screen.dart';
 import 'player_features_screen.dart';
 import 'playlist_screen.dart';
+import 'reels_screen.dart';
 import 'scroll_feed_screen.dart';
 import 'sidecar_subtitle_screen.dart';
 import 'stress_feed_screen.dart';
@@ -48,6 +49,11 @@ class PerfMenuScreen extends StatelessWidget {
             key: const ValueKey('perf_scroll_feed'),
             title: const Text('Scroll feed — 30 players'),
             onTap: () => _push(context, const ScrollFeedScreen()),
+          ),
+          ListTile(
+            key: const ValueKey('perf_reels'),
+            title: const Text('Reels — preloading (scenario C)'),
+            onTap: () => _push(context, const ReelsScreen()),
           ),
           ListTile(
             key: const ValueKey('perf_nav_loop'),

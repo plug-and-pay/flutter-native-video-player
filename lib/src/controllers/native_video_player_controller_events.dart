@@ -66,6 +66,23 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
     final map = eventMap as Map<dynamic, dynamic>;
     final String eventName = map['event'] as String;
 
+    // PiP availability: a deferNativePlayer controller has no view to ask
+    // yet, so it takes the device support the controller channel reports when
+    // it attaches (same rule as isPictureInPictureAvailable: allowed by the
+    // controller, iOS only; Android offers PiP from fullscreen). Once a view
+    // exists it answers as before.
+    if (eventName == 'pipAvailabilityChanged') {
+      if (deferNativePlayer &&
+          !_nativePlayerRequested.value &&
+          !kIsWeb &&
+          !Platform.isAndroid) {
+        final bool isAvailable =
+            allowsPictureInPicture && (map['isAvailable'] as bool? ?? false);
+        _updateState(_state.copyWith(isPipAvailable: isAvailable));
+      }
+      return;
+    }
+
     // Handle PiP events
     if (eventName == 'pipStart' || eventName == 'pipStop') {
       final bool isPipEnabled = eventName == 'pipStart';

@@ -634,6 +634,8 @@ NativeVideoPlayerController(
 );
 ```
 
+On Android the notification is Media3's media notification: the title, subtitle and artwork above, with rewind 10 s, play/pause and forward 10 s, and the same controls in quick settings, on the lock screen and on Bluetooth/headset buttons. All players share one notification, owned by the player that started playing last. For the status-bar icon, add a monochrome drawable named `ic_notification` to your app (the FCM `default_notification_icon` is used otherwise, then the launcher icon).
+
 Don't want background playback for a player? Use `BackgroundPlaybackGuard`:
 
 ```dart
@@ -912,6 +914,32 @@ NativeVideoPlayerConfig.global = const NativeVideoPlayerConfig(
 await NativeVideoPlayerCache.precache('https://example.com/next.m3u8');
 ```
 
+**Create players on first use** in feeds where most videos are never played (Android):
+
+```dart
+NativeVideoPlayerController(id: post.id, deferNativePlayer: Platform.isAndroid);
+```
+
+The tile shows your overlay over black and creates no native player, platform view or texture until the first `load`, `play`, `seekTo`, fullscreen, PiP, AirPlay or track/quality/speed call; `initialize()` returns right away. On iOS, inline views are cheap enough that creating the player up front scrolled better in our tests, so we only recommend it on Android.
+
+**Reels: preload the neighbours.** `NativeVideoPlayerPreloader` keeps the next two videos and the previous one preloaded; a controller that loads one of them starts from the preloaded data:
+
+```dart
+final preloader = NativeVideoPlayerPreloader();
+final items = [for (final r in reels) NativeVideoPlayerPreloadItem(url: r.url, headers: r.headers)];
+
+PageView.builder(
+  scrollDirection: Axis.vertical,
+  onPageChanged: (index) => preloader.setWindow(items, index),
+  itemBuilder: ...,
+);
+
+// When the feed closes:
+preloader.dispose();
+```
+
+iOS loads each item's asset ahead (the HLS playlists, or a file's header) and `load()` starts from it (same URL and headers). Android writes the first segments to the disk cache, so it needs `androidEnableDiskCache: true`. DRM sources are skipped, at most three items are held, and items that leave the window are released. Use one preloader per feed. The example app's *Performance harness → Reels* screen shows the time to first frame with and without it.
+
 **Texture mode** (experimental). Platform views claim drag gestures that start on a video, which kills a feed's fling momentum; textures don't. The trade-off: video frames go through Flutter's raster thread, which costs more with many large tiles on mid-range Android phones. FairPlay content and tiles with automatic PiP keep using platform views, and a manual `enterPictureInPicture()` swaps a texture tile to a platform view seamlessly. See [`PERFORMANCE_ROADMAP.md`](PERFORMANCE_ROADMAP.md) for measurements.
 
 **Several players** each get their own `id`:
@@ -1009,6 +1037,7 @@ Remove listeners with `removeActivityListener` / `removeControlListener` before 
 | `preventFullscreenSwipeDismiss` | `true` | iOS native fullscreen closes with Done only |
 | `fullscreenFlightBorderRadius` | square | corners the fullscreen flight starts and ends with |
 | `enableHDR` | `true` | turn off if HDR content looks washed out |
+| `deferNativePlayer` | `false` | create the native player on first use (feeds; see [Feeds & performance](#feeds--performance)) |
 
 ### `NativeVideoPlayer(...)`
 
@@ -1035,6 +1064,7 @@ Remove listeners with `removeActivityListener` / `removeControlListener` before 
 | `BackgroundPlaybackGuard` | pause in the background |
 | `VideoDownloadController` | offline downloads |
 | `NativeVideoPlayerCache` | Android precache |
+| `NativeVideoPlayerPreloader` | preloads the neighbours in a reels feed |
 | `AirPlayStateManager` | app-wide AirPlay detection |
 | `FullscreenManager` | fullscreen orientation helpers |
 | `cast.CastDeviceDiscovery`, `cast.CastSession` | Chromecast (from `package:better_native_video_player/cast.dart`) |

@@ -1,5 +1,5 @@
 PODS:
-  - better_native_video_player (1.6.1):
+  - better_native_video_player (1.9.0):
     - Flutter
   - Flutter (1.0.0)
   - integration_test (0.0.1):
@@ -19,7 +19,7 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/integration_test/ios"
 
 SPEC CHECKSUMS:
-  better_native_video_player: 596f5a499127a74e0fa0de314c50d0ade2d4e3a8
+  better_native_video_player: 4145f4dcc11ef63dc1dec3d6474cc679059a286b
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
 

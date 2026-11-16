@@ -8,6 +8,7 @@ import com.huddlecommunity.better_native_video_player.handlers.ControllerEventCh
 import com.huddlecommunity.better_native_video_player.handlers.PictureInPictureHandler
 import com.huddlecommunity.better_native_video_player.manager.SharedPlayerManager
 import com.huddlecommunity.better_native_video_player.manager.VideoCacheManager
+import com.huddlecommunity.better_native_video_player.manager.VideoPreloader
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -207,6 +208,31 @@ class NativeVideoPlayerPlugin(
                     // isolate before the first createTextureView.
                     disposeAllTextureBackends()
                     result.success(null)
+                    return@setMethodCallHandler
+                }
+                "setPreloadWindow" -> {
+                    // NativeVideoPlayerPreloader: warms the disk cache for the
+                    // videos around the current reel. Without the opt-in disk
+                    // cache there is nothing to warm, so the window is dropped.
+                    val args = call.arguments as? Map<*, *>
+                    if (args?.get("androidDiskCache") != true) {
+                        VideoPreloader.clear()
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    @Suppress("UNCHECKED_CAST")
+                    val items = (args["items"] as? List<*>).orEmpty().mapNotNull { raw ->
+                        val item = raw as? Map<*, *> ?: return@mapNotNull null
+                        val url = item["url"] as? String ?: return@mapNotNull null
+                        url to (item["headers"] as? Map<String, String>)
+                    }
+                    VideoPreloader.setWindow(
+                        applicationContext,
+                        items,
+                        (args["precacheBytes"] as? Number)?.toLong() ?: VideoCacheManager.DEFAULT_PRECACHE_BYTES,
+                        (args["cacheMaxBytes"] as? Number)?.toLong() ?: VideoCacheManager.DEFAULT_MAX_BYTES
+                    )
+                    result.success(true)
                     return@setMethodCallHandler
                 }
                 "precacheVideo" -> {

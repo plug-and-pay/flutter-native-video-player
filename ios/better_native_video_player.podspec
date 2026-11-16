@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'better_native_video_player'
-  s.version          = '1.8.1'
+  s.version          = '1.9.0'
   s.summary          = 'A Flutter plugin for native video playback on iOS and Android'
   s.description      = <<-DESC
 A Flutter plugin that provides native video player using AVPlayerViewController on iOS
@@ -11,7 +11,9 @@ and Now Playing integration.
   s.license          = { :type => 'MIT', :file => '../LICENSE' }
   s.author           = { 'Dani Kemper' => 'dani@plugandpay.com' }
   s.source           = { :path => '.' }
-  s.source_files     = 'Classes/**/*.swift'
+  # The Swift Package Manager target is the single source; CocoaPods compiles the same files.
+  s.source_files     = 'better_native_video_player/Sources/better_native_video_player/**/*.swift'
+  s.resource_bundles = { 'better_native_video_player_privacy' => ['better_native_video_player/Sources/better_native_video_player/Resources/PrivacyInfo.xcprivacy'] }
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 

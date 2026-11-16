@@ -86,9 +86,14 @@ extension VideoPlayerView {
         let isHls = isHlsUrl(url)
         npLog("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
 
-        // Fetch qualities (async) only for HLS streams
+        // Fetch qualities (async) only for HLS streams. The fetch downloads the
+        // master playlist a second time, so it starts a second after the item
+        // is ready to play instead of competing with the player's own startup
+        // requests, and it sends the headers the video was loaded with.
+        pendingQualityFetch = nil
         if isHls {
-            VideoPlayerQualityHandler.fetchHLSQualities(from: url) { [weak self] qualities in
+            pendingQualityFetch = { [weak self] in
+            VideoPlayerQualityHandler.fetchHLSQualities(from: url, headers: headers) { [weak self] qualities in
             guard let self = self else { return }
 
             self.qualityLevels = qualities
@@ -137,6 +142,7 @@ extension VideoPlayerView {
                 npLog("🎬 Sent qualityChange event with \(result.count) available qualities")
             }
             }
+            }
         } else {
             npLog("🎬 Skipping quality fetch for non-HLS content")
         }
@@ -144,9 +150,17 @@ extension VideoPlayerView {
         // --- Build player item ---
         let playerItem: AVPlayerItem
         let asset: AVURLAsset
-        
-        // Create asset with headers if provided
-        if let headers = headers {
+
+        // A NativeVideoPlayerPreloader asset for this URL (never for DRM,
+        // whose licence flow needs a fresh asset) has its playlists loaded.
+        let preloadedAsset = drmConfig == nil
+            ? VideoPreloadPool.shared.take(url: urlString, headers: headers)
+            : nil
+
+        if let preloadedAsset = preloadedAsset {
+            asset = preloadedAsset
+        } else if let headers = headers {
+            // Create asset with headers if provided
             asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         } else {
             asset = AVURLAsset(url: url)
@@ -321,6 +335,18 @@ extension VideoPlayerView {
             switch item.status {
             case .readyToPlay:
                 npLog("🎬 Video ready to play")
+
+                if let fetchQualities = self.pendingQualityFetch {
+                    self.pendingQualityFetch = nil
+                    // A moment after ready: a play started now is still
+                    // fetching its first segments, which this playlist
+                    // request would compete with. Skipped if another
+                    // item was loaded in the meantime.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak item] in
+                        guard let self = self, let item = item, self.player?.currentItem === item else { return }
+                        fetchQualities()
+                    }
+                }
 
                 // Get duration
                 let duration = item.duration

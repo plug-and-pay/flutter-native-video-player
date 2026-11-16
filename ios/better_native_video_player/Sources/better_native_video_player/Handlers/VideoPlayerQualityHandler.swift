@@ -4,8 +4,12 @@ import AVFoundation
 class VideoPlayerQualityHandler {
     /// Calls [completion] on the main queue: callers update view and
     /// SharedPlayerManager state, which is main-thread only.
-    static func fetchHLSQualities(from url: URL, completion: @escaping ([VideoPlayer.QualityLevel]) -> Void) {
-        URLSession.shared.dataTask(with: url) { data, _, error in
+    /// [headers] are the ones the video was loaded with, so streams that need
+    /// a Referer or token get a quality list too.
+    static func fetchHLSQualities(from url: URL, headers: [String: String]? = nil, completion: @escaping ([VideoPlayer.QualityLevel]) -> Void) {
+        var request = URLRequest(url: url)
+        headers?.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        URLSession.shared.dataTask(with: request) { data, _, error in
             guard let data = data,
                   let playlist = String(data: data, encoding: .utf8)
             else {

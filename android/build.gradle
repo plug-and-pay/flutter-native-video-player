@@ -2,7 +2,6 @@ group = "com.huddlecommunity.native_video_player"
 version = "1.0.0"
 
 buildscript {
-    ext.kotlin_version = "2.1.0"
     repositories {
         google()
         mavenCentral()
@@ -10,7 +9,6 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.9.1")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
     }
 }
 
@@ -23,18 +21,19 @@ allprojects {
 
 apply plugin: "com.android.library"
 
-// AGP 9+ compiles Kotlin itself (built-in Kotlin) unless the app opts out with
-// android.builtInKotlin=false; only then, or on AGP 8, apply the Kotlin plugin.
-// Applied through pluginManager because Flutter's check for plugins that still
-// apply KGP reads `apply plugin:` lines, and would warn apps on built-in Kotlin
-// about a line that never runs for them.
-def agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0] as int
-def builtInKotlin = providers.gradleProperty("android.builtInKotlin")
-        .map { it.toBoolean() }
-        .orElse(agpMajor >= 9)
-        .get()
-if (agpMajor < 9 || !builtInKotlin) {
-    pluginManager.apply("org.jetbrains.kotlin.android")
+// Kotlin is compiled by AGP's built-in Kotlin (AGP 9+); the plugin no longer
+// applies the Kotlin Gradle Plugin itself (Flutter's built-in Kotlin migration
+// for plugin authors, required for AGP 10). Requires Flutter 3.44+.
+
+// 1.8.x and older compiled with the Kotlin Gradle Plugin. Its incremental
+// state in build/kotlin makes the built-in compiler miss this plugin's own
+// classes after an upgrade without `flutter clean`, so it is dropped once.
+def kotlinStateDir = layout.buildDirectory.dir("kotlin").get().asFile
+def builtInKotlinMarker = new File(kotlinStateDir, ".built-in-kotlin")
+if (!builtInKotlinMarker.exists()) {
+    kotlinStateDir.deleteDir()
+    kotlinStateDir.mkdirs()
+    builtInKotlinMarker.createNewFile()
 }
 
 android {
@@ -58,19 +57,19 @@ android {
 
     dependencies {
         // ExoPlayer / Media3 dependencies
-        implementation("androidx.media3:media3-exoplayer:1.5.0")
-        implementation("androidx.media3:media3-ui:1.5.0")
-        implementation("androidx.media3:media3-exoplayer-hls:1.5.0")
-        implementation("androidx.media3:media3-session:1.5.0")
+        implementation("androidx.media3:media3-exoplayer:1.11.1")
+        implementation("androidx.media3:media3-ui:1.11.1")
+        implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
+        implementation("androidx.media3:media3-session:1.11.1")
         // Disk cache (SimpleCache/CacheDataSource + StandaloneDatabaseProvider).
         // Both already resolve transitively; declared because we use them directly.
-        implementation("androidx.media3:media3-datasource:1.5.0")
-        implementation("androidx.media3:media3-database:1.5.0")
+        implementation("androidx.media3:media3-datasource:1.11.1")
+        implementation("androidx.media3:media3-database:1.11.1")
 
         // Media notification style
         implementation("androidx.media:media:1.7.0")
 
-        testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
+        testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.1.0")
         testImplementation("org.robolectric:robolectric:4.14.1")
         testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.10.3")
         // Gradle 9 no longer puts the JUnit Platform launcher on the test

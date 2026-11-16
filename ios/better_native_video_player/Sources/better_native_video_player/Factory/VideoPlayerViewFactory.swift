@@ -57,6 +57,42 @@ import UIKit
             npLog("Plugin received method call: \(call.method)")
 
             // Handle controller-level methods
+            // AirPlay actions that need no player view (route detection is
+            // global and the picker presents from the key window), so they
+            // also work before any player view exists.
+            if call.method == "startAirPlayDetection" {
+                if #available(iOS 11.0, *) {
+                    SharedPlayerManager.shared.startAirPlayRouteDetection()
+                }
+                result(nil)
+                return
+            }
+            if call.method == "stopAirPlayDetection" {
+                if #available(iOS 11.0, *) {
+                    SharedPlayerManager.shared.stopAirPlayRouteDetection()
+                }
+                result(nil)
+                return
+            }
+            if call.method == "showAirPlayPicker" {
+                VideoPlayerView.presentAirPlayPicker(result: result)
+                return
+            }
+
+            if call.method == "setPreloadWindow" {
+                // NativeVideoPlayerPreloader: buffer the start of the videos
+                // around the current reel (see VideoPreloadPool).
+                let args = call.arguments as? [String: Any]
+                let rawItems = args?["items"] as? [[String: Any]] ?? []
+                let items: [(url: String, headers: [String: String]?)] = rawItems.compactMap { raw in
+                    guard let url = raw["url"] as? String else { return nil }
+                    return (url: url, headers: raw["headers"] as? [String: String])
+                }
+                VideoPreloadPool.shared.setWindow(items)
+                result(true)
+                return
+            }
+
             if call.method == "setupControllerEventChannel" {
                 // Called from the Dart controller constructor BEFORE Dart listens
                 // on native_video_player_controller_<id>, so the listen call always
