@@ -870,7 +870,10 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer>
     if (_videoOut) return const SizedBox.expand();
     final textureId = _textureId;
     if (textureId == null) {
-      return const ColoredBox(color: Color(0xFF000000));
+      // Expanded: the Stack around the surface is loose and sizes the
+      // overlay from it. A bare ColoredBox is 0×0 there, which made the whole
+      // player (overlay included) vanish while the texture was being created.
+      return const SizedBox.expand(child: ColoredBox(color: Color(0xFF000000)));
     }
     return StreamBuilder<NativeVideoPlayerVideoSize>(
       stream: widget.controller.videoSizeStream,
