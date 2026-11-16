@@ -48,7 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Android: built-in Kotlin.** The plugin no longer applies the Kotlin
   Gradle Plugin itself and relies on AGP's built-in Kotlin, following
   Flutter's migration guide for plugins. Nothing changes for apps on
-  Flutter 3.44+.
+  Flutter 3.44+. Upgrading from 1.8.x needs no `flutter clean`: the plugin
+  drops the Kotlin Gradle Plugin's leftover build state once, which otherwise
+  made the first build after the upgrade fail with unresolved references.
 - **iOS: Swift Package Manager is the single source.** CocoaPods now builds
   the same files as the Swift package, and both ship the privacy manifest
   (`PrivacyInfo.xcprivacy`), which neither build included before.

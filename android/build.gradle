@@ -25,6 +25,17 @@ apply plugin: "com.android.library"
 // applies the Kotlin Gradle Plugin itself (Flutter's built-in Kotlin migration
 // for plugin authors, required for AGP 10). Requires Flutter 3.44+.
 
+// 1.8.x and older compiled with the Kotlin Gradle Plugin. Its incremental
+// state in build/kotlin makes the built-in compiler miss this plugin's own
+// classes after an upgrade without `flutter clean`, so it is dropped once.
+def kotlinStateDir = layout.buildDirectory.dir("kotlin").get().asFile
+def builtInKotlinMarker = new File(kotlinStateDir, ".built-in-kotlin")
+if (!builtInKotlinMarker.exists()) {
+    kotlinStateDir.deleteDir()
+    kotlinStateDir.mkdirs()
+    builtInKotlinMarker.createNewFile()
+}
+
 android {
     namespace = "com.huddlecommunity.native_video_player"
 
