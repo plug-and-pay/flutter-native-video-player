@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-11-16
+
+### Fixed
+- **Android: a `deferNativePlayer` tile went blank for a moment on first
+  play.** While its texture was being created, the video surface took no
+  space, so the whole player — your controls overlay and poster included —
+  disappeared for a few frames and showed whatever was behind it. The surface
+  now fills the player while it waits, as the unplayed tile already did.
+  Without `deferNativePlayer` the same gap happened when the player was first
+  built, usually before it was on screen.
+
 ## [1.9.0] - 2026-11-12
 
 ### Added
