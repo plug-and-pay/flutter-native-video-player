@@ -1,5 +1,5 @@
 PODS:
-  - better_native_video_player (1.9.1):
+  - better_native_video_player (1.9.2):
     - Flutter
   - Flutter (1.0.0)
   - integration_test (0.0.1):

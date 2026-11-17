@@ -3,6 +3,9 @@
 // two as different libraries, so their `Theme` and `Material` widgets don't
 // see each other. Everything that has to look at the app's own Material lives
 // here. Remove this file once the SDK library is gone.
+// The SDK library is deprecated since Flutter 3.50; importing it is the point
+// of this file.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart' as legacy;
 import 'package:material_ui/material_ui.dart';
 
