@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] - 2026-11-17
+
+### Changed
+- `PositionCheckpoints` takes `onCheckpoint` through a private named
+  initializing formal, and the Android Picture-in-Picture platform file is
+  formatted, so the package passes static analysis on pub.dev again. No
+  behaviour or API change: callers still pass `onCheckpoint:`.
+
 ## [1.9.1] - 2026-11-16
 
 ### Fixed

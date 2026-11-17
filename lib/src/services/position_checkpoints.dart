@@ -21,8 +21,8 @@ class PositionCheckpoints {
   PositionCheckpoints(
     this.controller, {
     this.interval = const Duration(seconds: 5),
-    void Function(Duration position)? onCheckpoint,
-  }) : _onCheckpoint = onCheckpoint {
+    this._onCheckpoint,
+  }) {
     _subscription = controller.positionStream.listen(_onPosition);
   }
 

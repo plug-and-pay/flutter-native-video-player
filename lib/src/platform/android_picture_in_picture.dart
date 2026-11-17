@@ -57,7 +57,8 @@ class AndroidPictureInPicture {
       _enable(aspectRatio, autoEnter: true);
 
   /// Stops [enableOnLeave] from entering PiP on the next leave.
-  Future<void> cancelOnLeave() => _channel.invokeMethod<void>('cancelAutoEnter');
+  Future<void> cancelOnLeave() =>
+      _channel.invokeMethod<void>('cancelAutoEnter');
 
   Future<bool> _enable(
     PipAspectRatio aspectRatio, {
@@ -73,14 +74,11 @@ class AndroidPictureInPicture {
 
     // Clear an earlier on-leave request so it can't outlive this one.
     await cancelOnLeave();
-    return await _channel.invokeMethod<bool>(
-          'enable',
-          <String, Object>{
-            'numerator': aspectRatio.numerator,
-            'denominator': aspectRatio.denominator,
-            'autoEnter': autoEnter,
-          },
-        ) ??
+    return await _channel.invokeMethod<bool>('enable', <String, Object>{
+          'numerator': aspectRatio.numerator,
+          'denominator': aspectRatio.denominator,
+          'autoEnter': autoEnter,
+        }) ??
         false;
   }
 }
