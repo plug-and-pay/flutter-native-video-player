@@ -8,10 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.2] - 2026-11-17
 
 ### Changed
-- `PositionCheckpoints` takes `onCheckpoint` through a private named
+- **The package passes pub.dev's static analysis on Flutter 3.50 again**
+  (back to 160/160 pub points). Flutter 3.50 deprecates the SDK's
+  `package:flutter/material.dart`, and the player still imports it on purpose
+  so apps that haven't moved to `material_ui` keep their slider colours and
+  ink in fullscreen; that one import is now marked as intended.
+  `PositionCheckpoints` takes `onCheckpoint` through a private named
   initializing formal, and the Android Picture-in-Picture platform file is
-  formatted, so the package passes static analysis on pub.dev again. No
-  behaviour or API change: callers still pass `onCheckpoint:`.
+  formatted. No behaviour or API change: callers still pass `onCheckpoint:`.
 
 ## [1.9.1] - 2026-11-16
 
