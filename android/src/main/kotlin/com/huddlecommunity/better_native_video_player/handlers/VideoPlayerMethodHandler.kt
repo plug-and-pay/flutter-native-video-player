@@ -377,6 +377,23 @@ class VideoPlayerMethodHandler(
         // A resume position (startAtMs) is handed to ExoPlayer up front so
         // playback begins there directly — no visible seek after start.
         val mediaSource = buildMediaSourceWithSidecars(mediaItem, finalDataSourceFactory)
+
+        // The previous source's qualities must not answer getAvailableQualities
+        // for this one, and a manual quality pin (player-level track selection
+        // parameters, unlike iOS where it lives on the replaced item) must not
+        // carry over: a new video starts in Auto. The viewport cap is a
+        // separate constraint and stays.
+        availableQualities = emptyList()
+        if (controllerId != null) {
+            sharedPlayerManager.setQualities(controllerId, emptyList())
+        }
+        isAutoQuality = true
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+            .setMaxVideoBitrate(Int.MAX_VALUE)
+            .build()
+
         if (startAtMs > 0) {
             player.setMediaSource(mediaSource, startAtMs)
         } else {
@@ -421,10 +438,13 @@ class VideoPlayerMethodHandler(
                 // Send qualityChange event to notify Flutter that qualities are loaded
                 if (availableQualities.isNotEmpty()) {
                     val defaultQuality = availableQualities.first()
+                    // The list travels with the event: the playlist fallback
+                    // can finish after Dart's load() asked for the qualities.
                     eventHandler.sendEvent("qualityChange", mapOf(
                         "url" to (defaultQuality["url"] ?: ""),
                         "label" to (defaultQuality["label"] ?: "Auto"),
-                        "isAuto" to (defaultQuality["isAuto"] ?: true)
+                        "isAuto" to (defaultQuality["isAuto"] ?: true),
+                        "qualities" to availableQualities
                     ))
                     NpLog.d(TAG, "Sent qualityChange event with ${availableQualities.size} available qualities")
                 }

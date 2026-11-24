@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **iOS: the HLS quality list now reaches Dart.** iOS reads the master
+  playlist a second after the item is ready, so `getAvailableQualities` right
+  after `load()` answered `[]` and `controller.qualities` / `qualitiesStream`
+  stayed empty: apps never showed a quality picker. Native now sends the list
+  with the `qualityChange` event it already sent once the playlist was read
+  (Android too, for its playlist-download fallback), and the controller takes
+  it in. An empty answer from `getAvailableQualities` no longer overwrites a
+  list that already arrived.
+- **Loading a different video drops the previous video's qualities** on both
+  platforms, instead of showing them until the new list arrives. A re-load of
+  the same URL keeps them.
+- **Android: a manual quality pick no longer carries over to the next video.**
+  The pick is set on the player itself, so a 360p pick stayed in force after
+  `load()`; a new video now starts in Auto, as on iOS. The viewport cap is
+  untouched.
+- **iOS: variant URLs with a query string count.** The master playlist parser
+  only took lines ending in `.m3u8`, so signed variant URLs
+  (`video.m3u8?token=…`) and CRLF playlists gave no qualities. It now takes the
+  line after each `#EXT-X-STREAM-INF`, and no longer reads `AVERAGE-BANDWIDTH`
+  as the bitrate.
+
+### Changed
+- **One quality per resolution.** A master playlist that lists a resolution
+  more than once (one variant per codec, audio group or CDN) shows it once in
+  `controller.qualities`, as the variant with the highest bitrate.
+
 ## [1.9.2] - 2026-11-17
 
 ### Changed

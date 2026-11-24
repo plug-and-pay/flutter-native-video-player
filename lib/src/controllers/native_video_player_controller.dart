@@ -1158,7 +1158,9 @@ class NativeVideoPlayerController {
 
       // Also try to fetch fresh qualities from native side
       try {
-        final qualities = await _methodChannel!.getAvailableQualities();
+        final qualities = _distinctResolutions(
+          await _methodChannel!.getAvailableQualities(),
+        );
         if (qualities.isNotEmpty) {
           _state = _state.copyWith(qualities: qualities);
           if (!_qualitiesController.isClosed) {
@@ -1272,6 +1274,36 @@ class NativeVideoPlayerController {
 
   /// Available video qualities (HLS variants)
   List<NativeVideoPlayerQuality> get qualities => _state.qualities;
+
+  /// One entry per resolution. A master playlist can list a resolution more
+  /// than once (one variant per codec, audio group or CDN), which a quality
+  /// picker would show as the same choice twice. The one kept has the highest
+  /// bitrate: picking it caps at that resolution and bitrate, so the other
+  /// variants of the same resolution stay selectable to ABR.
+  static List<NativeVideoPlayerQuality> _distinctResolutions(
+    List<NativeVideoPlayerQuality> qualities,
+  ) {
+    final List<NativeVideoPlayerQuality> distinct =
+        <NativeVideoPlayerQuality>[];
+    final Map<String, int> indexByResolution = <String, int>{};
+    for (final NativeVideoPlayerQuality quality in qualities) {
+      if (quality.isAuto || quality.width == null || quality.height == null) {
+        distinct.add(quality);
+        continue;
+      }
+
+      final String resolution = '${quality.width}x${quality.height}';
+      final int? index = indexByResolution[resolution];
+      if (index == null) {
+        indexByResolution[resolution] = distinct.length;
+        distinct.add(quality);
+      } else if ((quality.bitrate ?? 0) > (distinct[index].bitrate ?? 0)) {
+        distinct[index] = quality;
+      }
+    }
+
+    return distinct;
+  }
 
   /// Returns whether the controller has been initialized
   bool get isInitialized => _isInitialized;
@@ -1955,6 +1987,13 @@ class NativeVideoPlayerController {
     // Track indices belong to the previous source.
     _lastSubtitleTrack = null;
 
+    // Qualities belong to the previous source too. A re-load of the same URL
+    // (eviction recovery, force) keeps them: same manifest, and native may
+    // only report them a moment after the load returns.
+    if (previousUrl != url && _state.qualities.isNotEmpty) {
+      _updateState(_state.copyWith(qualities: const []));
+    }
+
     if (sidecarSubtitles != null) {
       _sidecarSubtitles.setSources(sidecarSubtitles);
     }
@@ -1983,8 +2022,16 @@ class NativeVideoPlayerController {
     // re-load is satisfied.
     _needsReloadAfterEviction = false;
 
-    // Fetch available qualities after loading
-    final qualities = await _methodChannel!.getAvailableQualities();
+    // Native may not know the qualities yet: iOS reads the HLS master
+    // playlist a moment after the item is ready, and Android can fall back to
+    // fetching it. Native then sends them with a `qualityChange` event, so an
+    // empty answer here keeps whatever that event (or the same URL's previous
+    // load) already delivered.
+    final List<NativeVideoPlayerQuality> fetchedQualities =
+        _distinctResolutions(await _methodChannel!.getAvailableQualities());
+    final List<NativeVideoPlayerQuality> qualities = fetchedQualities.isNotEmpty
+        ? fetchedQualities
+        : _state.qualities;
 
     // With autoplay (or a play() racing the load) native has already
     // reported `play` by now. Android sends no further play event, so

@@ -91,6 +91,13 @@ extension VideoPlayerView {
         // is ready to play instead of competing with the player's own startup
         // requests, and it sends the headers the video was loaded with.
         pendingQualityFetch = nil
+        // The previous source's qualities must not answer getAvailableQualities
+        // for this one (Dart asks right after the load returns).
+        availableQualities = []
+        qualityLevels = []
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setQualities(for: controllerIdValue, qualities: [], qualityLevels: [])
+        }
         if isHls {
             pendingQualityFetch = { [weak self] in
             VideoPlayerQualityHandler.fetchHLSQualities(from: url, headers: headers) { [weak self] qualities in
@@ -132,12 +139,14 @@ extension VideoPlayerView {
                 )
             }
 
-            // Send qualityChange event to notify Flutter that qualities are loaded
+            // The fetch finishes after Dart's load() already asked for the
+            // qualities (and got none), so the list travels with the event.
             if !result.isEmpty, let defaultQuality = result.first {
                 self.sendEvent("qualityChange", data: [
                     "url": defaultQuality["url"] as? String ?? "",
                     "label": defaultQuality["label"] as? String ?? "Auto",
-                    "isAuto": defaultQuality["isAuto"] as? Bool ?? true
+                    "isAuto": defaultQuality["isAuto"] as? Bool ?? true,
+                    "qualities": result
                 ])
                 npLog("🎬 Sent qualityChange event with \(result.count) available qualities")
             }
