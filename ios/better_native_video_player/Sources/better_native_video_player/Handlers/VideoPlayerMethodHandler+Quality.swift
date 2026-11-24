@@ -131,4 +131,93 @@ extension VideoPlayerView {
         npLog("🎚️ Lifting viewport quality cap")
         player?.currentItem?.preferredMaximumResolution = .zero
     }
+
+    /// Reads the HLS quality list of [asset] and publishes it.
+    ///
+    /// iOS 15+ asks AVFoundation for the master playlist's variants. The
+    /// player downloads that playlist itself before it can be ready, so the
+    /// list is there by ready-to-play with no request of our own and nothing
+    /// competing with startup. The variants carry the resolution and bitrate
+    /// that setQuality caps by, not the variant URL, so `url` stays empty.
+    ///
+    /// Older iOS, or an asset that reports no video variants, downloads the
+    /// master playlist itself a second after ready-to-play.
+    func loadQualities(for asset: AVURLAsset, url: URL, headers: [String: String]?) {
+        guard #available(iOS 15.0, *) else {
+            fetchPlaylistQualitiesAfterReady(url: url, headers: headers)
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            let variants = (try? await asset.load(.variants)) ?? []
+            // Another item may have been loaded in the meantime.
+            guard let self = self, self.player?.currentItem?.asset === asset else { return }
+
+            let qualities = VideoPlayerQualityHandler.qualities(from: variants)
+            if qualities.isEmpty {
+                npLog("🎬 Asset reports no video variants, fetching the playlist")
+                self.fetchPlaylistQualitiesAfterReady(url: url, headers: headers)
+                return
+            }
+
+            npLog("🎬 Read \(qualities.count) quality variants from the asset")
+            self.publishQualities(qualities)
+        }
+    }
+
+    /// Downloads the master playlist a second after the current item is ready
+    /// (see the status observer), or right away when it already is.
+    private func fetchPlaylistQualitiesAfterReady(url: URL, headers: [String: String]?) {
+        let fetch: () -> Void = { [weak self] in
+            VideoPlayerQualityHandler.fetchHLSQualities(from: url, headers: headers) { [weak self] qualities in
+                self?.publishQualities(qualities)
+            }
+        }
+
+        if player?.currentItem?.status == .readyToPlay {
+            fetch()
+        } else {
+            pendingQualityFetch = fetch
+        }
+    }
+
+    /// Stores the quality list ("Auto" first) for getAvailableQualities and
+    /// sends it to Dart with a qualityChange event, since it can arrive after
+    /// Dart's load() already asked.
+    private func publishQualities(_ qualities: [VideoPlayer.QualityLevel]) {
+        qualityLevels = qualities
+
+        var result: [[String: Any]] = [[
+            "label": "Auto",
+            "url": qualities.first?.url ?? "",
+            "isAuto": true
+        ]]
+        result.append(contentsOf: qualities.map { quality in
+            [
+                "label": quality.label,
+                "url": quality.url,
+                "bitrate": quality.bitrate,
+                "width": Int(quality.resolution.width),
+                "height": Int(quality.resolution.height),
+                "isAuto": false
+            ]
+        })
+        availableQualities = result
+
+        if let controllerIdValue = controllerId {
+            SharedPlayerManager.shared.setQualities(
+                for: controllerIdValue,
+                qualities: result,
+                qualityLevels: qualities
+            )
+        }
+
+        sendEvent("qualityChange", data: [
+            "url": result[0]["url"] as? String ?? "",
+            "label": "Auto",
+            "isAuto": true,
+            "qualities": result
+        ])
+        npLog("🎬 Sent qualityChange event with \(result.count) available qualities")
+    }
 }

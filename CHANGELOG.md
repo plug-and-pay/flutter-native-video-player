@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] - 2026-11-24
+
+### Fixed
+- **iOS: the quality list is there when the video is ready to play.** 1.9.3
+  sent it about a second after ready (the package downloaded the master
+  playlist again and waited so that request would not compete with startup),
+  so a settings sheet opened right after playback started had no qualities
+  yet. On iOS 15+ the list now comes from AVFoundation's own parse of the
+  master playlist (`AVURLAsset.variants`), which the player needs before it
+  can be ready anyway: no extra request, and no measurable change in time to
+  first frame. iOS 12–14 keep the playlist download. On this path a quality's
+  `url` is empty, as AVFoundation does not expose variant URLs;
+  `setQuality` caps by resolution and bitrate and never used it.
+- **Audio and subtitle tracks are named by their language on Android too, the
+  same as on iOS.** Android showed the HLS `NAME` attribute, which packagers
+  fill with ids (`stream_5`) or their own wording ("Nederlands (AI
+  generated)"), where iOS showed "German", or "Duits" on a Dutch phone. Both
+  platforms now name a track by its language in the device language, with
+  its region when the tag has one ("Portuguese (Brazil)").
+- **Two tracks of the same language stay distinguishable on both
+  platforms.** iOS only sometimes told them apart ("stream_6 - English" on
+  one stream, "English" three times on another). When tracks of the same kind
+  share a language, the `NAME` is added: "English (Commentary)", or just
+  "English 5.1" when the name already contains the language. A sidecar
+  subtitle keeps the label the app passed.
+
 ## [1.9.3] - 2026-11-24
 
 ### Fixed

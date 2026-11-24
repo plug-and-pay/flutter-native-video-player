@@ -86,74 +86,13 @@ extension VideoPlayerView {
         let isHls = isHlsUrl(url)
         npLog("🎬 Loading video - URL: \(urlString), isHLS: \(isHls)")
 
-        // Fetch qualities (async) only for HLS streams. The fetch downloads the
-        // master playlist a second time, so it starts a second after the item
-        // is ready to play instead of competing with the player's own startup
-        // requests, and it sends the headers the video was loaded with.
-        pendingQualityFetch = nil
         // The previous source's qualities must not answer getAvailableQualities
         // for this one (Dart asks right after the load returns).
+        pendingQualityFetch = nil
         availableQualities = []
         qualityLevels = []
         if let controllerIdValue = controllerId {
             SharedPlayerManager.shared.setQualities(for: controllerIdValue, qualities: [], qualityLevels: [])
-        }
-        if isHls {
-            pendingQualityFetch = { [weak self] in
-            VideoPlayerQualityHandler.fetchHLSQualities(from: url, headers: headers) { [weak self] qualities in
-            guard let self = self else { return }
-
-            self.qualityLevels = qualities
-
-            // Convert to Flutter format
-            var result: [[String: Any]] = []
-
-            // Add auto quality option
-            result.append([
-                "label": "Auto",
-                "url": qualities.first?.url ?? "",
-                "isAuto": true
-            ])
-
-            // Add all available qualities
-            result.append(contentsOf: qualities.map { quality in
-                [
-                    "label": quality.label,
-                    "url": quality.url,
-                    "bitrate": quality.bitrate,
-                    "width": Int(quality.resolution.width),
-                    "height": Int(quality.resolution.height),
-                    "isAuto": false
-                ]
-            })
-
-            // Send qualities to Flutter
-            self.availableQualities = result
-
-            // Store in SharedPlayerManager if this is a shared player
-            if let controllerIdValue = self.controllerId {
-                SharedPlayerManager.shared.setQualities(
-                    for: controllerIdValue,
-                    qualities: result,
-                    qualityLevels: qualities
-                )
-            }
-
-            // The fetch finishes after Dart's load() already asked for the
-            // qualities (and got none), so the list travels with the event.
-            if !result.isEmpty, let defaultQuality = result.first {
-                self.sendEvent("qualityChange", data: [
-                    "url": defaultQuality["url"] as? String ?? "",
-                    "label": defaultQuality["label"] as? String ?? "Auto",
-                    "isAuto": defaultQuality["isAuto"] as? Bool ?? true,
-                    "qualities": result
-                ])
-                npLog("🎬 Sent qualityChange event with \(result.count) available qualities")
-            }
-            }
-            }
-        } else {
-            npLog("🎬 Skipping quality fetch for non-HLS content")
         }
 
         // --- Build player item ---
@@ -234,6 +173,15 @@ extension VideoPlayerView {
         // Replace current item immediately - don't wait for HDR configuration
         // This allows the video to start loading right away
         player?.replaceCurrentItem(with: playerItem)
+
+        // HLS quality list, read from the asset the player is loading (see
+        // loadQualities). After replaceCurrentItem so the list is matched to
+        // this item.
+        if isHls {
+            loadQualities(for: asset, url: url, headers: headers)
+        } else {
+            npLog("🎬 Skipping quality fetch for non-HLS content")
+        }
 
         // Re-apply the embedded caption text scale to the fresh item
         // (textStyleRules live on the AVPlayerItem, not the player)

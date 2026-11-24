@@ -16,6 +16,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.MimeTypes
 import androidx.media3.datasource.DataSource
@@ -614,29 +615,15 @@ class VideoPlayerMethodHandler(
      */
     private fun handleGetAvailableAudioTracks(result: MethodChannel.Result) {
         try {
-            val tracks = mutableListOf<Map<String, Any>>()
-            for (group in player.currentTracks.groups) {
-                if (group.type != C.TRACK_TYPE_AUDIO) continue
-                for (trackIndex in 0 until group.length) {
-                    val format = group.getTrackFormat(trackIndex)
-                    val languageCode = format.language ?: "unknown"
-                    val displayName = format.label?.takeIf { it.isNotEmpty() }
-                        ?: try {
-                            java.util.Locale(languageCode)
-                                .getDisplayLanguage(java.util.Locale.getDefault())
-                                .takeIf { it.isNotEmpty() } ?: languageCode
-                        } catch (e: Exception) {
-                            languageCode
-                        }
-                    tracks.add(
-                        mapOf(
-                            "index" to tracks.size,
-                            "language" to languageCode,
-                            "displayName" to displayName,
-                            "isSelected" to group.isTrackSelected(trackIndex)
-                        )
-                    )
-                }
+            val entries = trackEntries(C.TRACK_TYPE_AUDIO)
+            val names = trackDisplayNames(entries)
+            val tracks = entries.mapIndexed { index, (group, trackIndex) ->
+                mapOf(
+                    "index" to index,
+                    "language" to (group.getTrackFormat(trackIndex).language ?: "unknown"),
+                    "displayName" to names[index],
+                    "isSelected" to group.isTrackSelected(trackIndex)
+                )
             }
             NpLog.d(TAG, "🔊 Total audio tracks found: ${tracks.size}")
             result.success(tracks)
@@ -645,6 +632,26 @@ class VideoPlayerMethodHandler(
             result.success(emptyList<Map<String, Any>>())
         }
     }
+
+    /**
+     * The tracks of [trackType] across all groups, in the flat order the
+     * track list and the setters index by.
+     */
+    private fun trackEntries(trackType: Int): List<Pair<Tracks.Group, Int>> =
+        player.currentTracks.groups
+            .filter { it.type == trackType }
+            .flatMap { group -> (0 until group.length).map { group to it } }
+
+    /** Display names for [entries], named as iOS names them (see TrackDisplayNames). */
+    private fun trackDisplayNames(entries: List<Pair<Tracks.Group, Int>>): List<String> =
+        TrackDisplayNames.displayNames(entries.map { (group, trackIndex) ->
+            val format = group.getTrackFormat(trackIndex)
+            TrackDisplayNames.Track(
+                language = format.language,
+                label = format.label,
+                isSidecar = format.id?.startsWith(TrackDisplayNames.SIDECAR_ID_PREFIX) == true
+            )
+        })
 
     /**
      * Selects an alternate audio track by flat index (the enumeration order
@@ -662,37 +669,33 @@ class VideoPlayerMethodHandler(
                 return
             }
 
-            var flatIndex = 0
-            for (group in player.currentTracks.groups) {
-                if (group.type != C.TRACK_TYPE_AUDIO) continue
-                for (trackIndex in 0 until group.length) {
-                    if (flatIndex == requestedIndex) {
-                        player.trackSelectionParameters = player.trackSelectionParameters
-                            .buildUpon()
-                            .setOverrideForType(
-                                TrackSelectionOverride(group.mediaTrackGroup, trackIndex)
-                            )
-                            .build()
+            val entries = trackEntries(C.TRACK_TYPE_AUDIO)
+            val entry = entries.getOrNull(requestedIndex)
+            if (entry != null) {
+                val (group, trackIndex) = entry
+                player.trackSelectionParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .setOverrideForType(
+                        TrackSelectionOverride(group.mediaTrackGroup, trackIndex)
+                    )
+                    .build()
 
-                        val format = group.getTrackFormat(trackIndex)
-                        val languageCode = format.language ?: "unknown"
-                        val displayName = format.label?.takeIf { it.isNotEmpty() } ?: languageCode
-                        NpLog.d(TAG, "🔊 Selected audio track: $displayName ($languageCode)")
-                        eventHandler.sendEvent(
-                            "audioTrackChange",
-                            mapOf(
-                                "index" to requestedIndex,
-                                "language" to languageCode,
-                                "displayName" to displayName,
-                                "isSelected" to true
-                            )
-                        )
-                        result.success(null)
-                        return
-                    }
-                    flatIndex++
-                }
+                val languageCode = group.getTrackFormat(trackIndex).language ?: "unknown"
+                val displayName = trackDisplayNames(entries)[requestedIndex]
+                NpLog.d(TAG, "🔊 Selected audio track: $displayName ($languageCode)")
+                eventHandler.sendEvent(
+                    "audioTrackChange",
+                    mapOf(
+                        "index" to requestedIndex,
+                        "language" to languageCode,
+                        "displayName" to displayName,
+                        "isSelected" to true
+                    )
+                )
+                result.success(null)
+                return
             }
+
             result.error("INVALID_INDEX", "Invalid audio track index", null)
         } catch (e: Exception) {
             NpLog.e(TAG, "Error setting audio track: ${e.message}", e)
@@ -715,6 +718,8 @@ class VideoPlayerMethodHandler(
                 else -> MimeTypes.TEXT_VTT
             }
             MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(url))
+                // Marks the track as the app's own, so it keeps its label.
+                .setId("${TrackDisplayNames.SIDECAR_ID_PREFIX}$url")
                 .setMimeType(mimeType)
                 .setLanguage(map["language"] as? String)
                 .setLabel(map["label"] as? String)
@@ -1059,60 +1064,23 @@ class VideoPlayerMethodHandler(
      */
     private fun handleGetAvailableSubtitleTracks(result: MethodChannel.Result) {
         try {
-            val tracks = mutableListOf<Map<String, Any>>()
-
-            // Get the current tracks from the player
-            val currentTracks = player.currentTracks
-
-            // Get track selection parameters to find the selected track
-            val trackSelectionParameters = player.trackSelectionParameters
-
             // A flat index across ALL text tracks of ALL groups (same scheme as
             // handleGetAvailableAudioTracks). ExoPlayer exposes a separate text
             // track group per source (e.g. a sideloaded sidecar is its own
             // group), so a per-group index would collide between groups.
-            // handleSetSubtitleTrack walks the same counter.
-            var flatIndex = 0
-
-            // Iterate through all track groups
-            for (groupIndex in 0 until currentTracks.groups.size) {
-                val group = currentTracks.groups[groupIndex]
-
-                // Only process text (subtitle) tracks
-                if (group.type == C.TRACK_TYPE_TEXT) {
-                    // Iterate through all tracks in this group
-                    for (trackIndex in 0 until group.length) {
-                        val format = group.getTrackFormat(trackIndex)
-                        val isSelected = group.isTrackSelected(trackIndex)
-
-                        // Get language code (e.g., "en", "es", "fr")
-                        val languageCode = format.language ?: "unknown"
-
-                        // Get display name (use label if available, otherwise language code)
-                        val displayName = format.label?.takeIf { it.isNotEmpty() }
-                            ?: languageCode.let { code ->
-                                // Try to get localized language name
-                                try {
-                                    val locale = java.util.Locale(code)
-                                    locale.getDisplayLanguage(java.util.Locale.getDefault())
-                                        .takeIf { it.isNotEmpty() } ?: code
-                                } catch (e: Exception) {
-                                    code
-                                }
-                            }
-
-                        val trackInfo = mapOf(
-                            "index" to flatIndex,
-                            "language" to languageCode,
-                            "displayName" to displayName,
-                            "isSelected" to isSelected
-                        )
-
-                        tracks.add(trackInfo)
-                        NpLog.d(TAG, "📝 Found subtitle track: $displayName ($languageCode) - Selected: $isSelected")
-                        flatIndex++
-                    }
-                }
+            // handleSetSubtitleTrack walks the same order.
+            val entries = trackEntries(C.TRACK_TYPE_TEXT)
+            val names = trackDisplayNames(entries)
+            val tracks = entries.mapIndexed { index, (group, trackIndex) ->
+                val languageCode = group.getTrackFormat(trackIndex).language ?: "unknown"
+                val isSelected = group.isTrackSelected(trackIndex)
+                NpLog.d(TAG, "📝 Found subtitle track: ${names[index]} ($languageCode) - Selected: $isSelected")
+                mapOf(
+                    "index" to index,
+                    "language" to languageCode,
+                    "displayName" to names[index],
+                    "isSelected" to isSelected
+                )
             }
 
             NpLog.d(TAG, "📝 Total subtitle tracks found: ${tracks.size}")
@@ -1172,40 +1140,18 @@ class VideoPlayerMethodHandler(
             // selecting EVERY track that shares the language, which would render
             // two overlapping subtitles (and crash) when a sidecar and an
             // embedded track share a language.
-            val currentTracks = player.currentTracks
-            var trackFound = false
-            var selectedLanguage = "unknown"
-            var selectedDisplayName = "Unknown"
-            var flatIndex = 0
-
-            loop@ for (groupIndex in 0 until currentTracks.groups.size) {
-                val group = currentTracks.groups[groupIndex]
-                if (group.type != C.TRACK_TYPE_TEXT) continue
-
-                for (trackIndex in 0 until group.length) {
-                    if (flatIndex == index) {
-                        val format = group.getTrackFormat(trackIndex)
-                        selectedLanguage = format.language ?: "unknown"
-                        selectedDisplayName = format.label?.takeIf { it.isNotEmpty() }
-                            ?: selectedLanguage
-
-                        parametersBuilder = parametersBuilder
-                            .setOverrideForType(
-                                TrackSelectionOverride(group.mediaTrackGroup, trackIndex)
-                            )
-
-                        trackFound = true
-                        break@loop
-                    }
-
-                    flatIndex++
-                }
-            }
-
-            if (!trackFound) {
+            val entries = trackEntries(C.TRACK_TYPE_TEXT)
+            val entry = entries.getOrNull(index)
+            if (entry == null) {
                 result.error("INVALID_INDEX", "Invalid subtitle track index", null)
                 return
             }
+
+            val (group, trackIndex) = entry
+            val selectedLanguage = group.getTrackFormat(trackIndex).language ?: "unknown"
+            val selectedDisplayName = trackDisplayNames(entries)[index]
+            parametersBuilder = parametersBuilder
+                .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
 
             player.trackSelectionParameters = parametersBuilder.build()
 
