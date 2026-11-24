@@ -111,4 +111,32 @@ void main() {
       ),
     );
   });
+
+  test('isOriginal is read from the map and defaults to false', () {
+    final original = NativeVideoPlayerAudioTrack.fromMap(<String, Object?>{
+      'index': 0,
+      'language': 'en',
+      'displayName': 'English',
+      'isOriginal': true,
+    });
+    final dub = NativeVideoPlayerAudioTrack.fromMap(<String, Object?>{
+      'index': 1,
+      'language': 'nl',
+      'displayName': 'Nederlands',
+    });
+
+    expect(original.isOriginal, isTrue);
+    expect(dub.isOriginal, isFalse);
+    expect(NativeVideoPlayerAudioTrack.fromMap(original.toMap()), original);
+    expect(
+      original,
+      isNot(
+        const NativeVideoPlayerAudioTrack(
+          index: 0,
+          language: 'en',
+          displayName: 'English',
+        ),
+      ),
+    );
+  });
 }

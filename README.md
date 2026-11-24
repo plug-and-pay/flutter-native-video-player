@@ -748,6 +748,12 @@ final tracks = await controller.getAvailableAudioTracks();
 await controller.setAudioTrack(tracks.firstWhere((t) => t.language == 'de'));
 ```
 
+Tracks are named by their language in the device language, with the stream's own name added when two tracks share a language. On a stream with dubbed tracks (HLS `CHARACTERISTICS="public.translation.dubbed"`, as Vimeo's AI dubs have), the original-language track has `isOriginal` set, so you can label it:
+
+```dart
+Text(track.isOriginal ? '${track.displayName} (original)' : track.displayName);
+```
+
 ## Playlists, A-B loops & analytics
 
 ### Playlists
