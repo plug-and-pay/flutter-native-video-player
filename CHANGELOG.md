@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-11-24
+
+### Added
+- **`NativeVideoPlayerAudioTrack.isOriginal` marks the original-language
+  track of a dubbed stream**, so an app can label it "English (original)".
+  It is set when the stream marks at least one other audio track as dubbed
+  (HLS `CHARACTERISTICS="public.translation.dubbed"`, as Vimeo's AI dubs do)
+  and this track isn't; a track marked `public.original-content` wins, then
+  the stream's DEFAULT one. A stream without dub markings has no original.
+  Android reads the characteristics from the master playlist, because Media3
+  does not map the dub marking to a role flag.
+
 ## [1.9.4] - 2026-11-24
 
 ### Fixed

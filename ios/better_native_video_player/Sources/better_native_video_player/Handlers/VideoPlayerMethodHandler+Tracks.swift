@@ -61,12 +61,14 @@ extension VideoPlayerView {
         let currentSelection = playerItem.currentMediaSelection.selectedMediaOption(in: mediaSelectionGroup)
         var tracks: [[String: Any]] = []
         let displayNames = TrackDisplayNames.displayNames(for: mediaSelectionGroup.options)
+        let originalIndex = OriginalAudioTrack.index(in: mediaSelectionGroup)
         for (index, option) in mediaSelectionGroup.options.enumerated() {
             tracks.append([
                 "index": index,
                 "language": languageCode(of: option),
                 "displayName": displayNames[index],
-                "isSelected": option == currentSelection
+                "isSelected": option == currentSelection,
+                "isOriginal": index == originalIndex
             ])
         }
         npLog("🔊 Total audio tracks found: \(tracks.count)")
@@ -105,7 +107,8 @@ extension VideoPlayerView {
             "index": index,
             "language": languageCode,
             "displayName": displayName,
-            "isSelected": true
+            "isSelected": true,
+            "isOriginal": index == OriginalAudioTrack.index(in: mediaSelectionGroup)
         ])
         result(nil)
     }

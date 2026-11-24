@@ -27,6 +27,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.source.SingleSampleMediaSource
+import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -617,12 +618,14 @@ class VideoPlayerMethodHandler(
         try {
             val entries = trackEntries(C.TRACK_TYPE_AUDIO)
             val names = trackDisplayNames(entries)
+            val originalIndex = originalAudioTrackIndex(entries)
             val tracks = entries.mapIndexed { index, (group, trackIndex) ->
                 mapOf(
                     "index" to index,
                     "language" to (group.getTrackFormat(trackIndex).language ?: "unknown"),
                     "displayName" to names[index],
-                    "isSelected" to group.isTrackSelected(trackIndex)
+                    "isSelected" to group.isTrackSelected(trackIndex),
+                    "isOriginal" to (index == originalIndex)
                 )
             }
             NpLog.d(TAG, "🔊 Total audio tracks found: ${tracks.size}")
@@ -641,6 +644,27 @@ class VideoPlayerMethodHandler(
         player.currentTracks.groups
             .filter { it.type == trackType }
             .flatMap { group -> (0 until group.length).map { group to it } }
+
+    /**
+     * The flat index of the original-language audio track among [entries]
+     * (see OriginalAudioTrack), or null. A dub is marked by the HLS
+     * CHARACTERISTICS (read from the master's tags) or, for sources Media3
+     * maps it for, by ROLE_FLAG_DUB.
+     */
+    private fun originalAudioTrackIndex(entries: List<Pair<Tracks.Group, Int>>): Int? {
+        val tags = (player.currentManifest as? HlsManifest)?.multivariantPlaylist?.tags.orEmpty()
+        val characteristicsByName = OriginalAudioTrack.audioCharacteristicsByName(tags)
+        return OriginalAudioTrack.index(entries.map { (group, trackIndex) ->
+            val format = group.getTrackFormat(trackIndex)
+            val characteristics = format.label?.let { characteristicsByName[it] }.orEmpty()
+            OriginalAudioTrack.Track(
+                isDubbed = OriginalAudioTrack.DUBBED in characteristics ||
+                    (format.roleFlags and C.ROLE_FLAG_DUB) != 0,
+                isMarkedOriginal = OriginalAudioTrack.ORIGINAL in characteristics,
+                isDefault = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0
+            )
+        })
+    }
 
     /** Display names for [entries], named as iOS names them (see TrackDisplayNames). */
     private fun trackDisplayNames(entries: List<Pair<Tracks.Group, Int>>): List<String> =
@@ -689,7 +713,8 @@ class VideoPlayerMethodHandler(
                         "index" to requestedIndex,
                         "language" to languageCode,
                         "displayName" to displayName,
-                        "isSelected" to true
+                        "isSelected" to true,
+                        "isOriginal" to (requestedIndex == originalAudioTrackIndex(entries))
                     )
                 )
                 result.success(null)
