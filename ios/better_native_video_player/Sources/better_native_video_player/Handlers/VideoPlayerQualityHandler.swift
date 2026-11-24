@@ -72,4 +72,26 @@ class VideoPlayerQualityHandler {
 
         return qualities.sorted { $0.resolution.height < $1.resolution.height }
     }
+
+    /// The video variants AVFoundation read from the master playlist, sorted
+    /// by height (ascending). Audio-only variants are left out. The bitrate
+    /// is the peak (the playlist's BANDWIDTH), which setQuality hands to
+    /// preferredPeakBitRate.
+    @available(iOS 15.0, *)
+    static func qualities(from variants: [AVAssetVariant]) -> [VideoPlayer.QualityLevel] {
+        variants.compactMap { variant -> VideoPlayer.QualityLevel? in
+            guard let size = variant.videoAttributes?.presentationSize,
+                  size.width > 0, size.height > 0
+            else { return nil }
+
+            let bitrate = variant.peakBitRate ?? variant.averageBitRate ?? 0
+            return VideoPlayer.QualityLevel(
+                url: "",
+                label: "\(Int(size.width))x\(Int(size.height))",
+                bitrate: Int(bitrate),
+                resolution: size
+            )
+        }
+        .sorted { $0.resolution.height < $1.resolution.height }
+    }
 }

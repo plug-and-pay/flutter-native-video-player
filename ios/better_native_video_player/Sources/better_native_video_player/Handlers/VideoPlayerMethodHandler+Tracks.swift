@@ -28,33 +28,18 @@ extension VideoPlayerView {
         let currentSelection = playerItem.currentMediaSelection.selectedMediaOption(in: mediaSelectionGroup)
 
         // Add each subtitle option
+        let displayNames = TrackDisplayNames.displayNames(for: mediaSelectionGroup.options)
         for (index, option) in mediaSelectionGroup.options.enumerated() {
             let isSelected = option == currentSelection
+            let languageCode = languageCode(of: option)
+            let displayName = displayNames[index]
 
-            // Get language code (e.g., "en", "es", "fr")
-            let languageCode = option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
-
-            // Get display name (e.g., "English", "Spanish", "French")
-            var displayName = option.displayName
-
-            // If display name is empty, try to get it from locale
-            if displayName.isEmpty, let locale = option.locale {
-                displayName = Locale.current.localizedString(forIdentifier: locale.identifier) ?? languageCode
-            }
-
-            // If still empty, use language code
-            if displayName.isEmpty {
-                displayName = languageCode
-            }
-
-            let trackInfo: [String: Any] = [
+            tracks.append([
                 "index": index,
                 "language": languageCode,
                 "displayName": displayName,
                 "isSelected": isSelected
-            ]
-
-            tracks.append(trackInfo)
+            ])
             npLog("📝 Found subtitle track: \(displayName) (\(languageCode)) - Selected: \(isSelected)")
         }
 
@@ -75,19 +60,12 @@ extension VideoPlayerView {
 
         let currentSelection = playerItem.currentMediaSelection.selectedMediaOption(in: mediaSelectionGroup)
         var tracks: [[String: Any]] = []
+        let displayNames = TrackDisplayNames.displayNames(for: mediaSelectionGroup.options)
         for (index, option) in mediaSelectionGroup.options.enumerated() {
-            let languageCode = option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
-            var displayName = option.displayName
-            if displayName.isEmpty, let locale = option.locale {
-                displayName = Locale.current.localizedString(forIdentifier: locale.identifier) ?? languageCode
-            }
-            if displayName.isEmpty {
-                displayName = languageCode
-            }
             tracks.append([
                 "index": index,
-                "language": languageCode,
-                "displayName": displayName,
+                "language": languageCode(of: option),
+                "displayName": displayNames[index],
                 "isSelected": option == currentSelection
             ])
         }
@@ -119,14 +97,8 @@ extension VideoPlayerView {
         let option = mediaSelectionGroup.options[index]
         playerItem.select(option, in: mediaSelectionGroup)
 
-        let languageCode = option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
-        var displayName = option.displayName
-        if displayName.isEmpty, let locale = option.locale {
-            displayName = Locale.current.localizedString(forIdentifier: locale.identifier) ?? languageCode
-        }
-        if displayName.isEmpty {
-            displayName = languageCode
-        }
+        let languageCode = languageCode(of: option)
+        let displayName = TrackDisplayNames.displayNames(for: mediaSelectionGroup.options)[index]
         npLog("🔊 Selected audio track: \(displayName) (\(languageCode))")
 
         sendEvent("audioTrackChange", data: [
@@ -193,7 +165,7 @@ extension VideoPlayerView {
 
         npLog("📝 Selected subtitle track: \(option.displayName) (\(languageCode(of: option)))")
 
-        sendEvent("subtitleChange", data: subtitleChangePayload(index: index, option: option))
+        sendEvent("subtitleChange", data: subtitleChangePayload(index: index, in: mediaSelectionGroup))
 
         result(nil)
     }
@@ -282,7 +254,7 @@ extension VideoPlayerView {
 
         if let option = selectedOption, selectedIndex >= 0 {
             npLog("📝 Legible selection changed outside setSubtitleTrack: \(option.displayName) (\(selectedIndex))")
-            sendEvent("subtitleChange", data: subtitleChangePayload(index: selectedIndex, option: option))
+            sendEvent("subtitleChange", data: subtitleChangePayload(index: selectedIndex, in: mediaSelectionGroup))
         } else {
             npLog("📝 Legible selection changed outside setSubtitleTrack: off")
             sendEvent("subtitleChange", data: [
@@ -298,22 +270,11 @@ extension VideoPlayerView {
         option.extendedLanguageTag ?? option.locale?.identifier ?? "unknown"
     }
 
-    private func subtitleChangePayload(index: Int, option: AVMediaSelectionOption) -> [String: Any] {
-        let languageCode = languageCode(of: option)
-        var displayName = option.displayName
-
-        if displayName.isEmpty, let locale = option.locale {
-            displayName = Locale.current.localizedString(forIdentifier: locale.identifier) ?? languageCode
-        }
-
-        if displayName.isEmpty {
-            displayName = languageCode
-        }
-
-        return [
+    private func subtitleChangePayload(index: Int, in group: AVMediaSelectionGroup) -> [String: Any] {
+        [
             "index": index,
-            "language": languageCode,
-            "displayName": displayName,
+            "language": languageCode(of: group.options[index]),
+            "displayName": TrackDisplayNames.displayNames(for: group.options)[index],
             "isSelected": true
         ]
     }
