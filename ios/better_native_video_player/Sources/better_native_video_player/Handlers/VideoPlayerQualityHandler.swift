@@ -17,56 +17,59 @@ class VideoPlayerQualityHandler {
                 return
             }
 
-            var qualities: [VideoPlayer.QualityLevel] = []
-            let lines = playlist.components(separatedBy: "\n")
-            var lastBitrate: Int?
-            var lastResolution: String?
-            
-            for line in lines {
-                if line.contains("#EXT-X-STREAM-INF") {
-                    // Extract resolution
-                    if let resMatch = line.range(of: "RESOLUTION=\\d+x\\d+", options: .regularExpression) {
-                        lastResolution = String(line[resMatch]).replacingOccurrences(of: "RESOLUTION=", with: "")
-                    }
-                    
-                    // Extract bitrate
-                    if let bitrateMatch = line.range(of: "BANDWIDTH=\\d+", options: .regularExpression) {
-                        let bitrateStr = String(line[bitrateMatch]).replacingOccurrences(of: "BANDWIDTH=", with: "")
-                        lastBitrate = Int(bitrateStr)
-                    }
-                } else if line.hasSuffix(".m3u8") {
-                    // Resolve relative URLs against the base URL
-                    let qualityUrl: String
-                    if line.hasPrefix("http://") || line.hasPrefix("https://") {
-                        qualityUrl = line
-                    } else {
-                        let baseUrl = url.deletingLastPathComponent()
-                        if let resolvedUrl = URL(string: line, relativeTo: baseUrl)?.absoluteString {
-                            qualityUrl = resolvedUrl
-                        } else {
-                            qualityUrl = line
-                        }
-                    }
-                    
-                    if let resolution = lastResolution {
-                        let components = resolution.components(separatedBy: "x")
-                        if components.count == 2,
-                           let width = Int(components[0]),
-                           let height = Int(components[1]) {
-                            qualities.append(VideoPlayer.QualityLevel(
-                                url: qualityUrl,
-                                label: resolution,
-                                bitrate: lastBitrate ?? 0,
-                                resolution: CGSize(width: width, height: height)
-                            ))
-                        }
+            DispatchQueue.main.async { completion(parseMasterPlaylist(playlist, baseUrl: url)) }
+        }.resume()
+    }
+
+    /// The variants of an HLS master playlist, sorted by height (ascending).
+    /// A variant's URI is the first line after its `#EXT-X-STREAM-INF` tag
+    /// that is not a tag or comment (RFC 8216 §4.3.4.2), so signed variant
+    /// URLs (`video.m3u8?token=…`) and CRLF playlists count too. Variants
+    /// without a RESOLUTION (audio-only) are left out.
+    static func parseMasterPlaylist(_ playlist: String, baseUrl: URL) -> [VideoPlayer.QualityLevel] {
+        var qualities: [VideoPlayer.QualityLevel] = []
+        var pendingBitrate: Int?
+        var pendingResolution: CGSize?
+        var awaitingUri = false
+
+        for rawLine in playlist.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+
+            if line.hasPrefix("#EXT-X-STREAM-INF") {
+                awaitingUri = true
+                pendingResolution = nil
+                pendingBitrate = nil
+                if let match = line.range(of: "RESOLUTION=\\d+x\\d+", options: .regularExpression) {
+                    let parts = line[match].dropFirst("RESOLUTION=".count).split(separator: "x")
+                    if parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]) {
+                        pendingResolution = CGSize(width: width, height: height)
                     }
                 }
+                // AVERAGE-BANDWIDTH also contains "BANDWIDTH=": anchor on the
+                // attribute boundary.
+                if let match = line.range(of: "(:|,)BANDWIDTH=\\d+", options: .regularExpression) {
+                    pendingBitrate = Int(line[match].drop { !$0.isNumber })
+                }
+                continue
             }
-            
-            // Sort qualities by resolution height (ascending)
-            let sortedQualities = qualities.sorted { $0.resolution.height < $1.resolution.height }
-            DispatchQueue.main.async { completion(sortedQualities) }
-        }.resume()
+
+            if line.hasPrefix("#") || !awaitingUri { continue }
+            awaitingUri = false
+
+            guard let resolution = pendingResolution,
+                  let qualityUrl = URL(string: line, relativeTo: baseUrl)?.absoluteString
+            else { continue }
+
+            let label = "\(Int(resolution.width))x\(Int(resolution.height))"
+            qualities.append(VideoPlayer.QualityLevel(
+                url: qualityUrl,
+                label: label,
+                bitrate: pendingBitrate ?? 0,
+                resolution: resolution
+            ))
+        }
+
+        return qualities.sorted { $0.resolution.height < $1.resolution.height }
     }
 }

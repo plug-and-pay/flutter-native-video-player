@@ -542,6 +542,22 @@ extension _ControllerEventPlumbing on NativeVideoPlayerController {
               NativeVideoPlayerQuality.fromMap(qualityMap),
             );
           }
+
+          // Native sends the list with the event that reports it has read
+          // the HLS master playlist, which can be after load() returned.
+          final Object? qualityMaps = data['qualities'];
+          if (qualityMaps is List && qualityMaps.isNotEmpty) {
+            _updateState(
+              _state.copyWith(
+                qualities: NativeVideoPlayerController._distinctResolutions(
+                  qualityMaps
+                      .whereType<Map<dynamic, dynamic>>()
+                      .map(NativeVideoPlayerQuality.fromMap)
+                      .toList(),
+                ),
+              ),
+            );
+          }
         }
       }
 
